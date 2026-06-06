@@ -6,6 +6,7 @@ import { persist } from "zustand/middleware";
 
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings } from "@/services/api/admin";
+import { useUserStore } from "@/stores/use-user-store";
 
 export type AiConfig = {
     channelMode: "remote" | "local";
@@ -40,7 +41,7 @@ export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 
 export const defaultConfig: AiConfig = {
-    channelMode: "local",
+    channelMode: "remote",
     baseUrl: "https://api.openai.com",
     apiKey: "",
     model: "gpt-image-2",
@@ -82,8 +83,8 @@ type ConfigStore = {
     clearPromptContinue: () => void;
 };
 
-function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"] | null) {
-    const channelMode = modelChannel?.allowCustomChannel ? config.channelMode : "remote";
+function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"] | null, canUseLocalChannel: boolean) {
+    const channelMode = canUseLocalChannel ? config.channelMode : "remote";
     if (channelMode === "local" || !modelChannel) return { ...config, channelMode };
     const models = modelChannel.availableModels;
     const textModels = filterModelsByCapability(models, "text");
@@ -203,7 +204,7 @@ export const useConfigStore = create<ConfigStore>()(
                     ...current,
                     config: {
                         ...config,
-                        channelMode: config.channelMode || "remote",
+                        channelMode: config.channelMode === "local" ? "local" : "remote",
                         imageModel: config.imageModel || config.model,
                         videoModel: config.videoModel || "grok-imagine-video",
                         textModel: config.textModel || config.model,
@@ -235,7 +236,8 @@ function normalizeModelList(models: string[]) {
 export function useEffectiveConfig() {
     const config = useConfigStore((state) => state.config);
     const modelChannel = useConfigStore((state) => state.publicSettings?.modelChannel || null);
-    return useMemo(() => resolveEffectiveConfig(config, modelChannel), [config, modelChannel]);
+    const canUseLocalChannel = useUserStore((state) => state.user?.role === "admin");
+    return useMemo(() => resolveEffectiveConfig(config, modelChannel, canUseLocalChannel), [canUseLocalChannel, config, modelChannel]);
 }
 
 export function buildApiUrl(baseUrl: string, path: string) {

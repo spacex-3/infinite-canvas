@@ -29,7 +29,6 @@ type User struct {
 	AffCount    int        `json:"affCount"`
 	InviterID   string     `json:"inviterId"`
 	GithubID    string     `json:"githubId"`
-	LinuxDoID   string     `json:"linuxDoId" gorm:"index"`
 	WechatID    string     `json:"wechatId"`
 	Status      UserStatus `json:"status"`
 	LastLoginAt string     `json:"lastLoginAt"`
@@ -81,6 +80,7 @@ const (
 	CreditLogTypeAdminAdjust CreditLogType = "admin_adjust"
 	CreditLogTypeAIConsume   CreditLogType = "ai_consume"
 	CreditLogTypeAIRefund    CreditLogType = "ai_refund"
+	CreditLogTypePayment     CreditLogType = "payment_topup"
 )
 
 // CreditLog 用户算力点变更流水。

@@ -23,6 +23,8 @@ export type AuthSession = {
 export type AuthPayload = {
     username: string;
     password: string;
+    email?: string;
+    code?: string;
 };
 
 export async function login(payload: AuthPayload) {
@@ -31,6 +33,10 @@ export async function login(payload: AuthPayload) {
 
 export async function register(payload: AuthPayload) {
     return apiPost<AuthSession>("/api/auth/register", payload);
+}
+
+export async function sendRegisterEmailCode(email: string) {
+    return apiPost<boolean>("/api/auth/email-code", { email });
 }
 
 export async function fetchCurrentUser(token?: string) {

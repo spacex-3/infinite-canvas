@@ -17,11 +17,12 @@ func New() *gin.Engine {
 		c.String(http.StatusOK, "ok")
 	})
 	api.POST("/auth/register", gin.WrapF(handler.Register))
+	api.POST("/auth/email-code", gin.WrapF(handler.SendRegisterEmailCode))
 	api.POST("/auth/login", gin.WrapF(handler.Login))
-	api.GET("/auth/linux-do/authorize", gin.WrapF(handler.LinuxDoAuthorize))
-	api.GET("/auth/linux-do/callback", gin.WrapF(handler.LinuxDoCallback))
 	api.GET("/auth/me", middleware.OptionalAuth, gin.WrapF(handler.CurrentUser))
 	api.GET("/settings", gin.WrapF(handler.Settings))
+	api.GET("/payment/epay/notify", gin.WrapF(handler.EpayNotify))
+	api.POST("/payment/epay/notify", gin.WrapF(handler.EpayNotify))
 	api.GET("/media/references/:id", func(c *gin.Context) {
 		handler.ReferenceMedia(c.Writer, c.Request, c.Param("id"))
 	})
@@ -44,6 +45,12 @@ func New() *gin.Engine {
 	api.GET("/prompts", middleware.OptionalAuth, gin.WrapF(handler.Prompts))
 	api.GET("/assets", middleware.OptionalAuth, gin.WrapF(handler.Assets))
 	api.POST("/admin/login", gin.WrapF(handler.AdminLogin))
+	payments := api.Group("/payments", middleware.UserAuth)
+	payments.GET("/orders", gin.WrapF(handler.PaymentOrders))
+	payments.POST("/epay/orders", gin.WrapF(handler.CreateEpayOrder))
+	payments.GET("/orders/:id", func(c *gin.Context) {
+		handler.PaymentOrder(c.Writer, c.Request, c.Param("id"))
+	})
 
 	admin := api.Group("/admin", middleware.AdminAuth)
 	admin.GET("/users", gin.WrapF(handler.AdminUsers))

@@ -18,7 +18,7 @@ func ListUsers(q model.Query) ([]model.User, int64, error) {
 	tx := db.Model(&model.User{})
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		tx = tx.Where("username LIKE ? OR display_name LIKE ? OR email LIKE ? OR linux_do_id LIKE ?", like, like, like, like)
+		tx = tx.Where("username LIKE ? OR display_name LIKE ? OR email LIKE ?", like, like, like)
 	}
 
 	var total int64
@@ -68,6 +68,15 @@ func GetUserByUsername(username string) (model.User, bool, error) {
 		return model.User{}, false, err
 	}
 	return findUser(db, "username = ?", username)
+}
+
+// GetUserByEmail 根据邮箱查询用户。
+func GetUserByEmail(email string) (model.User, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.User{}, false, err
+	}
+	return findUser(db, "email = ?", email)
 }
 
 // SaveUser 保存用户信息。
@@ -163,15 +172,6 @@ func DeleteUser(id string) error {
 		return err
 	}
 	return db.Delete(&model.User{}, "id = ?", id).Error
-}
-
-// GetUserByLinuxDoID 根据 Linux.do ID 查询用户。
-func GetUserByLinuxDoID(id string) (model.User, bool, error) {
-	db, err := DB()
-	if err != nil {
-		return model.User{}, false, err
-	}
-	return findUser(db, "linux_do_id = ?", id)
 }
 
 // findUser 查询单个用户，并将未命中转换为 ok=false。

@@ -306,10 +306,10 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
                     ) : (
                         <div className="flex h-full flex-col items-center justify-center px-1 text-center">
                             <div className="relative font-serif text-4xl font-bold italic tracking-normal" style={{ color: theme.node.text }}>
-                                <span>Infinite Canvas</span>
-                                <DiaTextReveal className="absolute inset-0" colors={["#A97CF8", "#F38CB8", "#FDCC92"]} textColor="transparent" duration={1.8} startOnView={false} text="Infinite Canvas" />
+                                <span>朋克</span>
+                                <DiaTextReveal className="absolute inset-0" colors={["#A97CF8", "#F38CB8", "#FDCC92"]} textColor="transparent" duration={1.8} startOnView={false} text="朋克" />
                             </div>
-                            <div className="mt-3 font-serif text-base italic tracking-wide opacity-60">One canvas, infinite ideas</div>
+                            <div className="mt-3 font-serif text-base italic tracking-wide opacity-60">一个入口，生成更多想法</div>
                         </div>
                     )}
                 </div>

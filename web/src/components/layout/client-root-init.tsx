@@ -13,8 +13,9 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const handledConfigParams = useRef(false);
     const pathname = usePathname();
     const hydrateUser = useUserStore((state) => state.hydrateUser);
+    const user = useUserStore((state) => state.user);
+    const isUserReady = useUserStore((state) => state.isReady);
     const loadPublicSettings = useConfigStore((state) => state.loadPublicSettings);
-    const publicSettings = useConfigStore((state) => state.publicSettings);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const isLoginPage = pathname === "/login" || pathname === "/admin/login";
@@ -33,23 +34,23 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         const baseUrl = searchParams.get("baseUrl") || searchParams.get("baseurl");
         const apiKey = searchParams.get("apiKey") || searchParams.get("apikey");
         if (!baseUrl && !apiKey) return;
-        if (!publicSettings) return;
+        if (!isUserReady) return;
         handledConfigParams.current = true;
         searchParams.delete("baseUrl");
         searchParams.delete("baseurl");
         searchParams.delete("apiKey");
         searchParams.delete("apikey");
         window.history.replaceState(null, "", `${window.location.pathname}${searchParams.size ? `?${searchParams}` : ""}${window.location.hash}`);
-        if (!publicSettings.modelChannel.allowCustomChannel) {
+        if (user?.role !== "admin") {
             openConfigDialog(false);
-            message.error("后台未允许用户自定义渠道，请联系管理员进行配置");
+            message.error("只有管理员可以导入本地直连配置，普通用户仅可使用云端渠道");
             return;
         }
         updateConfig("channelMode", "local");
         if (baseUrl) updateConfig("baseUrl", baseUrl);
         if (apiKey) updateConfig("apiKey", apiKey);
         openConfigDialog(false);
-    }, [message, openConfigDialog, publicSettings, updateConfig]);
+    }, [isUserReady, message, openConfigDialog, updateConfig, user?.role]);
 
     return <>{children}</>;
 }

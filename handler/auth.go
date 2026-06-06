@@ -3,8 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
-	"strings"
 
 	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
@@ -18,6 +16,12 @@ type loginRequest struct {
 type registerRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	Email    string `json:"email"`
+	Code     string `json:"code"`
+}
+
+type emailCodeRequest struct {
+	Email string `json:"email"`
 }
 
 type saveUserRequest struct {
@@ -37,12 +41,22 @@ type adjustUserCreditsRequest struct {
 func Register(w http.ResponseWriter, r *http.Request) {
 	var request registerRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
-	session, err := service.Register(request.Username, request.Password)
+	session, err := service.Register(request.Username, request.Password, request.Email, request.Code)
 	if err != nil {
 		FailError(w, err)
 		return
 	}
 	OK(w, session)
+}
+
+func SendRegisterEmailCode(w http.ResponseWriter, r *http.Request) {
+	var request emailCodeRequest
+	_ = json.NewDecoder(r.Body).Decode(&request)
+	if err := service.SendRegisterEmailCode(request.Email); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, true)
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
@@ -54,24 +68,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	OK(w, session)
-}
-
-func LinuxDoAuthorize(w http.ResponseWriter, r *http.Request) {
-	authURL, err := service.LinuxDoAuthorizeURL(r, r.URL.Query().Get("redirect"))
-	if err != nil {
-		FailError(w, err)
-		return
-	}
-	http.Redirect(w, r, authURL, http.StatusFound)
-}
-
-func LinuxDoCallback(w http.ResponseWriter, r *http.Request) {
-	session, redirect, err := service.LoginWithLinuxDo(r, r.URL.Query().Get("code"), r.URL.Query().Get("state"))
-	if err != nil {
-		http.Redirect(w, r, loginRedirect(r, redirect, "", err.Error()), http.StatusFound)
-		return
-	}
-	http.Redirect(w, r, loginRedirect(r, redirect, session.Token, ""), http.StatusFound)
 }
 
 func AdminLogin(w http.ResponseWriter, r *http.Request) {
@@ -161,20 +157,6 @@ func AdminDeleteCreditLog(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	OK(w, true)
-}
-
-func loginRedirect(r *http.Request, redirect string, token string, message string) string {
-	values := url.Values{}
-	if strings.TrimSpace(token) != "" {
-		values.Set("token", token)
-	}
-	if strings.TrimSpace(message) != "" {
-		values.Set("error", message)
-	}
-	if strings.TrimSpace(redirect) != "" {
-		values.Set("redirect", redirect)
-	}
-	return service.RequestOrigin(r) + "/login?" + values.Encode()
 }
 
 func AdminDeleteUser(w http.ResponseWriter, r *http.Request, id string) {

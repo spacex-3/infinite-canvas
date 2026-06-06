@@ -64,15 +64,15 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 
 func normalizeSettings(settings model.Settings) model.Settings {
 	settings.Private = normalizePrivateSetting(settings.Private)
-	settings.Public = normalizePublicSettingWithChannels(settings.Public, settings.Private.Channels)
+	settings.Public = normalizePublicSettingWithChannels(settings.Public, settings.Private.Channels, settings.Private.Payment)
 	return settings
 }
 
 func normalizePublicSetting(setting model.PublicSetting) model.PublicSetting {
-	return normalizePublicSettingWithChannels(setting, nil)
+	return normalizePublicSettingWithChannels(setting, nil, model.PrivatePaymentSetting{})
 }
 
-func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []model.ModelChannel) model.PublicSetting {
+func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []model.ModelChannel, payment model.PrivatePaymentSetting) model.PublicSetting {
 	if setting.ModelChannel.AvailableModels == nil {
 		setting.ModelChannel.AvailableModels = []string{}
 	}
@@ -85,14 +85,13 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 			setting.ModelChannel.ModelCosts[i].Credits = 0
 		}
 	}
-	if setting.ModelChannel.AllowCustomChannel == nil {
-		enabled := true
-		setting.ModelChannel.AllowCustomChannel = &enabled
-	}
+	disabled := false
+	setting.ModelChannel.AllowCustomChannel = &disabled
 	if setting.Auth.AllowRegister == nil {
 		enabled := true
 		setting.Auth.AllowRegister = &enabled
 	}
+	setting.Auth.EmailVerification.Enabled = true
 	enabledModels := enabledChannelModels(channels)
 	if len(enabledModels) > 0 {
 		setting.ModelChannel.AvailableModels = enabledModels
@@ -103,7 +102,71 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	setting.ModelChannel.DefaultImageModel = repairDefaultModel(setting.ModelChannel.DefaultImageModel, setting.ModelChannel.AvailableModels, isImageModelName)
 	setting.ModelChannel.DefaultVideoModel = repairDefaultModel(setting.ModelChannel.DefaultVideoModel, setting.ModelChannel.AvailableModels, isVideoModelName)
 	setting.ModelChannel.DefaultModel = repairDefaultModel(setting.ModelChannel.DefaultModel, setting.ModelChannel.AvailableModels, isTextModelName)
+	setting.Payment = publicPaymentSetting(payment)
 	return setting
+}
+
+func publicPaymentSetting(setting model.PrivatePaymentSetting) model.PublicPaymentSetting {
+	epay := normalizePrivateEpaySetting(setting.Epay)
+	return model.PublicPaymentSetting{
+		Epay: model.PublicEpayPaymentSetting{
+			Enabled:        epay.Enabled && epay.PayURL != "" && epay.PartnerID != "" && epay.Key != "" && epay.PricePerCredit > 0,
+			Methods:        enabledPaymentMethods(epay.Methods),
+			MinCredits:     epay.MinCredits,
+			PricePerCredit: epay.PricePerCredit,
+		},
+	}
+}
+
+func normalizePrivateEpaySetting(setting model.PrivateEpayPaymentSetting) model.PrivateEpayPaymentSetting {
+	setting.PayURL = strings.TrimRight(strings.TrimSpace(setting.PayURL), "/")
+	setting.PartnerID = strings.TrimSpace(setting.PartnerID)
+	setting.CallbackOrigin = strings.TrimRight(strings.TrimSpace(setting.CallbackOrigin), "/")
+	if setting.MinCredits <= 0 {
+		setting.MinCredits = 1
+	}
+	if setting.PricePerCredit < 0 {
+		setting.PricePerCredit = 0
+	}
+	setting.Methods = normalizePaymentMethods(setting.Methods)
+	return setting
+}
+
+func normalizePaymentMethods(methods []model.PaymentMethod) []model.PaymentMethod {
+	if len(methods) == 0 {
+		return []model.PaymentMethod{
+			{Type: "alipay", Name: "支付宝", Enabled: true},
+			{Type: "wxpay", Name: "微信支付", Enabled: true},
+		}
+	}
+	result := []model.PaymentMethod{}
+	seen := map[string]bool{}
+	for _, method := range methods {
+		method.Type = strings.TrimSpace(method.Type)
+		method.Name = strings.TrimSpace(method.Name)
+		if method.Type == "" || seen[method.Type] {
+			continue
+		}
+		if method.Name == "" {
+			method.Name = method.Type
+		}
+		seen[method.Type] = true
+		result = append(result, method)
+	}
+	if len(result) == 0 {
+		return normalizePaymentMethods(nil)
+	}
+	return result
+}
+
+func enabledPaymentMethods(methods []model.PaymentMethod) []model.PaymentMethod {
+	result := []model.PaymentMethod{}
+	for _, method := range normalizePaymentMethods(methods) {
+		if method.Enabled {
+			result = append(result, method)
+		}
+	}
+	return result
 }
 
 func ModelCost(modelName string) (int, error) {
@@ -136,6 +199,14 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 			setting.Channels[i].Weight = 1
 		}
 	}
+	setting.Auth.SMTP.Host = strings.TrimSpace(setting.Auth.SMTP.Host)
+	setting.Auth.SMTP.Username = strings.TrimSpace(setting.Auth.SMTP.Username)
+	setting.Auth.SMTP.From = strings.TrimSpace(setting.Auth.SMTP.From)
+	setting.Auth.SMTP.FromName = strings.TrimSpace(setting.Auth.SMTP.FromName)
+	if setting.Auth.SMTP.Port <= 0 {
+		setting.Auth.SMTP.Port = 25
+	}
+	setting.Payment.Epay = normalizePrivateEpaySetting(setting.Payment.Epay)
 	return setting
 }
 
@@ -143,7 +214,8 @@ func hidePrivateAPIKeys(settings model.Settings) model.Settings {
 	for i := range settings.Private.Channels {
 		settings.Private.Channels[i].APIKey = ""
 	}
-	settings.Private.Auth.LinuxDo.ClientSecret = ""
+	settings.Private.Auth.SMTP.Password = ""
+	settings.Private.Payment.Epay.Key = ""
 	return settings
 }
 
@@ -159,8 +231,11 @@ func keepPrivateAPIKeys(settings *model.Settings, saved model.Settings) {
 }
 
 func keepPrivateAuthSecrets(settings *model.Settings, saved model.Settings) {
-	if strings.TrimSpace(settings.Private.Auth.LinuxDo.ClientSecret) == "" {
-		settings.Private.Auth.LinuxDo.ClientSecret = saved.Private.Auth.LinuxDo.ClientSecret
+	if strings.TrimSpace(settings.Private.Auth.SMTP.Password) == "" {
+		settings.Private.Auth.SMTP.Password = saved.Private.Auth.SMTP.Password
+	}
+	if strings.TrimSpace(settings.Private.Payment.Epay.Key) == "" {
+		settings.Private.Payment.Epay.Key = saved.Private.Payment.Epay.Key
 	}
 }
 

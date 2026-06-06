@@ -1,17 +1,20 @@
 "use client";
 
-import { LockOutlined, UserOutlined } from "@ant-design/icons";
+import { LockOutlined, MailOutlined, SafetyCertificateOutlined, UserOutlined } from "@ant-design/icons";
 import { App, Button, Form, Input, Segmented, Space } from "antd";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
 import { fetchCurrentUser } from "@/services/api/auth";
+import { sendRegisterEmailCode } from "@/services/api/auth";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 type LoginFormValues = {
     username: string;
     password: string;
+    email?: string;
+    code?: string;
     confirmPassword?: string;
 };
 
@@ -37,13 +40,15 @@ function LoginContent() {
     const { message } = App.useApp();
     const router = useRouter();
     const searchParams = useSearchParams();
+    const [form] = Form.useForm<LoginFormValues>();
     const login = useUserStore((state) => state.login);
     const register = useUserStore((state) => state.register);
     const setSession = useUserStore((state) => state.setSession);
     const isLoading = useUserStore((state) => state.isLoading);
-    const linuxDoEnabled = useConfigStore((state) => state.publicSettings?.auth?.linuxDo?.enabled === true);
     const allowRegister = useConfigStore((state) => state.publicSettings?.auth?.allowRegister !== false);
     const [mode, setMode] = useState<"login" | "register">("login");
+    const [sendingCode, setSendingCode] = useState(false);
+    const [countdown, setCountdown] = useState(0);
     const redirect = safeRedirect(searchParams.get("redirect"));
 
     useEffect(() => {
@@ -63,6 +68,30 @@ function LoginContent() {
         if (!allowRegister && mode === "register") setMode("login");
     }, [allowRegister, mode]);
 
+    useEffect(() => {
+        if (countdown <= 0) return;
+        const timer = window.setTimeout(() => setCountdown((value) => value - 1), 1000);
+        return () => window.clearTimeout(timer);
+    }, [countdown]);
+
+    const sendCode = async () => {
+        try {
+            const email = form.getFieldValue("email");
+            if (!email) {
+                message.error("请输入邮箱");
+                return;
+            }
+            setSendingCode(true);
+            await sendRegisterEmailCode(email);
+            setCountdown(60);
+            message.success("验证码已发送");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "发送验证码失败");
+        } finally {
+            setSendingCode(false);
+        }
+    };
+
     const submit = async (values: LoginFormValues) => {
         try {
             if (mode === "register" && !allowRegister) {
@@ -74,7 +103,7 @@ function LoginContent() {
                 return;
             }
             const action = mode === "register" ? register : login;
-            const user = await action({ username: values.username, password: values.password });
+            const user = await action({ username: values.username, password: values.password, email: values.email, code: values.code });
             message.success(mode === "register" ? "注册成功" : "登录成功");
             router.replace(redirect);
             router.refresh();
@@ -94,13 +123,13 @@ function LoginContent() {
                             mask: "url(/logo.svg) center / contain no-repeat",
                             WebkitMask: "url(/logo.svg) center / contain no-repeat",
                         }}
-                        aria-label="无限画布"
+                        aria-label="朋克"
                     />
-                    <h1 className="text-3xl font-semibold tracking-normal text-stone-950 dark:text-stone-100">账号登录</h1>
-                    <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">支持账号密码和 Linux.do 登录。</p>
+                    <h1 className="text-3xl font-semibold tracking-normal text-stone-950 dark:text-stone-100">朋克账号登录</h1>
+                    <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">使用账号密码注册或登录。</p>
                 </div>
 
-                <Form<LoginFormValues> layout="vertical" size="large" requiredMark={false} onFinish={submit}>
+                <Form<LoginFormValues> form={form} layout="vertical" size="large" requiredMark={false} onFinish={submit}>
                     <Form.Item>
                         <Segmented
                             block
@@ -116,19 +145,27 @@ function LoginContent() {
                         <Input.Password prefix={<LockOutlined />} autoComplete="current-password" />
                     </Form.Item>
                     {mode === "register" ? (
-                        <Form.Item name="confirmPassword" label={<span className="font-medium text-stone-800 dark:text-stone-200">确认密码</span>} rules={[{ required: true, message: "请再次输入密码" }]}>
-                            <Input.Password prefix={<LockOutlined />} autoComplete="new-password" />
-                        </Form.Item>
+                        <>
+                            <Form.Item name="email" label={<span className="font-medium text-stone-800 dark:text-stone-200">邮箱</span>} rules={[{ required: true, message: "请输入邮箱" }, { type: "email", message: "邮箱格式不正确" }]}>
+                                <Input prefix={<MailOutlined />} autoComplete="email" />
+                            </Form.Item>
+                            <Form.Item name="code" label={<span className="font-medium text-stone-800 dark:text-stone-200">邮箱验证码</span>} rules={[{ required: true, message: "请输入邮箱验证码" }]}>
+                                <Space.Compact className="w-full">
+                                    <Input prefix={<SafetyCertificateOutlined />} autoComplete="one-time-code" />
+                                    <Button loading={sendingCode} disabled={countdown > 0} onClick={() => void sendCode()}>
+                                        {countdown > 0 ? `${countdown}s` : "发送验证码"}
+                                    </Button>
+                                </Space.Compact>
+                            </Form.Item>
+                            <Form.Item name="confirmPassword" label={<span className="font-medium text-stone-800 dark:text-stone-200">确认密码</span>} rules={[{ required: true, message: "请再次输入密码" }]}>
+                                <Input.Password prefix={<LockOutlined />} autoComplete="new-password" />
+                            </Form.Item>
+                        </>
                     ) : null}
                     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
                         <Button block type="primary" htmlType="submit" loading={isLoading}>
                             {mode === "register" ? "注册" : "登录"}
                         </Button>
-                        {linuxDoEnabled ? (
-                            <Button block href={`/api/auth/linux-do/authorize?redirect=${encodeURIComponent(redirect)}`} icon={<img src="/icons/linuxdo.svg" alt="" width={18} height={18} />}>
-                                使用 Linux.do 登录
-                            </Button>
-                        ) : null}
                     </Space>
                 </Form>
             </section>

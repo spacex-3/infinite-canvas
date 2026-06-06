@@ -21,6 +21,8 @@ description: 当前后端主要数据表与字段说明
 
 - `users`
 - `credit_logs`
+- `payment_orders`
+- `email_verifications`
 - `prompts`
 - `assets`
 - `settings`
@@ -45,11 +47,10 @@ description: 当前后端主要数据表与字段说明
 | `aff_count` | number | 已邀请用户数量，冗余统计字段 |
 | `inviter_id` | string | 邀请人用户 ID |
 | `github_id` | string | GitHub 用户 ID |
-| `linux_do_id` | string | Linux.do 用户 ID |
 | `wechat_id` | string | 微信用户 ID |
 | `status` | string | 用户状态：`active`、`ban` |
 | `last_login_at` | string | 最近登录时间 |
-| `extra` | json | 扩展信息，第三方资料按平台命名空间保存，如 `linuxDo` |
+| `extra` | json | 扩展信息 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
@@ -111,6 +112,7 @@ description: 当前后端主要数据表与字段说明
 | --- | --- | --- |
 | `modelChannel` | object | 模型渠道公开配置组 |
 | `auth` | object | 公开登录配置 |
+| `payment` | object | 公开支付配置 |
 
 `modelChannel` 当前字段：
 
@@ -123,7 +125,7 @@ description: 当前后端主要数据表与字段说明
 | `defaultVideoModel` | string | 默认视频模型 |
 | `defaultTextModel` | string | 默认文本模型 |
 | `systemPrompt` | string | 系统提示词 |
-| `allowCustomChannel` | bool | 是否允许用户自定义渠道，默认允许，关闭后前端只提供走后端渠道的模式 |
+| `allowCustomChannel` | bool | 历史字段，当前公开配置会强制归一为 `false`；普通用户始终只使用云端渠道，本地直连仅管理员可用 |
 
 `modelCosts` 每项字段：
 
@@ -132,11 +134,20 @@ description: 当前后端主要数据表与字段说明
 | `model` | string | 模型名称 |
 | `credits` | number | 每次后端模型接口调用前预扣的算力点，未配置默认不扣除 |
 
-`auth.linuxDo` 当前字段：
+`auth.emailVerification` 当前字段：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `enabled` | bool | 是否开启 Linux.do 登录 |
+| `enabled` | bool | 当前强制为 `true`；账号密码注册必须通过邮箱验证码 |
+
+`payment.epay` 当前字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `enabled` | bool | 是否开启易支付充值 |
+| `methods` | object[] | 前端可选的支付方式 |
+| `minCredits` | number | 单次最低充值算力点 |
+| `pricePerCredit` | number | 单个算力点价格，单位元 |
 
 `private.value` 当前字段：
 
@@ -145,6 +156,7 @@ description: 当前后端主要数据表与字段说明
 | `channels` | object[] | 模型渠道配置列表 |
 | `promptSync` | object | GitHub 远程提示词定时同步配置 |
 | `auth` | object | 私有登录配置 |
+| `payment` | object | 私有支付配置 |
 
 `channels` 每项字段：
 
@@ -166,12 +178,30 @@ description: 当前后端主要数据表与字段说明
 | `enabled` | bool | 是否开启定时同步，默认开启 |
 | `cron` | string | Cron 表达式，默认每 5 分钟 |
 
-`auth.linuxDo` 当前字段：
+`auth.smtp` 当前字段：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `clientId` | string | Linux.do OAuth App Client ID |
-| `clientSecret` | string | Linux.do OAuth App Client Secret，后台返回时隐藏 |
+| `host` | string | SMTP 服务地址 |
+| `port` | number | SMTP 端口 |
+| `username` | string | SMTP 账号 |
+| `password` | string | SMTP 密码，后台返回时隐藏 |
+| `from` | string | 发件邮箱，留空时使用 SMTP 账号 |
+| `fromName` | string | 发件名称 |
+| `useSsl` | bool | 是否使用 SSL/TLS 直连 |
+
+`payment.epay` 当前字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `enabled` | bool | 是否开启易支付 |
+| `payUrl` | string | 易支付接口地址，未带路径时会自动使用 `/submit.php` |
+| `partnerId` | string | 商户 ID |
+| `key` | string | 商户密钥，后台返回时隐藏 |
+| `callbackOrigin` | string | 支付回调站点地址，留空时使用当前请求域名 |
+| `methods` | object[] | 支付方式，默认支付宝和微信 |
+| `minCredits` | number | 单次最低充值算力点 |
+| `pricePerCredit` | number | 单个算力点价格，单位元 |
 
 后端请求模型时，先按模型名筛选启用且包含该模型的渠道，再按 `weight` 加权随机选择一个渠道。
 
@@ -183,7 +213,7 @@ description: 当前后端主要数据表与字段说明
 | --- | --- | --- |
 | `id` | string | 主键 |
 | `user_id` | string | 关联用户 ID |
-| `type` | string | 类型：`admin_adjust`、`ai_consume`、`ai_refund` |
+| `type` | string | 类型：`admin_adjust`、`ai_consume`、`ai_refund`、`payment_topup` |
 | `amount` | number | 本次变动数量，增加为正，扣减为负 |
 | `balance` | number | 变动后的用户算力点余额 |
 | `related_id` | string | 关联业务 ID，可为空 |
@@ -198,3 +228,37 @@ description: 当前后端主要数据表与字段说明
 | `admin_adjust` | 后台手动调整 |
 | `ai_consume` | 调用后端模型接口消费 |
 | `ai_refund` | 后端模型接口调用失败返还 |
+| `payment_topup` | 在线充值入账 |
+
+### payment_orders
+
+用户在线充值订单表。当前用于易支付充值算力点。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键，业务订单号 |
+| `user_id` | string | 关联用户 ID |
+| `credits` | number | 购买的算力点 |
+| `amount_cents` | number | 支付金额，单位分 |
+| `payment_provider` | string | 支付网关，当前为 `epay` |
+| `payment_method` | string | 支付方式，如 `alipay`、`wxpay` |
+| `provider_trade_no` | string | 第三方交易号 |
+| `status` | string | 订单状态：`pending`、`success`、`closed` |
+| `notify_payload` | json | 第三方回调参数 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+| `paid_at` | string | 支付完成时间 |
+
+### email_verifications
+
+邮箱验证码表。当前用于注册邮箱验证。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `email` | string | 邮箱 |
+| `code` | string | 验证码 |
+| `scene` | string | 场景，当前为 `register` |
+| `expires_at` | string | 过期时间 |
+| `used_at` | string | 使用时间，空表示未使用 |
+| `created_at` | string | 创建时间 |

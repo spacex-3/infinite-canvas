@@ -7,6 +7,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { fetchImageModels } from "@/services/api/image";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { filterModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { useUserStore } from "@/stores/use-user-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -33,10 +34,10 @@ export function AppConfigModal() {
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
     const publicSettings = useConfigStore((state) => state.publicSettings);
+    const canUseLocalChannel = useUserStore((state) => state.user?.role === "admin");
     const effectiveConfig = useEffectiveConfig();
     const modelChannel = publicSettings?.modelChannel;
-    const allowCustomChannel = modelChannel?.allowCustomChannel === true;
-    const effectiveMode = allowCustomChannel ? config.channelMode : "remote";
+    const effectiveMode = canUseLocalChannel ? config.channelMode : "remote";
     const modelConfig = effectiveMode === "remote" ? effectiveConfig : config;
     const modelOptions = config.models.map((model) => ({ label: model, value: model }));
 
@@ -44,7 +45,7 @@ export function AppConfigModal() {
         setConfigDialogOpen(false);
         if (effectiveMode === "local" && (!config.baseUrl.trim() || !config.apiKey.trim())) return;
         if (!modelConfig.imageModel.trim() || !modelConfig.videoModel.trim() || !modelConfig.textModel.trim()) return;
-        if (!allowCustomChannel && config.channelMode !== "remote") updateConfig("channelMode", "remote");
+        if (!canUseLocalChannel && config.channelMode !== "remote") updateConfig("channelMode", "remote");
         message.success(shouldPromptContinue ? "配置已保存，请继续刚才的请求" : "配置已保存");
         clearPromptContinue();
     };
@@ -110,7 +111,7 @@ export function AppConfigModal() {
         >
             <div className="pt-1">
                 <Form layout="vertical" requiredMark={false}>
-                    {allowCustomChannel ? (
+                    {canUseLocalChannel ? (
                         <Form.Item label="渠道模式" className="mb-5">
                             <Segmented
                                 block
@@ -147,7 +148,7 @@ export function AppConfigModal() {
                     ) : (
                         <div className="mb-5 rounded-lg border border-stone-200 p-3 text-sm text-stone-500 dark:border-stone-800">
                             <div className="font-medium text-stone-900 dark:text-stone-100">云端渠道</div>
-                            <div className="mt-1">由系统后台渠道转发请求，当前可用 {modelChannel?.availableModels.length || 0} 个模型。</div>
+                            <div className="mt-1">{canUseLocalChannel ? "当前使用系统后台渠道转发请求" : "普通用户仅可使用系统后台渠道"}，当前可用 {modelChannel?.availableModels.length || 0} 个模型。</div>
                         </div>
                     )}
                     {effectiveMode === "local" ? (

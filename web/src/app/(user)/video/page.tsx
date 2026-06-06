@@ -107,6 +107,15 @@ export default function VideoPage() {
         void refreshLogs();
     }, []);
 
+    useEffect(() => {
+        const url = new URL(window.location.href);
+        const initialPrompt = url.searchParams.get("prompt")?.trim();
+        if (!initialPrompt) return;
+        setPrompt((value) => value || initialPrompt);
+        url.searchParams.delete("prompt");
+        window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }, []);
+
     const addReferences = async (files?: FileList | null) => {
         const selectedFiles = Array.from(files || []);
         const unsupported = selectedFiles.filter((file) => !file.type.startsWith("image/") && !file.type.startsWith("video/") && !isSupportedAudioFile(file));
@@ -463,7 +472,7 @@ export default function VideoPage() {
             <Drawer title="生成记录" placement="bottom" size="large" open={logsOpen} onClose={() => setLogsOpen(false)}>
                 <LogPanel logs={logs} selectedLogIds={selectedLogIds} activeLogId={previewLog?.id} onSelectedLogIdsChange={setSelectedLogIds} onCreateSession={createSession} onDeleteSelected={() => setDeleteConfirmOpen(true)} onPreviewLog={previewGenerationLog} />
             </Drawer>
-            <Drawer title="参数" placement="bottom" height="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
+            <Drawer title="参数" placement="bottom" size="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
                 <div className="grid grid-cols-2 gap-3 pb-4">
                     <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                 </div>

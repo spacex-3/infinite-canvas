@@ -34,11 +34,17 @@ const emptySettings: AdminSettings = {
             defaultVideoModel: "",
             defaultTextModel: "",
             systemPrompt: "",
-            allowCustomChannel: true,
+            allowCustomChannel: false,
         },
-        auth: { allowRegister: true, linuxDo: { enabled: false } },
+        auth: { allowRegister: true, emailVerification: { enabled: true } },
+        payment: { epay: { enabled: false, methods: [], minCredits: 1, pricePerCredit: 0 } },
     },
-    private: { channels: [], promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } } },
+    private: {
+        channels: [],
+        promptSync: { enabled: true, cron: "*/5 * * * *" },
+        auth: { smtp: { host: "", port: 465, username: "", password: "", from: "", fromName: "朋克", useSsl: true } },
+        payment: { epay: { enabled: false, payUrl: "", partnerId: "", key: "", callbackOrigin: "", methods: [], minCredits: 1, pricePerCredit: 0 } },
+    },
 };
 const emptyChannel: AdminModelChannel = { protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "" };
 
@@ -124,7 +130,7 @@ export default function AdminSettingsPage() {
         setIsSaving(true);
         try {
             const saved = normalizeSettings(await saveAdminSettings(token, values));
-            const merged = mergeChannelApiKeys(values.private.channels, saved);
+            const merged = mergeSavedSecrets(values, saved);
             form.setFieldsValue(merged);
             setChannels(merged.private.channels);
             setModelCosts(merged.public.modelChannel.modelCosts);
@@ -345,7 +351,7 @@ export default function AdminSettingsPage() {
             private: { ...values.private, channels: nextChannels },
         });
         const saved = normalizeSettings(await saveAdminSettings(token, nextSettings));
-        const merged = mergeChannelApiKeys(nextChannels, saved);
+        const merged = mergeSavedSecrets(nextSettings, saved);
         setChannels(merged.private.channels);
         setModelCosts(merged.public.modelChannel.modelCosts);
         rememberKnownModels(merged);
@@ -444,13 +450,13 @@ export default function AdminSettingsPage() {
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
-                                        <Form.Item name={["public", "modelChannel", "allowCustomChannel"]} label="是否允许用户自定义渠道" extra="开启后，前端可提供走后端渠道和用户自定义 baseUrl 直连两种模式" valuePropName="checked">
+                                        <Form.Item name={["public", "auth", "allowRegister"]} label="是否允许用户注册" extra="关闭后隐藏注册入口，注册接口也会拒绝新用户创建" valuePropName="checked">
                                             <Switch />
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
-                                        <Form.Item name={["public", "auth", "allowRegister"]} label="是否允许用户注册" extra="关闭后隐藏注册入口，注册接口也会拒绝新用户创建" valuePropName="checked">
-                                            <Switch />
+                                        <Form.Item name={["public", "auth", "emailVerification", "enabled"]} label="注册邮箱验证" extra="已强制开启，账号密码注册必须先通过邮箱验证码" valuePropName="checked">
+                                            <Switch disabled />
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
@@ -499,41 +505,6 @@ export default function AdminSettingsPage() {
                     ) : activeMode === "visual" ? (
                         <Form form={form} layout="vertical" initialValues={emptySettings} requiredMark={false}>
                             <Flex vertical gap={12}>
-                                <Card
-                                    size="small"
-                                    title={
-                                        <Space>
-                                            <img src="/icons/linuxdo.svg" alt="" width={18} height={18} />
-                                            Linux.do 登录
-                                        </Space>
-                                    }
-                                >
-                                    <Flex vertical gap={14}>
-                                        <Typography.Text type="secondary">
-                                            本项目接口回调地址是 /api/auth/linux-do/callback，请在 Linux.do 应用后台自行拼接站点前缀。
-                                            <Typography.Link href="https://connect.linux.do" target="_blank" rel="noreferrer">
-                                                点击此处管理你的 LinuxDO OAuth App
-                                            </Typography.Link>
-                                        </Typography.Text>
-                                        <Row gutter={16}>
-                                            <Col xs={24} md={6}>
-                                                <Form.Item name={["public", "auth", "linuxDo", "enabled"]} label="开启 Linux.do 登录" valuePropName="checked">
-                                                    <Switch />
-                                                </Form.Item>
-                                            </Col>
-                                            <Col xs={24} md={9}>
-                                                <Form.Item name={["private", "auth", "linuxDo", "clientId"]} label="Linux.do Client ID">
-                                                    <Input placeholder="输入 Linux.do OAuth App 的 ID" />
-                                                </Form.Item>
-                                            </Col>
-                                            <Col xs={24} md={9}>
-                                                <Form.Item name={["private", "auth", "linuxDo", "clientSecret"]} label="Linux.do Client Secret">
-                                                    <Input.Password placeholder="留空则沿用已保存的密钥" />
-                                                </Form.Item>
-                                            </Col>
-                                        </Row>
-                                    </Flex>
-                                </Card>
                                 <Card size="small" title="提示词定时同步">
                                     <Row gutter={16} align="middle">
                                         <Col xs={24} md={8}>
@@ -544,6 +515,84 @@ export default function AdminSettingsPage() {
                                         <Col xs={24} md={16}>
                                             <Form.Item name={["private", "promptSync", "cron"]} label="Cron 表达式" extra="默认每 5 分钟同步内置 GitHub 远程提示词源">
                                                 <Input placeholder="*/5 * * * *" />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+                                </Card>
+                                <Card size="small" title="SMTP 邮箱">
+                                    <Row gutter={16}>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "auth", "smtp", "host"]} label="SMTP Host">
+                                                <Input placeholder="smtp.example.com" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={4}>
+                                            <Form.Item name={["private", "auth", "smtp", "port"]} label="端口">
+                                                <InputNumber min={1} max={65535} precision={0} className="!w-full" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={4}>
+                                            <Form.Item name={["private", "auth", "smtp", "useSsl"]} label="SSL" valuePropName="checked">
+                                                <Switch />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "auth", "smtp", "username"]} label="SMTP 账号">
+                                                <Input />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "auth", "smtp", "password"]} label="SMTP 密码">
+                                                <Input.Password placeholder="留空则沿用已保存的密码" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "auth", "smtp", "from"]} label="发件邮箱">
+                                                <Input placeholder="默认使用 SMTP 账号" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "auth", "smtp", "fromName"]} label="发件名称">
+                                                <Input />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+                                </Card>
+                                <Card size="small" title="易支付充值">
+                                    <Row gutter={16}>
+                                        <Col xs={24} md={6}>
+                                            <Form.Item name={["private", "payment", "epay", "enabled"]} label="开启易支付" valuePropName="checked">
+                                                <Switch />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={9}>
+                                            <Form.Item name={["private", "payment", "epay", "payUrl"]} label="易支付接口地址">
+                                                <Input placeholder="https://pay.example.com" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={9}>
+                                            <Form.Item name={["private", "payment", "epay", "callbackOrigin"]} label="回调站点地址">
+                                                <Input placeholder="留空则使用当前请求域名" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "payment", "epay", "partnerId"]} label="商户 ID">
+                                                <Input />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "payment", "epay", "key"]} label="商户密钥">
+                                                <Input.Password placeholder="留空则沿用已保存的密钥" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={4}>
+                                            <Form.Item name={["private", "payment", "epay", "pricePerCredit"]} label="单点价格">
+                                                <InputNumber min={0} step={0.01} precision={4} className="!w-full" addonAfter="元" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={4}>
+                                            <Form.Item name={["private", "payment", "epay", "minCredits"]} label="最低充值">
+                                                <InputNumber min={1} precision={0} className="!w-full" addonAfter="点" />
                                             </Form.Item>
                                         </Col>
                                     </Row>
@@ -839,11 +888,20 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
             ...(setting.modelChannel || {}),
             availableModels: setting.modelChannel?.availableModels || [],
             modelCosts: normalizeModelCosts(setting.modelChannel?.modelCosts || []),
+            allowCustomChannel: false,
         },
         auth: {
             allowRegister: setting.auth?.allowRegister !== false,
-            linuxDo: {
-                enabled: setting.auth?.linuxDo?.enabled === true,
+            emailVerification: {
+                enabled: true,
+            },
+        },
+        payment: {
+            epay: {
+                enabled: setting.payment?.epay?.enabled === true,
+                methods: normalizePaymentMethods(setting.payment?.epay?.methods || []),
+                minCredits: Math.max(1, Number(setting.payment?.epay?.minCredits) || 1),
+                pricePerCredit: Math.max(0, Number(setting.payment?.epay?.pricePerCredit) || 0),
             },
         },
     };
@@ -861,12 +919,40 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             cron: setting.promptSync?.cron || "*/5 * * * *",
         },
         auth: {
-            linuxDo: {
-                clientId: setting.auth?.linuxDo?.clientId || "",
-                clientSecret: setting.auth?.linuxDo?.clientSecret || "",
+            smtp: {
+                host: setting.auth?.smtp?.host || "",
+                port: Math.max(1, Number(setting.auth?.smtp?.port) || 465),
+                username: setting.auth?.smtp?.username || "",
+                password: setting.auth?.smtp?.password || "",
+                from: setting.auth?.smtp?.from || "",
+                fromName: setting.auth?.smtp?.fromName || "朋克",
+                useSsl: setting.auth?.smtp?.useSsl !== false,
+            },
+        },
+        payment: {
+            epay: {
+                enabled: setting.payment?.epay?.enabled === true,
+                payUrl: setting.payment?.epay?.payUrl || "",
+                partnerId: setting.payment?.epay?.partnerId || "",
+                key: setting.payment?.epay?.key || "",
+                callbackOrigin: setting.payment?.epay?.callbackOrigin || "",
+                methods: normalizePaymentMethods(setting.payment?.epay?.methods || []),
+                minCredits: Math.max(1, Number(setting.payment?.epay?.minCredits) || 1),
+                pricePerCredit: Math.max(0, Number(setting.payment?.epay?.pricePerCredit) || 0),
             },
         },
     };
+}
+
+function normalizePaymentMethods(items: Partial<AdminSettings["public"]["payment"]["epay"]["methods"][number]>[]) {
+    const source = items.length ? items : [{ type: "alipay", name: "支付宝", enabled: true }, { type: "wxpay", name: "微信支付", enabled: true }];
+    return source
+        .filter((item) => item.type)
+        .map((item) => ({
+            type: item.type || "",
+            name: item.name || item.type || "",
+            enabled: item.enabled !== false,
+        }));
 }
 
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {
@@ -894,14 +980,31 @@ function setModelCost(form: any, setModelCosts: (items: AdminModelCost[]) => voi
     setModelCosts(next);
 }
 
-function mergeChannelApiKeys(currentChannels: AdminModelChannel[], saved: AdminSettings): AdminSettings {
+function mergeSavedSecrets(current: AdminSettings, saved: AdminSettings): AdminSettings {
     const channels = saved.private.channels.map((item, index) => ({
         ...item,
-        apiKey: currentChannels[index]?.apiKey || item.apiKey,
+        apiKey: current.private.channels[index]?.apiKey || item.apiKey,
     }));
     return {
         public: saved.public,
-        private: { ...saved.private, channels },
+        private: {
+            ...saved.private,
+            channels,
+            auth: {
+                ...saved.private.auth,
+                smtp: {
+                    ...saved.private.auth.smtp,
+                    password: current.private.auth.smtp.password || saved.private.auth.smtp.password,
+                },
+            },
+            payment: {
+                ...saved.private.payment,
+                epay: {
+                    ...saved.private.payment.epay,
+                    key: current.private.payment.epay.key || saved.private.payment.epay.key,
+                },
+            },
+        },
     };
 }
 

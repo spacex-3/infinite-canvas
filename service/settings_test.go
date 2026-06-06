@@ -98,3 +98,22 @@ func TestNormalizeSettingsPublishesEnabledChannelModelsAndRepairsDefaults(t *tes
 		t.Fatalf("default video model = %q, want seedance", channel.DefaultVideoModel)
 	}
 }
+
+func TestNormalizeSettingsForcesEmailVerificationAndDisablesCustomChannel(t *testing.T) {
+	allowCustomChannel := true
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{
+			ModelChannel: model.PublicModelChannelSetting{AllowCustomChannel: &allowCustomChannel},
+			Auth: model.PublicAuthSetting{
+				EmailVerification: model.PublicEmailVerificationSetting{Enabled: false},
+			},
+		},
+	})
+
+	if settings.Public.ModelChannel.AllowCustomChannel == nil || *settings.Public.ModelChannel.AllowCustomChannel {
+		t.Fatalf("allowCustomChannel = %#v, want false", settings.Public.ModelChannel.AllowCustomChannel)
+	}
+	if !settings.Public.Auth.EmailVerification.Enabled {
+		t.Fatal("email verification should be forced on")
+	}
+}

@@ -21,7 +21,6 @@ export type AdminUser = {
     affCode: string;
     affCount: number;
     inviterId: string;
-    linuxDoId: string;
     status: "active" | "ban";
     lastLoginAt: string;
     createdAt: string;
@@ -187,8 +186,16 @@ export type AdminPublicSettings = {
     modelChannel: AdminPublicModelChannelSettings;
     auth: {
         allowRegister: boolean;
-        linuxDo: {
+        emailVerification: {
             enabled: boolean;
+        };
+    };
+    payment: {
+        epay: {
+            enabled: boolean;
+            methods: AdminPaymentMethod[];
+            minCredits: number;
+            pricePerCredit: number;
         };
     };
 };
@@ -200,11 +207,34 @@ export type AdminPrivateSettings = {
         cron: string;
     };
     auth: {
-        linuxDo: {
-            clientId: string;
-            clientSecret: string;
+        smtp: {
+            host: string;
+            port: number;
+            username: string;
+            password: string;
+            from: string;
+            fromName: string;
+            useSsl: boolean;
         };
     };
+    payment: {
+        epay: {
+            enabled: boolean;
+            payUrl: string;
+            partnerId: string;
+            key: string;
+            callbackOrigin: string;
+            methods: AdminPaymentMethod[];
+            minCredits: number;
+            pricePerCredit: number;
+        };
+    };
+};
+
+export type AdminPaymentMethod = {
+    type: string;
+    name: string;
+    enabled: boolean;
 };
 
 export type AdminSettings = {

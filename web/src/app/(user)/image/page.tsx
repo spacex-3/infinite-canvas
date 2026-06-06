@@ -105,6 +105,15 @@ export default function ImagePage() {
         void refreshLogs();
     }, []);
 
+    useEffect(() => {
+        const url = new URL(window.location.href);
+        const initialPrompt = url.searchParams.get("prompt")?.trim();
+        if (!initialPrompt) return;
+        setPrompt((value) => value || initialPrompt);
+        url.searchParams.delete("prompt");
+        window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }, []);
+
     const addReferences = async (files?: FileList | null) => {
         const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
         const nextReferences = await Promise.all(

@@ -43,22 +43,41 @@ type PublicModelChannelSetting struct {
 type PublicSetting struct {
 	ModelChannel PublicModelChannelSetting `json:"modelChannel"`
 	Auth         PublicAuthSetting         `json:"auth"`
+	Payment      PublicPaymentSetting      `json:"payment"`
 }
 
 type PublicAuthSetting struct {
-	AllowRegister *bool                    `json:"allowRegister"`
-	LinuxDo       PublicLinuxDoAuthSetting `json:"linuxDo"`
+	AllowRegister     *bool                          `json:"allowRegister"`
+	EmailVerification PublicEmailVerificationSetting `json:"emailVerification"`
 }
 
-type PublicLinuxDoAuthSetting struct {
+type PublicEmailVerificationSetting struct {
 	Enabled bool `json:"enabled"`
+}
+
+type PublicPaymentSetting struct {
+	Epay PublicEpayPaymentSetting `json:"epay"`
+}
+
+type PublicEpayPaymentSetting struct {
+	Enabled        bool            `json:"enabled"`
+	Methods        []PaymentMethod `json:"methods"`
+	MinCredits     int             `json:"minCredits"`
+	PricePerCredit float64         `json:"pricePerCredit"`
+}
+
+type PaymentMethod struct {
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
 }
 
 // PrivateSetting 私有配置。
 type PrivateSetting struct {
-	Channels   []ModelChannel     `json:"channels"`
-	PromptSync PromptSyncSetting  `json:"promptSync"`
-	Auth       PrivateAuthSetting `json:"auth"`
+	Channels   []ModelChannel        `json:"channels"`
+	PromptSync PromptSyncSetting     `json:"promptSync"`
+	Auth       PrivateAuthSetting    `json:"auth"`
+	Payment    PrivatePaymentSetting `json:"payment"`
 }
 
 // PromptSyncSetting 提示词定时同步配置。
@@ -68,12 +87,32 @@ type PromptSyncSetting struct {
 }
 
 type PrivateAuthSetting struct {
-	LinuxDo PrivateLinuxDoAuthSetting `json:"linuxDo"`
+	SMTP PrivateSMTPSetting `json:"smtp"`
 }
 
-type PrivateLinuxDoAuthSetting struct {
-	ClientID     string `json:"clientId"`
-	ClientSecret string `json:"clientSecret"`
+type PrivateSMTPSetting struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	From     string `json:"from"`
+	FromName string `json:"fromName"`
+	UseSSL   bool   `json:"useSsl"`
+}
+
+type PrivatePaymentSetting struct {
+	Epay PrivateEpayPaymentSetting `json:"epay"`
+}
+
+type PrivateEpayPaymentSetting struct {
+	Enabled        bool            `json:"enabled"`
+	PayURL         string          `json:"payUrl"`
+	PartnerID      string          `json:"partnerId"`
+	Key            string          `json:"key"`
+	CallbackOrigin string          `json:"callbackOrigin"`
+	Methods        []PaymentMethod `json:"methods"`
+	MinCredits     int             `json:"minCredits"`
+	PricePerCredit float64         `json:"pricePerCredit"`
 }
 
 // Setting 系统配置。

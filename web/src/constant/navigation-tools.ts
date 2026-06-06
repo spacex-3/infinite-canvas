@@ -1,29 +1,40 @@
-import { FileText, ImagePlus, Images, Maximize2, Video } from "lucide-react";
+import { FileText, Home, ImagePlus, Images, Maximize2, Video } from "lucide-react";
 
 export const navigationTools = [
     {
-        slug: "canvas",
-        label: "我的画布",
-        icon: Maximize2,
+        slug: "",
+        label: "首页",
+        shortLabel: "首页",
+        icon: Home,
     },
     {
         slug: "image",
-        label: "生图工作台",
+        label: "AI 图片",
+        shortLabel: "图片",
         icon: ImagePlus,
     },
     {
         slug: "video",
-        label: "视频创作台",
+        label: "AI 视频",
+        shortLabel: "视频",
         icon: Video,
     },
     {
+        slug: "canvas",
+        label: "画布",
+        shortLabel: "画布",
+        icon: Maximize2,
+    },
+    {
         slug: "prompts",
-        label: "提示词库",
+        label: "提示词",
+        shortLabel: "提示词",
         icon: FileText,
     },
     {
         slug: "assets",
-        label: "我的素材",
+        label: "素材",
+        shortLabel: "素材",
         icon: Images,
     },
 ] as const;
