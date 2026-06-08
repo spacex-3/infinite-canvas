@@ -11,6 +11,27 @@ import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
 type VideoResponse = { id: string; status?: string; error?: { message?: string } };
 type ApiVideoResponse = VideoResponse | { code?: number; data?: VideoResponse | null; msg?: string };
+type VeoOmniFlashEditPayload = {
+    model: string;
+    prompt: string;
+    duration: 8;
+    aspect_ratio: string;
+    video_url: string;
+    Ingredients_images?: string[];
+};
+type VeoOmniFlashEditPayloadInput = {
+    model: string;
+    prompt: string;
+    duration: string;
+    aspectRatio: string;
+    videoUrl: string;
+    imageUrls: string[];
+};
+type VideoStatusPayload = VideoResponse & {
+    url?: string;
+    video_url?: string;
+    metadata?: { result_urls?: unknown };
+};
 type SeedanceTask = {
     id: string;
     status?: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "expired";
@@ -46,6 +67,9 @@ function refreshRemoteUser(config: AiConfig) {
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = []): Promise<VideoGenerationResult> {
     const model = (config.model || config.videoModel).trim();
     assertVideoConfig(config, model);
+    if (isVeoOmniFlashVideoEditModel(model)) {
+        return requestVeoOmniFlashVideoEditGeneration(config, model, prompt, references, videoReferences, audioReferences);
+    }
     if (isSeedanceVideoConfig({ ...config, model })) {
         return requestSeedanceGeneration(config, model, prompt, references, videoReferences, audioReferences);
     }
@@ -59,6 +83,59 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
     if (result.blob) return uploadMediaFile(result.blob, "video");
     if (result.url) return { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4" };
     throw new Error("视频接口没有返回可播放的视频");
+}
+
+async function requestVeoOmniFlashVideoEditGeneration(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
+    if (audioReferences.length) throw new Error("Veo Omni Flash 视频编辑暂不支持参考音频，请移除参考音频");
+    if (videoReferences.length !== 1) throw new Error("Veo Omni Flash 视频编辑需要且只支持 1 个参考视频");
+    if (references.length > 8) throw new Error("Veo Omni Flash 视频编辑最多支持 8 张参考图");
+
+    const [videoUrl, imageUrls] = await Promise.all([resolveVeoReferenceVideoUrl(videoReferences[0]), Promise.all(references.map(resolveVeoReferenceImageUrl))]);
+    const payload = buildVeoOmniFlashEditPayload({
+        model,
+        prompt,
+        duration: config.videoSeconds,
+        aspectRatio: normalizeVeoAspectRatio(config.size),
+        videoUrl,
+        imageUrls,
+    });
+
+    try {
+        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), payload, { headers: aiHeaders(config, "application/json") })).data);
+        if (!created.id) throw new Error("Veo Omni Flash 视频编辑没有返回任务 ID");
+        for (let attempt = 0; attempt < 360; attempt += 1) {
+            const task = unwrapVideoResponse((await axios.get<ApiVideoResponse>(aiApiUrl(config, `/videos/${created.id}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model } : undefined })).data) as VideoStatusPayload;
+            if (task.status === "completed" || task.status === "succeeded") {
+                const url = readVideoResultUrl(task);
+                if (!url) throw new Error("Veo Omni Flash 视频编辑任务成功但没有返回视频 URL");
+                refreshRemoteUser(config);
+                return videoResultFromUrl(url);
+            }
+            if (task.status === "failed" || task.status === "cancelled" || task.status === "expired") throw new Error(task.error?.message || "Veo Omni Flash 视频编辑失败");
+            if (attempt === 359) throw new Error("Veo Omni Flash 视频编辑超时，请稍后重试");
+            await delay(5000);
+        }
+        throw new Error("Veo Omni Flash 视频编辑超时，请稍后重试");
+    } catch (error) {
+        throw new Error(readAxiosError(error, "Veo Omni Flash 视频编辑失败"));
+    }
+}
+
+export function buildVeoOmniFlashEditPayload(input: VeoOmniFlashEditPayloadInput): VeoOmniFlashEditPayload {
+    const payload: VeoOmniFlashEditPayload = {
+        model: input.model,
+        prompt: input.prompt,
+        duration: 8,
+        aspect_ratio: input.aspectRatio || "16:9",
+        video_url: input.videoUrl,
+    };
+    if (input.imageUrls.length) payload.Ingredients_images = input.imageUrls;
+    return payload;
+}
+
+export function readVideoResultUrl(payload: VideoStatusPayload) {
+    const urls = payload.metadata?.result_urls;
+    return payload.video_url || payload.url || (Array.isArray(urls) && typeof urls[0] === "string" ? urls[0] : "");
 }
 
 async function requestOpenAIVideoGeneration(config: AiConfig, model: string, prompt: string, references: ReferenceImage[]) {
@@ -203,6 +280,24 @@ async function resolveSeedanceAudioUrl(audio: ReferenceAudio) {
     return uploadReferenceMedia(file);
 }
 
+async function resolveVeoReferenceImageUrl(image: ReferenceImage) {
+    const directUrl = image.url || image.dataUrl;
+    if (isPublicMediaUrl(directUrl)) return directUrl;
+    const dataUrl = await imageToDataUrl(image);
+    if (!dataUrl) throw new Error("参考图读取失败，请换一张图片或重新上传");
+    return uploadReferenceMedia(dataUrlToFile({ ...image, dataUrl }));
+}
+
+async function resolveVeoReferenceVideoUrl(video: ReferenceVideo) {
+    if (isPublicMediaUrl(video.url)) return video.url;
+    let blob: Blob | null = null;
+    if (video.storageKey) blob = await getMediaBlob(video.storageKey);
+    if (!blob && video.url?.startsWith("blob:")) blob = await (await fetch(video.url)).blob();
+    if (!blob) throw new Error("Veo Omni Flash 视频编辑的参考视频必须是公网 URL，或本地已保存的视频");
+    const file = new File([blob], video.name || "reference-video.mp4", { type: video.type || blob.type || "video/mp4" });
+    return uploadReferenceMedia(file);
+}
+
 async function uploadReferenceMedia(file: File) {
     const token = useUserStore.getState().token;
     if (!token) throw new Error("使用本地参考素材需要先登录，并在服务端配置 PUBLIC_BASE_URL");
@@ -279,6 +374,29 @@ function statusMessage(status: number | undefined, fallback: string) {
     if (status === 401 || status === 403) return "鉴权失败，请检查 API Key、套餐权限或模型权限";
     if (status === 429) return "请求被限流或额度不足，请稍后重试";
     return status ? `${fallback}（${status}）` : fallback;
+}
+
+function isVeoOmniFlashVideoEditModel(model: string) {
+    return model.trim().toLowerCase() === "veo-omni-flash-video-edit";
+}
+
+function normalizeVeoAspectRatio(value: string) {
+    const raw = String(value || "").trim();
+    if (["16:9", "9:16", "1:1", "4:3", "3:4"].includes(raw)) return raw;
+    const match = raw.match(/^(\d+)x(\d+)$/);
+    if (!match) return "16:9";
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    if (!width || !height) return "16:9";
+    const ratio = width / height;
+    const options = [
+        ["16:9", 16 / 9],
+        ["4:3", 4 / 3],
+        ["1:1", 1],
+        ["3:4", 3 / 4],
+        ["9:16", 9 / 16],
+    ] as const;
+    return options.reduce((best, item) => (Math.abs(item[1] - ratio) < Math.abs(best[1] - ratio) ? item : best), options[0])[0];
 }
 
 async function assertVideoBlob(blob: Blob) {
