@@ -195,6 +195,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 		if setting.Channels[i].Models == nil {
 			setting.Channels[i].Models = []string{}
 		}
+		setting.Channels[i].ImageQualities = normalizeImageQualities(setting.Channels[i].ImageQualities)
 		if setting.Channels[i].Weight <= 0 {
 			setting.Channels[i].Weight = 1
 		}
@@ -252,14 +253,25 @@ func findSavedChannel(channel model.ModelChannel, saved []model.ModelChannel, in
 }
 
 func SelectModelChannel(modelName string) (model.ModelChannel, error) {
+	return SelectModelChannelForAIRequest(modelName, "", nil, "")
+}
+
+func SelectModelChannelForAIRequest(modelName string, path string, body []byte, contentType string) (model.ModelChannel, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return model.ModelChannel{}, err
 	}
 	channels := modelChannelsForModel(normalizePrivateSetting(settings.Private).Channels, modelName)
+	if isImageRequestPath(path) {
+		channels = imageQualityChannels(channels, readImageRequestQuality(body, contentType))
+	}
 	if len(channels) == 0 {
 		return model.ModelChannel{}, errors.New("没有可用模型渠道")
 	}
+	return selectWeightedModelChannel(channels), nil
+}
+
+func selectWeightedModelChannel(channels []model.ModelChannel) model.ModelChannel {
 	total := 0
 	for _, channel := range channels {
 		total += channel.Weight
@@ -268,10 +280,10 @@ func SelectModelChannel(modelName string) (model.ModelChannel, error) {
 	for _, channel := range channels {
 		hit -= channel.Weight
 		if hit < 0 {
-			return channel, nil
+			return channel
 		}
 	}
-	return channels[0], nil
+	return channels[0]
 }
 
 func BuildModelChannelURL(channel model.ModelChannel, path string) string {
@@ -377,6 +389,7 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 	if channel.Models == nil {
 		channel.Models = []string{}
 	}
+	channel.ImageQualities = normalizeImageQualities(channel.ImageQualities)
 	if channel.Weight <= 0 {
 		channel.Weight = 1
 	}

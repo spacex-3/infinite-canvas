@@ -8,6 +8,7 @@ import { FileText, Image as ImageIcon, Music2, Video, X } from "lucide-react";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { NodeGenerationInput } from "./canvas-node-generation";
+import { matchesCanvasReferenceQuery, readCanvasReferenceMention } from "../utils/canvas-resource-query";
 
 type CanvasConfigComposerProps = {
     value: string;
@@ -39,7 +40,7 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
         if (!mention) return [];
         const query = (mention.query || "").trim().toLowerCase();
         if (!query) return inputs;
-        return inputs.filter((input) => `${resourceLabel(input, inputs)} ${input.title} ${input.text || ""}`.toLowerCase().includes(query));
+        return inputs.filter((input) => matchesCanvasReferenceQuery([resourceLabel(input, inputs), input.title, input.type, input.text || ""], query));
     }, [inputs, mention]);
 
     useEffect(() => {
@@ -67,12 +68,12 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
 
     const syncMention = () => {
         const text = textBeforeCaret();
-        const match = /@([^\s@]*)$/.exec(text);
-        if (!match || !inputs.length) {
+        const nextMention = readCanvasReferenceMention(text, text.length);
+        if (!nextMention || !inputs.length) {
             closeMention();
             return;
         }
-        setMention({ query: match[1] || "" });
+        setMention({ query: nextMention.query });
         setActiveIndex(0);
     };
 
@@ -129,7 +130,7 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
                     contentEditable
                     suppressContentEditableWarning
                     className="thin-scrollbar min-h-28 w-full overflow-y-auto whitespace-pre-wrap break-words px-3 py-2 text-sm leading-7 outline-none"
-                    style={{ color: theme.node.text }}
+                    style={{ color: theme.node.text, caretColor: theme.node.text, WebkitTextFillColor: theme.node.text }}
                     onInput={() => {
                         if (!composingRef.current) syncFromEditor();
                     }}
@@ -171,6 +172,10 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
                         }
                         requestAnimationFrame(syncMention);
                     }}
+                    onKeyUp={syncMention}
+                    onClick={syncMention}
+                    onFocus={syncMention}
+                    onMouseUp={syncMention}
                     onBlur={() => window.setTimeout(closeMention, 120)}
                 />
                 {mention && candidates.length ? <MentionMenu inputs={candidates} allInputs={inputs} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null}
@@ -275,9 +280,9 @@ function removeActiveMention() {
     if (!selection?.rangeCount) return;
     const range = selection.getRangeAt(0);
     const text = textBeforeCaret();
-    const match = /@([^\s@]*)$/.exec(text);
-    if (!match) return;
-    range.setStart(range.startContainer, Math.max(0, range.startOffset - (match[1] || "").length - 1));
+    const mention = readCanvasReferenceMention(text, text.length);
+    if (!mention) return;
+    range.setStart(range.startContainer, Math.max(0, range.startOffset - mention.query.length - 1));
     range.deleteContents();
 }
 

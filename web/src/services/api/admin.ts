@@ -161,6 +161,7 @@ export type AdminModelChannel = {
     baseUrl: string;
     apiKey: string;
     models: string[];
+    imageQualities: string[];
     weight: number;
     enabled: boolean;
     remark: string;

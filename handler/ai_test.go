@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -23,5 +24,37 @@ func TestSafeUpstreamTextTruncates(t *testing.T) {
 	got := safeUpstreamText(strings.Repeat("错", 320))
 	if len([]rune(got)) != 303 {
 		t.Fatalf("truncated rune length = %d", len([]rune(got)))
+	}
+}
+
+func TestAIImageTaskLifecycle(t *testing.T) {
+	task := newAIImageTask()
+	defer deleteAIImageTask(task.ID)
+
+	if task.ID == "" || task.Status != aiImageTaskPending {
+		t.Fatalf("newAIImageTask = %#v", task)
+	}
+
+	got, ok := getAIImageTask(task.ID)
+	if !ok || got.Status != aiImageTaskPending {
+		t.Fatalf("getAIImageTask pending = %#v ok=%v", got, ok)
+	}
+
+	finishAIImageTaskSuccess(task.ID, json.RawMessage(`{"data":[{"b64_json":"abc"}]}`))
+	got, ok = getAIImageTask(task.ID)
+	if !ok || got.Status != aiImageTaskSuccess || string(got.Response) == "" {
+		t.Fatalf("getAIImageTask success = %#v ok=%v", got, ok)
+	}
+
+	deleteAIImageTask(task.ID)
+	if _, ok := getAIImageTask(task.ID); ok {
+		t.Fatalf("deleted task still exists")
+	}
+}
+
+func TestAIUpstreamStatusMessageExplainsGatewayTimeout(t *testing.T) {
+	got := aiUpstreamStatusMessage(504, nil)
+	if !strings.Contains(got, "耗时过长") {
+		t.Fatalf("gateway timeout message = %q", got)
 	}
 }

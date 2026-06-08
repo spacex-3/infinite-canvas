@@ -1,0 +1,23 @@
+services:
+  face-mosaic:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    image: punk-face-mosaic:cpu-arm64
+    volumes:
+      - ./input:/input:ro
+      - ./output:/output
+    command:
+      - /input/source.mp4
+      - --output
+      - /output/source_mosaic.mp4
+      - --replacewith
+      - mosaic
+      - --mosaicsize
+      - "28"
+      - --mask-scale
+      - "1.35"
+      - --backend
+      - opencv
+      - --keep-audio

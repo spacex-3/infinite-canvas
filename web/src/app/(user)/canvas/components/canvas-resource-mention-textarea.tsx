@@ -8,6 +8,7 @@ import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
+import { matchesCanvasReferenceQuery, readCanvasReferenceMention } from "../utils/canvas-resource-query";
 
 type MentionState = {
     start: number;
@@ -33,7 +34,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         const query = mention.query.trim().toLowerCase();
         const activeReferences = references.filter((item) => item.active);
         if (!query) return activeReferences;
-        return activeReferences.filter((item) => `${item.label} ${item.title} ${item.kind} ${item.text || ""}`.toLowerCase().includes(query));
+        return activeReferences.filter((item) => matchesCanvasReferenceQuery([item.label, item.title, item.kind, item.text || ""], query));
     }, [mention, references]);
     const activeLabels = useMemo(() => Array.from(new Set(references.filter((item) => item.active).map((item) => item.label))).sort((a, b) => b.length - a.length), [references]);
 
@@ -52,14 +53,19 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     };
 
     const syncMention = (nextValue: string, cursor: number) => {
-        const prefix = nextValue.slice(0, cursor);
-        const match = /(^|\s)@([^\s@]*)$/.exec(prefix);
-        if (!match || !references.some((item) => item.active)) {
+        const nextMention = readCanvasReferenceMention(nextValue, cursor);
+        if (!nextMention || !references.some((item) => item.active)) {
             closeMention();
             return;
         }
-        setMention({ start: cursor - match[2].length - 1, query: match[2] });
+        setMention(nextMention);
         setActiveIndex(0);
+    };
+
+    const syncCurrentMention = () => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        syncMention(textarea.value, textarea.selectionStart);
     };
 
     const insertReference = (reference: CanvasResourceReference) => {
@@ -78,11 +84,16 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         overlayRef.current.scrollLeft = textareaRef.current.scrollLeft;
     };
 
+    const textColor = style?.color || theme.node.text;
+    const hasOverlay = activeLabels.length > 0;
     const mergedStyle = {
         ...(style || {}),
-        color: activeLabels.length ? "transparent" : style?.color,
-        caretColor: style?.color || theme.node.text,
-        ...(activeLabels.length ? { background: "transparent", backgroundColor: "transparent" } : {}),
+        position: "relative",
+        zIndex: 1,
+        color: hasOverlay ? "rgba(0,0,0,0.01)" : textColor,
+        WebkitTextFillColor: hasOverlay ? "rgba(0,0,0,0.01)" : textColor,
+        caretColor: textColor,
+        ...(hasOverlay ? { background: "transparent", backgroundColor: "transparent" } : {}),
     } as CSSProperties;
     const menu = mention && candidates.length && textareaRef.current ? <MentionMenu textarea={textareaRef.current} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null;
 
@@ -139,6 +150,10 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                     }
                     onKeyDown?.(event);
                 }}
+                onKeyUp={syncCurrentMention}
+                onClick={syncCurrentMention}
+                onFocus={syncCurrentMention}
+                onSelect={syncCurrentMention}
                 onScroll={(event) => {
                     syncOverlayScroll();
                     props.onScroll?.(event);
@@ -161,7 +176,7 @@ function MentionHighlightText({ value, labels, placeholder }: { value: string; l
         <>
             {value.split(pattern).map((part, index) =>
                 labels.includes(part) ? (
-                    <span key={`${part}-${index}`} className="rounded-md bg-[#2f80ff]/16 px-1 py-0.5 font-medium text-[#2f80ff] ring-1 ring-[#2f80ff]/24">
+                    <span key={`${part}-${index}`} className="rounded-md bg-[#2f80ff]/16 text-[#2f80ff] ring-1 ring-[#2f80ff]/24">
                         {part}
                     </span>
                 ) : (

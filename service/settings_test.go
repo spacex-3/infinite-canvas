@@ -117,3 +117,33 @@ func TestNormalizeSettingsForcesEmailVerificationAndDisablesCustomChannel(t *tes
 		t.Fatal("email verification should be forced on")
 	}
 }
+
+func TestImageQualityChannelsPreferMatchingResolutionRules(t *testing.T) {
+	channels := []model.ModelChannel{
+		{Name: "free", ImageQualities: []string{"low", "medium"}},
+		{Name: "paid", ImageQualities: []string{"high"}},
+		{Name: "generic"},
+	}
+
+	got := imageQualityChannels(channels, "high")
+	if len(got) != 1 || got[0].Name != "paid" {
+		t.Fatalf("high channels = %#v, want paid only", got)
+	}
+
+	got = imageQualityChannels(channels, "medium")
+	if len(got) != 1 || got[0].Name != "free" {
+		t.Fatalf("medium channels = %#v, want free only", got)
+	}
+}
+
+func TestReadImageRequestQualityFromExplicitSize(t *testing.T) {
+	got := readImageRequestQuality([]byte(`{"model":"gpt-image-2","size":"2160x3840"}`), "application/json")
+	if got != "high" {
+		t.Fatalf("quality = %q, want high", got)
+	}
+
+	got = readImageRequestQuality([]byte(`{"model":"gpt-image-2","size":"2048x2048"}`), "application/json")
+	if got != "medium" {
+		t.Fatalf("quality = %q, want medium", got)
+	}
+}

@@ -32,6 +32,11 @@ func New() *gin.Engine {
 	v1 := api.Group("/v1", middleware.UserAuth)
 	v1.POST("/images/generations", gin.WrapF(handler.AIImagesGenerations))
 	v1.POST("/images/edits", gin.WrapF(handler.AIImagesEdits))
+	v1.POST("/images/generations/tasks", gin.WrapF(handler.AIImagesGenerationsTask))
+	v1.POST("/images/edits/tasks", gin.WrapF(handler.AIImagesEditsTask))
+	v1.GET("/images/tasks/:id", func(c *gin.Context) {
+		handler.AIImageTask(c.Writer, c.Request, c.Param("id"))
+	})
 	v1.POST("/chat/completions", gin.WrapF(handler.AIChatCompletions))
 	v1.POST("/audio/speech", gin.WrapF(handler.AIAudioSpeech))
 	v1.POST("/videos", gin.WrapF(handler.AIVideos))

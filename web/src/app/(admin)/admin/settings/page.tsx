@@ -46,9 +46,19 @@ const emptySettings: AdminSettings = {
         payment: { epay: { enabled: false, payUrl: "", partnerId: "", key: "", callbackOrigin: "", methods: [], minCredits: 1, pricePerCredit: 0 } },
     },
 };
-const emptyChannel: AdminModelChannel = { protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "" };
+const emptyChannel: AdminModelChannel = { protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], imageQualities: [], weight: 1, enabled: true, remark: "" };
+const paymentMethodOptions = [
+    { type: "alipay", name: "支付宝" },
+    { type: "wxpay", name: "微信支付" },
+];
+const imageQualityRouteOptions = [
+    { label: "1K/低", value: "low" },
+    { label: "2K/中", value: "medium" },
+    { label: "4K/高", value: "high" },
+];
 
-type SettingsTabKey = "public" | "private";
+type JsonSettingsTabKey = "public" | "private";
+type SettingsTabKey = JsonSettingsTabKey | "auth";
 type EditorMode = "visual" | "json";
 type ModelSelectTabKey = "new" | "current";
 
@@ -57,8 +67,8 @@ export default function AdminSettingsPage() {
     const { message } = App.useApp();
     const [form] = Form.useForm<AdminSettings>();
     const [activeTab, setActiveTab] = useState<SettingsTabKey>("public");
-    const [editorMode, setEditorMode] = useState<Record<SettingsTabKey, EditorMode>>({ public: "visual", private: "visual" });
-    const [jsonText, setJsonText] = useState<Record<SettingsTabKey, string>>({ public: "", private: "" });
+    const [editorMode, setEditorMode] = useState<Record<JsonSettingsTabKey, EditorMode>>({ public: "visual", private: "visual" });
+    const [jsonText, setJsonText] = useState<Record<JsonSettingsTabKey, string>>({ public: "", private: "" });
     const [channels, setChannels] = useState<AdminModelChannel[]>([]);
     const [channelForm] = Form.useForm<AdminModelChannel>();
     const [editingChannelIndex, setEditingChannelIndex] = useState<number | null>(null);
@@ -83,8 +93,8 @@ export default function AdminSettingsPage() {
     const publicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
     const channelTableData = useMemo(() => channels.map((channel, index) => ({ ...channel, _index: index, _rowKey: `${index}-${channel.name}-${channel.baseUrl}` })), [channels]);
-    const activeMode = editorMode[activeTab];
-    const activeJsonText = jsonText[activeTab];
+    const activeMode = activeTab === "auth" ? "visual" : editorMode[activeTab];
+    const activeJsonText = activeTab === "auth" ? "" : jsonText[activeTab];
     const jsonError = activeMode === "json" ? getJsonError(activeJsonText) : "";
     const modelSelectGroups = useMemo(() => buildModelSelectGroups(modelSelectSource, modelSelectExisting), [modelSelectSource, modelSelectExisting]);
     const activeModelSelectModels = useMemo(() => {
@@ -147,7 +157,7 @@ export default function AdminSettingsPage() {
         }
     };
 
-    const toggleMode = (tab: SettingsTabKey, nextMode: EditorMode) => {
+    const toggleMode = (tab: JsonSettingsTabKey, nextMode: EditorMode) => {
         if (nextMode === "json") {
             setJsonText((current) => ({
                 ...current,
@@ -168,7 +178,7 @@ export default function AdminSettingsPage() {
         setEditorMode((current) => ({ ...current, [tab]: nextMode }));
     };
 
-    const formatJson = (tab: SettingsTabKey) => {
+    const formatJson = (tab: JsonSettingsTabKey) => {
         const parsed = parseTabJson(tab, jsonText[tab]);
         if (!parsed) {
             message.error("JSON 格式不正确");
@@ -373,6 +383,7 @@ export default function AdminSettingsPage() {
                             onChange={(key) => changeTab(key as SettingsTabKey)}
                             items={[
                                 { key: "public", label: "公开配置（对外暴露）" },
+                                { key: "auth", label: "注册邮箱" },
                                 { key: "private", label: "私有配置（不会对外暴露）" },
                             ]}
                         />
@@ -389,15 +400,19 @@ export default function AdminSettingsPage() {
 
                 <Card variant="borderless">
                     <Flex justify="space-between" align="center" gap={16} wrap style={{ marginBottom: 16 }}>
-                        <Segmented
-                            value={activeMode}
-                            onChange={(value) => toggleMode(activeTab, value as EditorMode)}
-                            options={[
-                                { label: "可视化编辑", value: "visual" },
-                                { label: "手动编辑 JSON", value: "json" },
-                            ]}
-                        />
-                        {activeMode === "json" ? (
+                        {activeTab === "auth" ? (
+                            <Typography.Text type="secondary">注册开关、邮箱验证码和 SMTP 发信配置</Typography.Text>
+                        ) : (
+                            <Segmented
+                                value={activeMode}
+                                onChange={(value) => toggleMode(activeTab, value as EditorMode)}
+                                options={[
+                                    { label: "可视化编辑", value: "visual" },
+                                    { label: "手动编辑 JSON", value: "json" },
+                                ]}
+                            />
+                        )}
+                        {activeTab !== "auth" && activeMode === "json" ? (
                             <Space>
                                 {jsonError ? (
                                     <Tag color="error">{jsonError}</Tag>
@@ -411,7 +426,7 @@ export default function AdminSettingsPage() {
                                 </Button>
                             </Space>
                         ) : (
-                            <Typography.Text type="secondary">{activeTab === "public" ? "这些配置会暴露给前端读取" : "这些配置只会在后台保存"}</Typography.Text>
+                            <Typography.Text type="secondary">{activeTab === "public" ? "这些配置会暴露给前端读取" : activeTab === "auth" ? "注册邮箱配置只在后台保存，普通用户注册时会使用" : "这些配置只会在后台保存"}</Typography.Text>
                         )}
                     </Flex>
 
@@ -447,16 +462,6 @@ export default function AdminSettingsPage() {
                                     <Col span={24}>
                                         <Form.Item name={["public", "modelChannel", "systemPrompt"]} label="系统提示词">
                                             <Input.TextArea rows={4} />
-                                        </Form.Item>
-                                    </Col>
-                                    <Col span={24}>
-                                        <Form.Item name={["public", "auth", "allowRegister"]} label="是否允许用户注册" extra="关闭后隐藏注册入口，注册接口也会拒绝新用户创建" valuePropName="checked">
-                                            <Switch />
-                                        </Form.Item>
-                                    </Col>
-                                    <Col span={24}>
-                                        <Form.Item name={["public", "auth", "emailVerification", "enabled"]} label="注册邮箱验证" extra="已强制开启，账号密码注册必须先通过邮箱验证码" valuePropName="checked">
-                                            <Switch disabled />
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
@@ -502,19 +507,19 @@ export default function AdminSettingsPage() {
                                 />
                             </div>
                         )
-                    ) : activeMode === "visual" ? (
+                    ) : activeTab === "auth" ? (
                         <Form form={form} layout="vertical" initialValues={emptySettings} requiredMark={false}>
                             <Flex vertical gap={12}>
-                                <Card size="small" title="提示词定时同步">
-                                    <Row gutter={16} align="middle">
+                                <Card size="small" title="注册设置">
+                                    <Row gutter={16}>
                                         <Col xs={24} md={8}>
-                                            <Form.Item name={["private", "promptSync", "enabled"]} label="开启定时同步" valuePropName="checked">
+                                            <Form.Item name={["public", "auth", "allowRegister"]} label="允许用户注册" extra="关闭后隐藏注册入口，注册接口也会拒绝新用户创建" valuePropName="checked">
                                                 <Switch />
                                             </Form.Item>
                                         </Col>
-                                        <Col xs={24} md={16}>
-                                            <Form.Item name={["private", "promptSync", "cron"]} label="Cron 表达式" extra="默认每 5 分钟同步内置 GitHub 远程提示词源">
-                                                <Input placeholder="*/5 * * * *" />
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["public", "auth", "emailVerification", "enabled"]} label="注册邮箱验证" extra="已强制开启，账号密码注册必须先通过邮箱验证码" valuePropName="checked">
+                                                <Switch disabled />
                                             </Form.Item>
                                         </Col>
                                     </Row>
@@ -558,6 +563,25 @@ export default function AdminSettingsPage() {
                                         </Col>
                                     </Row>
                                 </Card>
+                            </Flex>
+                        </Form>
+                    ) : activeMode === "visual" ? (
+                        <Form form={form} layout="vertical" initialValues={emptySettings} requiredMark={false}>
+                            <Flex vertical gap={12}>
+                                <Card size="small" title="提示词定时同步">
+                                    <Row gutter={16} align="middle">
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "promptSync", "enabled"]} label="开启定时同步" valuePropName="checked">
+                                                <Switch />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={16}>
+                                            <Form.Item name={["private", "promptSync", "cron"]} label="Cron 表达式" extra="默认每 5 分钟同步内置 GitHub 远程提示词源">
+                                                <Input placeholder="*/5 * * * *" />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+                                </Card>
                                 <Card size="small" title="易支付充值">
                                     <Row gutter={16}>
                                         <Col xs={24} md={6}>
@@ -593,6 +617,23 @@ export default function AdminSettingsPage() {
                                         <Col xs={24} md={4}>
                                             <Form.Item name={["private", "payment", "epay", "minCredits"]} label="最低充值">
                                                 <InputNumber min={1} precision={0} className="!w-full" addonAfter="点" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col span={24}>
+                                            <Form.Item noStyle shouldUpdate={(previous, current) => previous.private?.payment?.epay?.methods !== current.private?.payment?.epay?.methods}>
+                                                {({ getFieldValue }) => {
+                                                    const methods = normalizePaymentMethods(getFieldValue(["private", "payment", "epay", "methods"]) || []);
+                                                    const enabledTypes = methods.filter((item) => item.enabled).map((item) => item.type);
+                                                    return (
+                                                        <Form.Item label="支付渠道" extra="用户端充值页只展示勾选渠道；易支付只支持支付宝时，取消勾选微信支付即可。">
+                                                            <Checkbox.Group
+                                                                value={enabledTypes}
+                                                                options={paymentMethodOptions.map((item) => ({ label: item.name, value: item.type }))}
+                                                                onChange={(values) => setEpayPaymentMethods(form, values as string[])}
+                                                            />
+                                                        </Form.Item>
+                                                    );
+                                                }}
                                             </Form.Item>
                                         </Col>
                                     </Row>
@@ -717,6 +758,11 @@ export default function AdminSettingsPage() {
                                         </Form.Item>
                                         <Button onClick={() => openChannelModelSelector()}>选择模型</Button>
                                     </Space.Compact>
+                                </Form.Item>
+                            </Col>
+                            <Col span={24}>
+                                <Form.Item name="imageQualities" label="图片分辨率路由" extra="仅图片生成/图片编辑生效。示例：免费 gpt-image-2 渠道勾 1K/2K，付费 gpt-image-2 渠道勾 4K；不勾表示通用渠道。">
+                                    <Checkbox.Group options={imageQualityRouteOptions} />
                                 </Form.Item>
                             </Col>
                             <Col span={24}>
@@ -945,7 +991,7 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
 }
 
 function normalizePaymentMethods(items: Partial<AdminSettings["public"]["payment"]["epay"]["methods"][number]>[]) {
-    const source = items.length ? items : [{ type: "alipay", name: "支付宝", enabled: true }, { type: "wxpay", name: "微信支付", enabled: true }];
+    const source = items.length ? items : paymentMethodOptions.map((item) => ({ ...item, enabled: true }));
     return source
         .filter((item) => item.type)
         .map((item) => ({
@@ -955,6 +1001,20 @@ function normalizePaymentMethods(items: Partial<AdminSettings["public"]["payment
         }));
 }
 
+function setEpayPaymentMethods(form: any, values: string[]) {
+    const enabledTypes = new Set(values);
+    const currentMethods = normalizePaymentMethods(form.getFieldValue(["private", "payment", "epay", "methods"]) || []);
+    const currentNames = new Map(currentMethods.map((item) => [item.type, item.name]));
+    form.setFieldValue(
+        ["private", "payment", "epay", "methods"],
+        paymentMethodOptions.map((item) => ({
+            type: item.type,
+            name: currentNames.get(item.type) || item.name,
+            enabled: enabledTypes.has(item.type),
+        })),
+    );
+}
+
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {
     return {
         protocol: "openai",
@@ -962,6 +1022,7 @@ function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChan
         baseUrl: item.baseUrl || "",
         apiKey: item.apiKey || "",
         models: item.models || [],
+        imageQualities: normalizeImageQualities(item.imageQualities || []),
         weight: Math.max(1, Number(item.weight) || 1),
         enabled: item.enabled !== false,
         remark: item.remark || "",
@@ -1034,6 +1095,11 @@ function uniqueModels(models: string[]) {
     return Array.from(new Set(models.filter(Boolean)));
 }
 
+function normalizeImageQualities(values: string[]) {
+    const allowed = new Set(imageQualityRouteOptions.map((item) => item.value));
+    return Array.from(new Set((values || []).filter((value) => allowed.has(value))));
+}
+
 function modelSummary(models: string[]) {
     if (!models.length) return "未配置模型";
     const preview = models.slice(0, 3).join(", ");
@@ -1042,8 +1108,8 @@ function modelSummary(models: string[]) {
 
 function parseTabJson(tab: "public", value: string): AdminSettings["public"] | null;
 function parseTabJson(tab: "private", value: string): AdminSettings["private"] | null;
-function parseTabJson(tab: SettingsTabKey, value: string): AdminSettings[SettingsTabKey] | null;
-function parseTabJson(tab: SettingsTabKey, value: string): AdminSettings[SettingsTabKey] | null {
+function parseTabJson(tab: JsonSettingsTabKey, value: string): AdminSettings[JsonSettingsTabKey] | null;
+function parseTabJson(tab: JsonSettingsTabKey, value: string): AdminSettings[JsonSettingsTabKey] | null {
     try {
         return tab === "public" ? normalizePublicSetting(JSON.parse(value) as Partial<AdminSettings["public"]>) : normalizePrivateSetting(JSON.parse(value) as Partial<AdminSettings["private"]>);
     } catch {
@@ -1051,7 +1117,7 @@ function parseTabJson(tab: SettingsTabKey, value: string): AdminSettings[Setting
     }
 }
 
-async function collectSettings(form: any, editorMode: Record<SettingsTabKey, EditorMode>, jsonText: Record<SettingsTabKey, string>, message: { error: (value: string) => void }) {
+async function collectSettings(form: any, editorMode: Record<JsonSettingsTabKey, EditorMode>, jsonText: Record<JsonSettingsTabKey, string>, message: { error: (value: string) => void }) {
     const values = normalizeSettings(form.getFieldsValue(true) as AdminSettings);
     if (editorMode.public === "json") {
         const publicSetting = parseTabJson("public", jsonText.public);
