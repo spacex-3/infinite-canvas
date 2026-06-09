@@ -8,6 +8,7 @@ import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
+import { canonicalizeCanvasResourceMentionText, renderCanvasResourceMentionText } from "../utils/canvas-resource-mention-format";
 import { matchesCanvasReferenceQuery, readCanvasReferenceMention } from "../utils/canvas-resource-query";
 
 type MentionState = {
@@ -29,17 +30,19 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     const overlayRef = useRef<HTMLDivElement | null>(null);
     const [mention, setMention] = useState<MentionState | null>(null);
     const [activeIndex, setActiveIndex] = useState(0);
+    const activeReferences = useMemo(() => references.filter((item) => item.active), [references]);
     const candidates = useMemo(() => {
         if (!mention) return [];
         const query = mention.query.trim().toLowerCase();
-        const activeReferences = references.filter((item) => item.active);
         if (!query) return activeReferences;
         return activeReferences.filter((item) => matchesCanvasReferenceQuery([item.label, item.title, item.kind, item.text || ""], query));
-    }, [mention, references]);
-    const activeLabels = useMemo(() => Array.from(new Set(references.filter((item) => item.active).map((item) => item.label))).sort((a, b) => b.length - a.length), [references]);
+    }, [activeReferences, mention]);
+    const activeLabels = useMemo(() => Array.from(new Set(activeReferences.map((item) => item.label))).sort((a, b) => b.length - a.length), [activeReferences]);
+    const displayValue = useMemo(() => renderCanvasResourceMentionText(value, activeReferences), [activeReferences, value]);
+    const toCanonicalValue = (nextValue: string) => canonicalizeCanvasResourceMentionText(nextValue, activeReferences);
 
     const updateValue = (next: string, selectionStart?: number) => {
-        onChange(next);
+        onChange(toCanonicalValue(next));
         if (typeof selectionStart !== "number") return;
         requestAnimationFrame(() => {
             textareaRef.current?.focus();
@@ -71,9 +74,9 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     const insertReference = (reference: CanvasResourceReference) => {
         if (!mention) return;
         const textarea = textareaRef.current;
-        const end = textarea?.selectionStart ?? value.length;
+        const end = textarea?.selectionStart ?? displayValue.length;
         const insertText = `${reference.label} `;
-        const next = `${value.slice(0, mention.start)}${insertText}${value.slice(end)}`;
+        const next = `${displayValue.slice(0, mention.start)}${insertText}${displayValue.slice(end)}`;
         closeMention();
         updateValue(next, mention.start + insertText.length);
     };
@@ -86,6 +89,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
 
     const textColor = style?.color || theme.node.text;
     const hasOverlay = activeLabels.length > 0;
+    const overlayValue = displayValue || props.placeholder?.toString() || "";
     const mergedStyle = {
         ...(style || {}),
         position: "relative",
@@ -101,7 +105,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         <div className={`relative h-full w-full ${containerClassName || ""}`}>
             {activeLabels.length ? (
                 <div ref={overlayRef} className={`${className || ""} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`} style={{ ...style, color: theme.node.text }}>
-                    <MentionHighlightText value={value || props.placeholder?.toString() || ""} labels={activeLabels} placeholder={!value} />
+                    <MentionHighlightText value={overlayValue} labels={activeLabels} placeholder={!value} />
                 </div>
             ) : null}
             <textarea
@@ -111,12 +115,12 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                     if (typeof forwardedRef === "function") forwardedRef(node);
                     else if (forwardedRef) forwardedRef.current = node;
                 }}
-                value={value}
+                value={displayValue}
                 className={className}
                 style={mergedStyle}
                 onChange={(event) => {
                     const next = event.target.value;
-                    onChange(next);
+                    onChange(toCanonicalValue(next));
                     syncMention(next, event.target.selectionStart);
                     requestAnimationFrame(syncOverlayScroll);
                 }}

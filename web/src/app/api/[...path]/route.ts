@@ -7,11 +7,14 @@ type RouteContext = {
     params: Promise<{ path: string[] }>;
 };
 
+const AUTH_TOKEN_KEY = "infinite-canvas-auth-token-v1";
+
 function proxyHeaders(request: NextRequest) {
     const headers = new Headers(request.headers);
     headers.delete("host");
     headers.delete("content-length");
     headers.delete("connection");
+    headers.delete("expect");
     headers.set("x-forwarded-host", request.nextUrl.host);
     headers.set("x-forwarded-proto", request.nextUrl.protocol.replace(":", ""));
     return headers;
@@ -23,6 +26,23 @@ function responseHeaders(response: Response) {
     headers.delete("content-encoding");
     headers.delete("transfer-encoding");
     return headers;
+}
+
+async function applyAuthCookie(request: NextRequest, response: Response, headers: Headers, path: string[]) {
+    const isAuthSessionRequest = request.method === "POST" && path.join("/") === "auth/login";
+    const isRegisterSessionRequest = request.method === "POST" && path.join("/") === "auth/register";
+    if (!isAuthSessionRequest && !isRegisterSessionRequest) return;
+    if (response.status < 200 || response.status >= 300) return;
+
+    try {
+        const payload = (await response.clone().json()) as { code?: number; data?: { token?: unknown } };
+        const token = typeof payload.data?.token === "string" ? payload.data.token : "";
+        if (payload.code !== 0 || !token) return;
+        const secure = request.nextUrl.protocol === "https:" || request.headers.get("x-forwarded-proto") === "https" ? "; Secure" : "";
+        headers.set("Set-Cookie", `${AUTH_TOKEN_KEY}=${encodeURIComponent(token)}; Path=/; Max-Age=604800; SameSite=Lax${secure}`);
+    } catch {
+        // Leave the proxied response untouched if the backend payload is not an auth session envelope.
+    }
 }
 
 async function proxy(request: NextRequest, context: RouteContext) {
@@ -40,10 +60,13 @@ async function proxy(request: NextRequest, context: RouteContext) {
             redirect: "manual",
         } as RequestInit & { duplex?: "half" });
 
+        const headers = responseHeaders(response);
+        await applyAuthCookie(request, response, headers, path);
+
         return new Response(response.body, {
             status: response.status,
             statusText: response.statusText,
-            headers: responseHeaders(response),
+            headers,
         });
     } catch (error) {
         console.error("Failed to proxy", target, error);

@@ -28,10 +28,15 @@ const quickPrompts = ["生成一组高端护肤品主图，白底，柔和自然
 
 export default function IndexPage() {
     const router = useRouter();
+    const [isMounted, setIsMounted] = useState(false);
     const [activeModeKey, setActiveModeKey] = useState<(typeof modes)[number]["key"]>("image");
     const [prompt, setPrompt] = useState("");
     const [promptShowcase, setPromptShowcase] = useState<Prompt[]>([]);
     const activeMode = useMemo(() => modes.find((mode) => mode.key === activeModeKey) || modes[0], [activeModeKey]);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     useEffect(() => {
         void fetchPrompts({ pageSize: 6 })
@@ -41,6 +46,22 @@ export default function IndexPage() {
 
     const submit = (targetHref = activeMode.href) => {
         router.push(buildPromptHref(targetHref, prompt));
+    };
+
+    const renderPromptTextarea = () => {
+        if (!isMounted) {
+            return <div className="min-h-[96px]" aria-hidden="true" />;
+        }
+
+        return (
+            <Input.TextArea
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                autoSize={{ minRows: 4, maxRows: 7 }}
+                placeholder="输入商品、卖点、参考风格或想生成的素材，例如：为一款女士通勤包生成 4 张高级感主图，突出大容量和轻量材质。"
+                className="!border-0 !bg-transparent !px-0 !py-0 text-base !shadow-none"
+            />
+        );
     };
 
     return (
@@ -73,7 +94,9 @@ export default function IndexPage() {
                                             onClick={() => setActiveModeKey(mode.key)}
                                             className={cn(
                                                 "flex min-w-0 items-start gap-3 rounded-md border px-3 py-3 text-left transition",
-                                                active ? "border-stone-900 bg-stone-950 dark:border-stone-200 dark:bg-stone-100" : "border-transparent bg-stone-50 text-stone-600 hover:border-stone-200 hover:text-stone-950 dark:bg-stone-950 dark:text-stone-300 dark:hover:border-stone-700 dark:hover:text-white",
+                                                active
+                                                    ? "border-stone-900 bg-stone-950 dark:border-stone-200 dark:bg-stone-100"
+                                                    : "border-transparent bg-stone-50 text-stone-600 hover:border-stone-200 hover:text-stone-950 dark:bg-stone-950 dark:text-stone-300 dark:hover:border-stone-700 dark:hover:text-white",
                                             )}
                                         >
                                             <Icon className={cn("mt-0.5 size-4 shrink-0", active ? "text-white dark:text-stone-950" : "text-stone-700 dark:text-stone-300")} />
@@ -87,17 +110,16 @@ export default function IndexPage() {
                             </div>
 
                             <div className="p-4 sm:p-5">
-                                <Input.TextArea
-                                    value={prompt}
-                                    onChange={(event) => setPrompt(event.target.value)}
-                                    autoSize={{ minRows: 4, maxRows: 7 }}
-                                    placeholder="输入商品、卖点、参考风格或想生成的素材，例如：为一款女士通勤包生成 4 张高级感主图，突出大容量和轻量材质。"
-                                    className="!border-0 !bg-transparent !px-0 !py-0 text-base !shadow-none"
-                                />
+                                {renderPromptTextarea()}
                                 <div className="mt-5 flex flex-col gap-3 border-t border-stone-100 pt-4 sm:flex-row sm:items-center sm:justify-between dark:border-stone-800">
                                     <div className="flex flex-wrap gap-2">
                                         {quickPrompts.map((item) => (
-                                            <button key={item} type="button" onClick={() => setPrompt(item)} className="min-w-0 max-w-full truncate rounded-md border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs text-stone-500 transition hover:border-stone-300 hover:text-stone-900 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-400 dark:hover:border-stone-600 dark:hover:text-stone-100">
+                                            <button
+                                                key={item}
+                                                type="button"
+                                                onClick={() => setPrompt(item)}
+                                                className="min-w-0 max-w-full truncate rounded-md border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs text-stone-500 transition hover:border-stone-300 hover:text-stone-900 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-400 dark:hover:border-stone-600 dark:hover:text-stone-100"
+                                            >
                                                 {item}
                                             </button>
                                         ))}
@@ -113,7 +135,12 @@ export default function IndexPage() {
                             {skills.map((skill) => {
                                 const Icon = skill.icon;
                                 return (
-                                    <button key={skill.title} type="button" onClick={() => submit(skill.href)} className="group flex min-w-0 items-center gap-3 rounded-lg border border-stone-200 bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-stone-300 hover:shadow-[0_14px_34px_rgba(28,25,23,0.08)] dark:border-stone-800 dark:bg-stone-900 dark:hover:border-stone-700">
+                                    <button
+                                        key={skill.title}
+                                        type="button"
+                                        onClick={() => submit(skill.href)}
+                                        className="group flex min-w-0 items-center gap-3 rounded-lg border border-stone-200 bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-stone-300 hover:shadow-[0_14px_34px_rgba(28,25,23,0.08)] dark:border-stone-800 dark:bg-stone-900 dark:hover:border-stone-700"
+                                    >
                                         <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-md", skill.tone)}>
                                             <Icon className="size-5" />
                                         </span>
@@ -160,7 +187,12 @@ export default function IndexPage() {
                             </div>
                             <div className="mt-4 grid gap-3">
                                 {promptShowcase.slice(0, 3).map((item) => (
-                                    <button key={item.id} type="button" onClick={() => router.push("/prompts")} className="grid min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-3 rounded-md border border-stone-100 p-2 text-left transition hover:border-stone-200 hover:bg-stone-50 dark:border-stone-800 dark:hover:border-stone-700 dark:hover:bg-stone-950">
+                                    <button
+                                        key={item.id}
+                                        type="button"
+                                        onClick={() => router.push("/prompts")}
+                                        className="grid min-w-0 grid-cols-[64px_minmax(0,1fr)] gap-3 rounded-md border border-stone-100 p-2 text-left transition hover:border-stone-200 hover:bg-stone-50 dark:border-stone-800 dark:hover:border-stone-700 dark:hover:bg-stone-950"
+                                    >
                                         <img src={item.coverUrl} alt={item.title} className="h-16 w-16 rounded-md object-cover" />
                                         <span className="min-w-0">
                                             <span className="block truncate text-sm font-medium text-stone-900 dark:text-stone-100">{item.title}</span>

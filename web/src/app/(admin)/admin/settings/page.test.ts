@@ -15,4 +15,8 @@ describe("AdminSettingsPage", () => {
         expect(source).toContain("paymentMethodOptions");
         expect(source).toContain('setEpayPaymentMethods(form, values as string[])');
     });
+
+    test("does not use deprecated InputNumber addonAfter", () => {
+        expect(source).not.toContain("addonAfter=");
+    });
 });

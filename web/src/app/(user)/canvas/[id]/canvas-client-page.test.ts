@@ -21,3 +21,10 @@ describe("CanvasClientPage connected text generation", () => {
         expect(source).toContain("if (type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);");
     });
 });
+
+describe("CanvasClientPage retry config", () => {
+    test("ignores stale node models that do not match the retry generation mode", () => {
+        expect(source).toContain("modelMatchesCapability(savedModel, mode)");
+        expect(source).toContain("generationModelForMode(config, node, mode)");
+    });
+});

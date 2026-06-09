@@ -478,15 +478,10 @@ export default function AdminSettingsPage() {
                                                     dataIndex: "credits",
                                                     width: 220,
                                                     render: (_, item) => (
-                                                        <InputNumber
-                                                            min={0}
-                                                            step={1}
-                                                            precision={0}
-                                                            className="!w-full"
-                                                            value={item.credits}
-                                                            addonAfter="点"
-                                                            onChange={(value) => setModelCost(form, setModelCosts, item.model, Number(value) || 0)}
-                                                        />
+                                                        <Space.Compact style={{ width: "100%" }}>
+                                                            <InputNumber min={0} step={1} precision={0} className="!w-full" value={item.credits} onChange={(value) => setModelCost(form, setModelCosts, item.model, Number(value) || 0)} />
+                                                            <Button className="!pointer-events-none !px-2">点</Button>
+                                                        </Space.Compact>
                                                     ),
                                                 },
                                             ]}
@@ -611,12 +606,18 @@ export default function AdminSettingsPage() {
                                         </Col>
                                         <Col xs={24} md={4}>
                                             <Form.Item name={["private", "payment", "epay", "pricePerCredit"]} label="单点价格">
-                                                <InputNumber min={0} step={0.01} precision={4} className="!w-full" addonAfter="元" />
+                                                <Space.Compact style={{ width: "100%" }}>
+                                                    <InputNumber min={0} step={0.01} precision={4} className="!w-full" />
+                                                    <Button className="!pointer-events-none !px-2">元</Button>
+                                                </Space.Compact>
                                             </Form.Item>
                                         </Col>
                                         <Col xs={24} md={4}>
                                             <Form.Item name={["private", "payment", "epay", "minCredits"]} label="最低充值">
-                                                <InputNumber min={1} precision={0} className="!w-full" addonAfter="点" />
+                                                <Space.Compact style={{ width: "100%" }}>
+                                                    <InputNumber min={1} precision={0} className="!w-full" />
+                                                    <Button className="!pointer-events-none !px-2">点</Button>
+                                                </Space.Compact>
                                             </Form.Item>
                                         </Col>
                                         <Col span={24}>
@@ -865,7 +866,7 @@ export default function AdminSettingsPage() {
                     destroyOnHidden
                 >
                     <Flex vertical gap={12}>
-                        <Typography.Text type="secondary">普通文本模型会发送一条 hi；Agent Plan / Seedance 视频模型只做配置格式检查，不会发起视频生成，也不代表模型权限已验证。</Typography.Text>
+                        <Typography.Text type="secondary">普通文本模型会发送一条 hi；视频/图片生成模型只做配置格式检查，不会发起生成或 fpbrowser-use 探测，也不代表模型权限已验证。</Typography.Text>
                         <Input.Search placeholder="搜索模型..." allowClear value={testKeyword} onChange={(event) => setTestKeyword(event.target.value)} />
                         <Table
                             rowKey="model"

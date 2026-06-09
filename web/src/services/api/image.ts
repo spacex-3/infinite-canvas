@@ -28,6 +28,16 @@ type ImageTaskResponse = {
     msg?: string;
     response?: ImageApiResponse;
 };
+type FpbrowserVideoImageResponse = {
+    id: string;
+    status?: string;
+    error?: { message?: string };
+    image_url?: string;
+    url?: string;
+    video_url?: string;
+    metadata?: { result_urls?: unknown };
+};
+type ReferenceMediaUploadResponse = { id: string; url: string; mimeType: string; bytes: number };
 
 const QUALITY_BASE: Record<string, number> = {
     low: 1024,
@@ -50,6 +60,7 @@ const IMAGE_MAX_RATIO = 3;
 const IMAGE_OUTPUT_FORMAT = "png";
 const IMAGE_TASK_POLL_MS = 2000;
 const IMAGE_TASK_TIMEOUT_MS = 20 * 60 * 1000;
+const FPBROWSER_VIDEO_IMAGE_MODELS = new Set(["nana-banana-2", "nana-banana-pro", "nana-banana-2-4k", "nana-banana-pro-4k", "gpt-image2-1k", "gpt-image2-2k", "gpt-image2-4k"]);
 
 function normalizeQuality(quality: string) {
     const value = quality.trim().toLowerCase();
@@ -147,11 +158,17 @@ function parseImagePayload(payload: ImageApiResponse) {
 }
 
 function readAxiosError(error: unknown, fallback: string) {
-    if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; code?: number }>(error)) {
+    if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; detail?: unknown; code?: number }>(error)) {
         const responseData = error.response?.data;
-        return responseData?.msg || responseData?.error?.message || readStatusError(error.response?.status, fallback);
+        return responseData?.msg || responseData?.error?.message || readDetail(responseData?.detail) || readStatusError(error.response?.status, fallback);
     }
     return error instanceof Error ? error.message : fallback;
+}
+
+function readDetail(detail: unknown) {
+    if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object") return JSON.stringify(detail);
+    return "";
 }
 
 function readStatusError(status: number | undefined, fallback: string) {
@@ -209,6 +226,9 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
+    if (isFpbrowserVideoImageModel(config.model)) {
+        return requestFpbrowserVideoImageGeneration(config, prompt, [], { n, quality, size: requestSize });
+    }
     const payload = {
         model: config.model,
         prompt: withSystemPrompt(config, prompt),
@@ -236,6 +256,10 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const requestPrompt = buildImageReferencePromptText(prompt, references);
+    if (isFpbrowserVideoImageModel(config.model)) {
+        if (mask) throw new Error("当前 fpbrowser2api 图片模型暂不支持蒙版编辑");
+        return requestFpbrowserVideoImageGeneration(config, requestPrompt, references, { n, quality, size: requestSize });
+    }
     const formData = new FormData();
     formData.set("model", config.model);
     formData.set("prompt", withSystemPrompt(config, requestPrompt));
@@ -361,6 +385,109 @@ async function requestRemoteImageTask(config: AiConfig, path: "/images/generatio
     }
 
     throw new Error("生成任务仍在进行，请稍后重试或减少生成张数");
+}
+
+function isFpbrowserVideoImageModel(model: string) {
+    return FPBROWSER_VIDEO_IMAGE_MODELS.has(model.trim().toLowerCase());
+}
+
+async function requestFpbrowserVideoImageGeneration(config: AiConfig, prompt: string, references: ReferenceImage[], options: { n: number; quality?: string; size?: string }) {
+    const referenceUrls = references.length ? await Promise.all(references.map(resolveFpbrowserImageReferenceUrl)) : [];
+    const payload: Record<string, unknown> = {
+        model: config.model,
+        prompt: withSystemPrompt(config, prompt),
+        duration: 1,
+        n: Math.max(1, Math.min(4, options.n)),
+        ...(options.quality ? { quality: options.quality, resolution: fpbrowserResolutionFromQuality(options.quality) } : {}),
+        ...(options.size ? { size: options.size } : {}),
+        ...(resolveFpbrowserAspectRatio(config.size) ? { aspect_ratio: resolveFpbrowserAspectRatio(config.size) } : {}),
+        ...(referenceUrls.length ? { images: referenceUrls } : {}),
+    };
+
+    try {
+        const created = unwrapEnvelope((await axios.post<ApiEnvelope<FpbrowserVideoImageResponse>>(aiApiUrl(config, "/videos"), payload, { headers: aiHeaders(config, "application/json") })).data, "图片任务创建失败");
+        if (!created.id) throw new Error("图片任务没有返回任务 ID");
+        const createdUrls = readFpbrowserVideoImageUrls(created);
+        if (createdUrls.length) {
+            refreshRemoteUser(config);
+            return createdUrls.map((dataUrl) => ({ id: nanoid(), dataUrl }));
+        }
+
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < IMAGE_TASK_TIMEOUT_MS) {
+            await delay(IMAGE_TASK_POLL_MS);
+            const task = unwrapEnvelope((await axios.get<ApiEnvelope<FpbrowserVideoImageResponse>>(aiApiUrl(config, `/videos/${created.id}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: config.model } : undefined })).data, "图片任务不存在");
+            const urls = readFpbrowserVideoImageUrls(task);
+            if (isFpbrowserCompletedStatus(task.status) && urls.length) {
+                refreshRemoteUser(config);
+                return urls.map((dataUrl) => ({ id: nanoid(), dataUrl }));
+            }
+            if (isFpbrowserFailedStatus(task.status)) throw new Error(task.error?.message || "图片生成失败");
+        }
+        throw new Error("图片生成超时，请稍后重试");
+    } catch (error) {
+        throw new Error(readAxiosError(error, "请求失败"));
+    }
+}
+
+async function resolveFpbrowserImageReferenceUrl(image: ReferenceImage) {
+    const directUrl = image.url || image.dataUrl;
+    if (isPublicMediaUrl(directUrl)) return directUrl;
+    const dataUrl = await imageToDataUrl(image);
+    if (!dataUrl) throw new Error("参考图读取失败，请换一张图片或重新上传");
+    const body = new FormData();
+    body.append("file", dataUrlToFile({ ...image, dataUrl }), image.name || "reference.png");
+    const token = useUserStore.getState().token;
+    const response = await axios.post<ApiEnvelope<ReferenceMediaUploadResponse>>("/api/v1/media/references", body, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+    const payload = unwrapEnvelope(response.data, "参考素材上传失败");
+    if (!payload.url) throw new Error("参考素材上传后没有返回公网 URL");
+    return payload.url;
+}
+
+function isPublicMediaUrl(value: string | undefined) {
+    if (!value) return false;
+    try {
+        const url = new URL(value);
+        return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+        return false;
+    }
+}
+
+function fpbrowserResolutionFromQuality(quality: string) {
+    if (quality === "high") return "4k";
+    if (quality === "medium") return "2k";
+    return "1k";
+}
+
+function resolveFpbrowserAspectRatio(size: string) {
+    const value = size.trim();
+    if (!value || value.toLowerCase() === "auto") return "";
+    const dimensions = parseImageDimensions(value);
+    if (dimensions) return reduceRatio(dimensions.width, dimensions.height);
+    return value.includes(":") ? value : "";
+}
+
+function reduceRatio(width: number, height: number) {
+    const divisor = gcd(width, height);
+    return `${width / divisor}:${height / divisor}`;
+}
+
+function gcd(a: number, b: number): number {
+    return b === 0 ? Math.abs(a) : gcd(b, a % b);
+}
+
+function readFpbrowserVideoImageUrls(payload: FpbrowserVideoImageResponse) {
+    const resultUrls = payload.metadata?.result_urls;
+    return [payload.image_url, payload.url, ...(Array.isArray(resultUrls) ? resultUrls : [])].filter((url): url is string => typeof url === "string" && Boolean(url) && !url.match(/\.(mp4|mov|webm)(\?|$)/i));
+}
+
+function isFpbrowserCompletedStatus(status: string | undefined) {
+    return status === "completed" || status === "succeeded" || status === "success";
+}
+
+function isFpbrowserFailedStatus(status: string | undefined) {
+    return status === "failed" || status === "cancelled" || status === "expired";
 }
 
 function unwrapEnvelope<T>(payload: ApiEnvelope<T>, emptyMessage: string): T {

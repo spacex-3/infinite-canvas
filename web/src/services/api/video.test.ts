@@ -17,7 +17,7 @@ describe("buildVeoOmniFlashEditPayload", () => {
         expect(payload).toEqual({
             model: "veo-omni-flash-video-edit",
             prompt: "turn this clip into a rainy cyberpunk scene",
-            duration: 8,
+            duration: 10,
             aspect_ratio: "9:16",
             video_url: "https://cdn.example.com/input.mp4",
             Ingredients_images: ["https://cdn.example.com/ref-a.png", "https://cdn.example.com/ref-b.png"],
@@ -37,7 +37,7 @@ describe("buildVeoOmniFlashEditPayload", () => {
         expect(payload).toEqual({
             model: "veo-omni-flash-video-edit",
             prompt: "make it cinematic",
-            duration: 8,
+            duration: 10,
             aspect_ratio: "16:9",
             video_url: "https://cdn.example.com/input.mp4",
         });

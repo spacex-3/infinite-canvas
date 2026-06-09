@@ -2,8 +2,8 @@
 
 import { LockOutlined, MailOutlined, SafetyCertificateOutlined, UserOutlined } from "@ant-design/icons";
 import { App, Button, Form, Input, Segmented, Space } from "antd";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
 
 import { fetchCurrentUser } from "@/services/api/auth";
 import { sendRegisterEmailCode } from "@/services/api/auth";
@@ -25,7 +25,21 @@ function safeRedirect(value: string | null): string {
     if (!cleaned.startsWith("/") || cleaned.startsWith("//") || cleaned.startsWith("/\\")) {
         return "/";
     }
+    if (cleaned === "/admin") {
+        return "/admin/settings";
+    }
     return cleaned;
+}
+
+function defaultRedirectForRole(role: string): string {
+    return role === "admin" ? "/admin/settings" : "/canvas";
+}
+
+function navigateAfterAuth(target: string) {
+    window.location.href = target;
+    window.setTimeout(() => {
+        window.location.assign(target);
+    }, 50);
 }
 
 export default function LoginPage() {
@@ -38,7 +52,6 @@ export default function LoginPage() {
 
 function LoginContent() {
     const { message } = App.useApp();
-    const router = useRouter();
     const searchParams = useSearchParams();
     const [form] = Form.useForm<LoginFormValues>();
     const login = useUserStore((state) => state.login);
@@ -46,23 +59,30 @@ function LoginContent() {
     const setSession = useUserStore((state) => state.setSession);
     const isLoading = useUserStore((state) => state.isLoading);
     const allowRegister = useConfigStore((state) => state.publicSettings?.auth?.allowRegister !== false);
+    const [isMounted, setIsMounted] = useState(false);
     const [mode, setMode] = useState<"login" | "register">("login");
     const [sendingCode, setSendingCode] = useState(false);
     const [countdown, setCountdown] = useState(0);
-    const redirect = safeRedirect(searchParams.get("redirect"));
+    const redirectingRef = useRef(false);
+    const explicitRedirect = searchParams.get("redirect");
+    const redirect = safeRedirect(explicitRedirect);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     useEffect(() => {
         const token = searchParams.get("token");
         const error = searchParams.get("error");
         if (error) message.error(error);
-        if (!token) return;
+        if (!token || redirectingRef.current) return;
+        redirectingRef.current = true;
         void fetchCurrentUser(token).then((user) => {
             setSession(token, user);
             message.success("登录成功");
-            router.replace(redirect);
-            router.refresh();
+            navigateAfterAuth(explicitRedirect ? redirect : defaultRedirectForRole(user.role));
         });
-    }, [message, redirect, router, searchParams, setSession]);
+    }, [explicitRedirect, message, redirect, searchParams, setSession]);
 
     useEffect(() => {
         if (!allowRegister && mode === "register") setMode("login");
@@ -105,12 +125,74 @@ function LoginContent() {
             const action = mode === "register" ? register : login;
             const user = await action({ username: values.username, password: values.password, email: values.email, code: values.code });
             message.success(mode === "register" ? "注册成功" : "登录成功");
-            router.replace(redirect);
-            router.refresh();
-            if (user.role !== "admin") router.replace("/");
+            redirectingRef.current = true;
+            navigateAfterAuth(explicitRedirect ? redirect : defaultRedirectForRole(user.role));
         } catch (error) {
+            redirectingRef.current = false;
             message.error(error instanceof Error ? error.message : "登录失败");
         }
+    };
+
+    const renderLoginForm = () => {
+        if (!isMounted) {
+            return <div className="min-h-[284px]" aria-hidden="true" />;
+        }
+
+        return (
+            <Form<LoginFormValues> form={form} layout="vertical" size="large" requiredMark={false} onFinish={submit}>
+                <Form.Item>
+                    <Segmented
+                        block
+                        value={mode}
+                        onChange={(value) => setMode(value as "login" | "register")}
+                        options={
+                            allowRegister
+                                ? [
+                                      { label: "登录", value: "login" },
+                                      { label: "注册", value: "register" },
+                                  ]
+                                : [{ label: "登录", value: "login" }]
+                        }
+                    />
+                </Form.Item>
+                <Form.Item name="username" label={<span className="font-medium text-stone-800 dark:text-stone-200">用户名</span>} rules={[{ required: true, message: "请输入用户名" }]}>
+                    <Input prefix={<UserOutlined />} autoComplete="username" />
+                </Form.Item>
+                <Form.Item name="password" label={<span className="font-medium text-stone-800 dark:text-stone-200">密码</span>} rules={[{ required: true, message: "请输入密码" }]}>
+                    <Input.Password prefix={<LockOutlined />} autoComplete="current-password" />
+                </Form.Item>
+                {mode === "register" ? (
+                    <>
+                        <Form.Item
+                            name="email"
+                            label={<span className="font-medium text-stone-800 dark:text-stone-200">邮箱</span>}
+                            rules={[
+                                { required: true, message: "请输入邮箱" },
+                                { type: "email", message: "邮箱格式不正确" },
+                            ]}
+                        >
+                            <Input prefix={<MailOutlined />} autoComplete="email" />
+                        </Form.Item>
+                        <Form.Item name="code" label={<span className="font-medium text-stone-800 dark:text-stone-200">邮箱验证码</span>} rules={[{ required: true, message: "请输入邮箱验证码" }]}>
+                            <Space.Compact className="w-full">
+                                <Input prefix={<SafetyCertificateOutlined />} autoComplete="one-time-code" />
+                                <Button loading={sendingCode} disabled={countdown > 0} onClick={() => void sendCode()}>
+                                    {countdown > 0 ? `${countdown}s` : "发送验证码"}
+                                </Button>
+                            </Space.Compact>
+                        </Form.Item>
+                        <Form.Item name="confirmPassword" label={<span className="font-medium text-stone-800 dark:text-stone-200">确认密码</span>} rules={[{ required: true, message: "请再次输入密码" }]}>
+                            <Input.Password prefix={<LockOutlined />} autoComplete="new-password" />
+                        </Form.Item>
+                    </>
+                ) : null}
+                <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+                    <Button block type="primary" htmlType="submit" loading={isLoading}>
+                        {mode === "register" ? "注册" : "登录"}
+                    </Button>
+                </Space>
+            </Form>
+        );
     };
 
     return (
@@ -129,45 +211,7 @@ function LoginContent() {
                     <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">使用账号密码注册或登录。</p>
                 </div>
 
-                <Form<LoginFormValues> form={form} layout="vertical" size="large" requiredMark={false} onFinish={submit}>
-                    <Form.Item>
-                        <Segmented
-                            block
-                            value={mode}
-                            onChange={(value) => setMode(value as "login" | "register")}
-                            options={allowRegister ? [{ label: "登录", value: "login" }, { label: "注册", value: "register" }] : [{ label: "登录", value: "login" }]}
-                        />
-                    </Form.Item>
-                    <Form.Item name="username" label={<span className="font-medium text-stone-800 dark:text-stone-200">用户名</span>} rules={[{ required: true, message: "请输入用户名" }]}>
-                        <Input prefix={<UserOutlined />} autoComplete="username" />
-                    </Form.Item>
-                    <Form.Item name="password" label={<span className="font-medium text-stone-800 dark:text-stone-200">密码</span>} rules={[{ required: true, message: "请输入密码" }]}>
-                        <Input.Password prefix={<LockOutlined />} autoComplete="current-password" />
-                    </Form.Item>
-                    {mode === "register" ? (
-                        <>
-                            <Form.Item name="email" label={<span className="font-medium text-stone-800 dark:text-stone-200">邮箱</span>} rules={[{ required: true, message: "请输入邮箱" }, { type: "email", message: "邮箱格式不正确" }]}>
-                                <Input prefix={<MailOutlined />} autoComplete="email" />
-                            </Form.Item>
-                            <Form.Item name="code" label={<span className="font-medium text-stone-800 dark:text-stone-200">邮箱验证码</span>} rules={[{ required: true, message: "请输入邮箱验证码" }]}>
-                                <Space.Compact className="w-full">
-                                    <Input prefix={<SafetyCertificateOutlined />} autoComplete="one-time-code" />
-                                    <Button loading={sendingCode} disabled={countdown > 0} onClick={() => void sendCode()}>
-                                        {countdown > 0 ? `${countdown}s` : "发送验证码"}
-                                    </Button>
-                                </Space.Compact>
-                            </Form.Item>
-                            <Form.Item name="confirmPassword" label={<span className="font-medium text-stone-800 dark:text-stone-200">确认密码</span>} rules={[{ required: true, message: "请再次输入密码" }]}>
-                                <Input.Password prefix={<LockOutlined />} autoComplete="new-password" />
-                            </Form.Item>
-                        </>
-                    ) : null}
-                    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-                        <Button block type="primary" htmlType="submit" loading={isLoading}>
-                            {mode === "register" ? "注册" : "登录"}
-                        </Button>
-                    </Space>
-                </Form>
+                {renderLoginForm()}
             </section>
         </main>
     );

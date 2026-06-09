@@ -99,6 +99,25 @@ func TestNormalizeSettingsPublishesEnabledChannelModelsAndRepairsDefaults(t *tes
 	}
 }
 
+func TestNormalizeSettingsRepairsImageDefaultAwayFromVideoModel(t *testing.T) {
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{
+			ModelChannel: model.PublicModelChannelSetting{
+				DefaultImageModel: "veo-omni-flash",
+			},
+		},
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{
+				{Enabled: true, Models: []string{"veo-omni-flash", "nana-banana-2", "nana-banana-pro"}},
+			},
+		},
+	})
+
+	if settings.Public.ModelChannel.DefaultImageModel != "nana-banana-2" {
+		t.Fatalf("default image model = %q, want nana-banana-2", settings.Public.ModelChannel.DefaultImageModel)
+	}
+}
+
 func TestNormalizeSettingsForcesEmailVerificationAndDisablesCustomChannel(t *testing.T) {
 	allowCustomChannel := true
 	settings := normalizeSettings(model.Settings{

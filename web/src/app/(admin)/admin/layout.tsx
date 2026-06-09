@@ -3,9 +3,9 @@
 import { FileTextOutlined, HomeOutlined, LogoutOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
 import { Button, Flex, Layout, Menu, Typography, theme } from "antd";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { adminLayoutStyle } from "@/lib/app-theme";
@@ -21,12 +21,13 @@ const adminMenus = [
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
     const { token: antToken } = theme.useToken();
-    const router = useRouter();
     const pathname = usePathname();
     const token = useUserStore((state) => state.token);
     const user = useUserStore((state) => state.user);
     const isReady = useUserStore((state) => state.isReady);
+    const hydrateUser = useUserStore((state) => state.hydrateUser);
     const logout = useUserStore((state) => state.clearSession);
+    const [authChecked, setAuthChecked] = useState(false);
     const activeKey = pathname.startsWith("/admin/settings")
         ? "/admin/settings"
         : pathname.startsWith("/admin/assets")
@@ -41,17 +42,29 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const pageTitle = pathname.startsWith("/admin/settings") ? "系统设置" : pathname.startsWith("/admin/assets") ? "素材库管理" : pathname.startsWith("/admin/prompts") ? "提示词管理" : pathname.startsWith("/admin/credit-logs") ? "算力点日志" : "用户管理";
 
     useEffect(() => {
+        let active = true;
+        setAuthChecked(false);
+        void hydrateUser().finally(() => {
+            if (active) setAuthChecked(true);
+        });
+        return () => {
+            active = false;
+        };
+    }, [hydrateUser]);
+
+    useEffect(() => {
+        if (!authChecked) return;
         if (!isReady) return;
         if (!token) {
-            router.replace("/login?redirect=/admin");
+            window.location.href = "/login?redirect=/admin/settings";
             return;
         }
         if (user?.role !== "admin") {
-            router.replace("/");
+            window.location.href = "/";
         }
-    }, [isReady, router, token, user?.role]);
+    }, [authChecked, isReady, token, user?.role]);
 
-    if (!isReady || !token || user?.role !== "admin") {
+    if (!authChecked || !isReady || !token || user?.role !== "admin") {
         return (
             <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", background: antToken.colorBgLayout }}>
                 <span />
@@ -83,7 +96,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                     }))}
                 />
                 <Flex vertical gap={8} style={{ position: "absolute", bottom: 0, insetInline: 0, padding: 12, borderTop: `1px solid ${antToken.colorBorder}`, background: antToken.colorBgContainer }}>
-                    <Button block icon={<HomeOutlined />} href="/canvas" target="_blank" rel="noreferrer">
+                    <Button block icon={<HomeOutlined />} href="/canvas">
                         前往画布
                     </Button>
                     <Button block icon={<LogoutOutlined />} onClick={logout}>

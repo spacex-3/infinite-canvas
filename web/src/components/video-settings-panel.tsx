@@ -8,7 +8,8 @@ import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedan
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
 
-const resolutionOptions = [
+export const videoResolutionOptions = [
+    { value: "1080", label: "1080p" },
     { value: "720", label: "720p" },
     { value: "480", label: "480p" },
 ];
@@ -52,7 +53,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 {showTitle ? <div className="text-lg font-semibold">视频设置</div> : null}
                 <SettingGroup title="清晰度" color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
-                        {resolutionOptions.map((item) => (
+                        {videoResolutionOptions.map((item) => (
                             <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>
                                 {item.label}
                             </OptionPill>

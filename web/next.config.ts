@@ -12,10 +12,14 @@ const localChangelog = readFileSync(resolve(webDir, "../CHANGELOG.md"), "utf8");
 export default function nextConfig(phase: string): NextConfig {
     const isDev = phase === PHASE_DEVELOPMENT_SERVER;
     const releases = parseChangelog(localChangelog);
+    const configuredAllowedDevOrigins = (process.env.NEXT_ALLOWED_DEV_ORIGINS || "")
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean);
 
     return {
         output: "standalone",
-        allowedDevOrigins: isDev ? ["*.*.*.*"] : [],
+        allowedDevOrigins: isDev ? ["*.*.*.*", "*.trycloudflare.com", ...configuredAllowedDevOrigins] : [],
         devIndicators: false,
         typescript: {
             ignoreBuildErrors: true,

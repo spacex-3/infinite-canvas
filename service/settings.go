@@ -56,8 +56,8 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 	if err != nil {
 		return "", err
 	}
-	if isArkAgentPlanChannel(resolved) || isSeedanceModelName(modelName) {
-		return testArkSeedanceChannelModel(resolved, modelName)
+	if isArkAgentPlanChannel(resolved) || isNoChatProbeModelName(modelName) {
+		return testGenerationChannelModel(resolved, modelName)
 	}
 	return testAdminChannelModel(resolved, modelName)
 }
@@ -325,6 +325,15 @@ func isSeedanceModelName(modelName string) bool {
 	return strings.Contains(modelName, "seedance") || strings.Contains(modelName, "doubao-seedance")
 }
 
+func isNoChatProbeModelName(modelName string) bool {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	return name == "fpbrowser-use" ||
+		isSeedanceModelName(name) ||
+		strings.HasPrefix(name, "veo-") ||
+		strings.HasPrefix(name, "nana-banana-") ||
+		strings.HasPrefix(name, "gpt-image2-")
+}
+
 func enabledChannelModels(channels []model.ModelChannel) []string {
 	models := []string{}
 	for _, channel := range channels {
@@ -353,7 +362,7 @@ func uniqueModelNames(models []string) []string {
 func repairDefaultModel(current string, models []string, preferred func(string) bool) string {
 	current = strings.TrimSpace(current)
 	for _, item := range models {
-		if item == current {
+		if item == current && preferred(item) {
 			return current
 		}
 	}
@@ -370,12 +379,12 @@ func repairDefaultModel(current string, models []string, preferred func(string) 
 
 func isVideoModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedance") || strings.Contains(name, "video")
+	return strings.Contains(name, "seedance") || strings.Contains(name, "video") || strings.Contains(name, "veo")
 }
 
 func isImageModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image")
+	return strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image") || strings.Contains(name, "nana-banana")
 }
 
 func isTextModelName(modelName string) bool {
@@ -504,7 +513,7 @@ func testAdminChannelModel(channel model.ModelChannel, modelName string) (string
 	return "ok", nil
 }
 
-func testArkSeedanceChannelModel(channel model.ModelChannel, modelName string) (string, error) {
+func testGenerationChannelModel(channel model.ModelChannel, modelName string) (string, error) {
 	if strings.TrimSpace(modelName) == "" {
 		return "", errors.New("缺少模型名称")
 	}
@@ -515,9 +524,9 @@ func testArkSeedanceChannelModel(channel model.ModelChannel, modelName string) (
 		return "", safeMessageError{message: "缺少 API Key"}
 	}
 	if !isArkAgentPlanChannel(channel) {
-		return "Seedance 视频模型不会发送 /chat/completions 文本测试。已检查 Base URL、API Key 和模型名非空；未调用视频生成接口，因此未验证套餐额度或模型权限。", nil
+		return "视频/图片生成模型不会发送 /chat/completions 文本测试。已检查 Base URL、API Key 和模型名非空；未调用生成接口，因此未验证套餐额度或模型权限。", nil
 	}
-	return "Agent Plan / Seedance 视频模型配置格式已通过。后台测试不会调用视频生成接口，因此未验证 API Key、套餐额度或模型权限；请在画布中使用视频生成验证。", nil
+	return "Agent Plan / 视频生成模型配置格式已通过。后台测试不会调用视频生成接口，因此未验证 API Key、套餐额度或模型权限；请在画布中使用生成任务验证。", nil
 }
 
 func readAdminChannelError(body []byte, statusCode int, fallback string) error {

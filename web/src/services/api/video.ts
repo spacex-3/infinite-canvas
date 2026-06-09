@@ -14,7 +14,7 @@ type ApiVideoResponse = VideoResponse | { code?: number; data?: VideoResponse | 
 type VeoOmniFlashEditPayload = {
     model: string;
     prompt: string;
-    duration: 8;
+    duration: 10;
     aspect_ratio: string;
     video_url: string;
     Ingredients_images?: string[];
@@ -125,7 +125,7 @@ export function buildVeoOmniFlashEditPayload(input: VeoOmniFlashEditPayloadInput
     const payload: VeoOmniFlashEditPayload = {
         model: input.model,
         prompt: input.prompt,
-        duration: 8,
+        duration: 10,
         aspect_ratio: input.aspectRatio || "16:9",
         video_url: input.videoUrl,
     };
