@@ -28,3 +28,12 @@ describe("CanvasClientPage retry config", () => {
         expect(source).toContain("generationModelForMode(config, node, mode)");
     });
 });
+
+describe("CanvasClientPage generation progress", () => {
+    test("passes progress callbacks to canvas image and video generation requests", () => {
+        expect(source).toContain("const updateGenerationProgress = (targetId: string, progress: number)");
+        expect(source).toContain("(progress) => updateGenerationProgress(videoId, progress)");
+        expect(source).toContain("(progress) => updateGenerationProgress(targetId, progress)");
+        expect(source).toContain("const updateRetryProgress = (progress: number)");
+    });
+});

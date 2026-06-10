@@ -8,8 +8,9 @@ import { buildApiUrl, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
+import { notifyGenerationProgress, type GenerationProgressCallback } from "./progress";
 
-type VideoResponse = { id: string; status?: string; error?: { message?: string } };
+type VideoResponse = { id: string; status?: string; progress?: number; error?: { message?: string } };
 type ApiVideoResponse = VideoResponse | { code?: number; data?: VideoResponse | null; msg?: string };
 type VeoOmniFlashEditPayload = {
     model: string;
@@ -95,11 +96,11 @@ function refreshRemoteUser(config: AiConfig) {
     if (config.channelMode === "remote") void useUserStore.getState().hydrateUser();
 }
 
-export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = []): Promise<VideoGenerationResult> {
+export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], onProgress?: GenerationProgressCallback): Promise<VideoGenerationResult> {
     const model = (config.model || config.videoModel).trim();
     assertVideoConfig(config, model);
     if (isVeoOmniVideoModel(model)) {
-        return requestVeoOmniGeneration(config, model, prompt, references, videoReferences, audioReferences);
+        return requestVeoOmniGeneration(config, model, prompt, references, videoReferences, audioReferences, onProgress);
     }
     if (isSeedanceVideoConfig({ ...config, model })) {
         return requestSeedanceGeneration(config, model, prompt, references, videoReferences, audioReferences);
@@ -237,7 +238,7 @@ async function requestSeedanceGeneration(config: AiConfig, model: string, prompt
     }
 }
 
-async function requestVeoOmniGeneration(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
+async function requestVeoOmniGeneration(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], onProgress?: GenerationProgressCallback) {
     if (audioReferences.length) throw new Error("Veo Omni Flash 不支持参考音频，请移除参考音频");
     if (videoReferences.length > 1) throw new Error("Veo Omni Flash Video Edit 目前只支持 1 个参考视频");
     if (isVeoOmniVideoEditModel(model) && !videoReferences.length) throw new Error("Veo Omni Flash Video Edit 需要连接 1 个参考视频");
@@ -253,6 +254,7 @@ async function requestVeoOmniGeneration(config: AiConfig, model: string, prompt:
 
     try {
         const created = unwrapVeoOmniTask((await axios.post<ApiEnvelope<VeoOmniTask>>(aiApiUrl(config, "/videos"), payload, { headers: aiHeaders(config, "application/json") })).data);
+        notifyGenerationProgress(onProgress, created.progress);
         const taskId = veoOmniTaskId(created);
         if (!taskId) throw new Error("Veo Omni 接口没有返回任务 ID");
         const createdUrl = veoOmniTaskUrl(created);
@@ -262,6 +264,7 @@ async function requestVeoOmniGeneration(config: AiConfig, model: string, prompt:
         }
         for (let attempt = 0; attempt < 120; attempt += 1) {
             const task = unwrapVeoOmniTask((await axios.get<ApiEnvelope<VeoOmniTask>>(aiApiUrl(config, `/videos/${taskId}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: payload.model } : undefined })).data);
+            notifyGenerationProgress(onProgress, task.progress);
             if (isVeoOmniCompleted(task)) {
                 const url = veoOmniTaskUrl(task);
                 if (!url) throw new Error("Veo Omni 任务成功但没有返回视频 URL");

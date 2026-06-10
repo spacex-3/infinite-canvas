@@ -7,6 +7,7 @@ import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
 import type { ReferenceImage } from "@/types/image";
+import { notifyGenerationProgress, type GenerationProgressCallback } from "./progress";
 
 export type ChatCompletionMessage = {
     role: "system" | "user" | "assistant";
@@ -25,12 +26,14 @@ type ApiEnvelope<T> = T | { code?: number; data?: T | null; msg?: string };
 type ImageTaskResponse = {
     id: string;
     status: "pending" | "success" | "failed";
+    progress?: number;
     msg?: string;
     response?: ImageApiResponse;
 };
 type FpbrowserVideoImageResponse = {
     id: string;
     status?: string;
+    progress?: number;
     error?: { message?: string };
     image_url?: string;
     url?: string;
@@ -222,12 +225,12 @@ function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) 
     return systemPrompt ? [{ role: "system" as const, content: systemPrompt }, ...messages] : messages;
 }
 
-export async function requestGeneration(config: AiConfig, prompt: string) {
+export async function requestGeneration(config: AiConfig, prompt: string, onProgress?: GenerationProgressCallback) {
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     if (isFpbrowserVideoImageModel(config.model)) {
-        return requestFpbrowserVideoImageGeneration(config, prompt, [], { n, quality, size: requestSize });
+        return requestFpbrowserVideoImageGeneration(config, prompt, [], { n, quality, size: requestSize }, onProgress);
     }
     const payload = {
         model: config.model,
@@ -241,7 +244,7 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
     try {
         const payloadData =
             config.channelMode === "remote"
-                ? await requestRemoteImageTask(config, "/images/generations", payload, aiHeaders(config, "application/json"))
+                ? await requestRemoteImageTask(config, "/images/generations", payload, aiHeaders(config, "application/json"), onProgress)
                 : (await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/generations"), payload, { headers: aiHeaders(config, "application/json") })).data;
         const images = parseImagePayload(payloadData);
         refreshRemoteUser(config);
@@ -251,14 +254,14 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
     }
 }
 
-export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage) {
+export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, onProgress?: GenerationProgressCallback) {
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const requestPrompt = buildImageReferencePromptText(prompt, references);
     if (isFpbrowserVideoImageModel(config.model)) {
         if (mask) throw new Error("当前 fpbrowser2api 图片模型暂不支持蒙版编辑");
-        return requestFpbrowserVideoImageGeneration(config, requestPrompt, references, { n, quality, size: requestSize });
+        return requestFpbrowserVideoImageGeneration(config, requestPrompt, references, { n, quality, size: requestSize }, onProgress);
     }
     const formData = new FormData();
     formData.set("model", config.model);
@@ -278,7 +281,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 
     try {
         const payloadData =
-            config.channelMode === "remote" ? await requestRemoteImageTask(config, "/images/edits", formData, aiHeaders(config)) : (await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config) })).data;
+            config.channelMode === "remote" ? await requestRemoteImageTask(config, "/images/edits", formData, aiHeaders(config), onProgress) : (await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config) })).data;
         const images = parseImagePayload(payloadData);
         refreshRemoteUser(config);
         return images;
@@ -366,9 +369,10 @@ export async function fetchImageModels(config: AiConfig) {
     }
 }
 
-async function requestRemoteImageTask(config: AiConfig, path: "/images/generations" | "/images/edits", body: Record<string, unknown> | FormData, headers: ReturnType<typeof aiHeaders>) {
+async function requestRemoteImageTask(config: AiConfig, path: "/images/generations" | "/images/edits", body: Record<string, unknown> | FormData, headers: ReturnType<typeof aiHeaders>, onProgress?: GenerationProgressCallback) {
     const startedAt = Date.now();
     const created = unwrapEnvelope((await axios.post<ApiEnvelope<ImageTaskResponse>>(`/api/v1${path}/tasks`, body, { headers })).data, "生成任务创建失败");
+    notifyGenerationProgress(onProgress, created.progress);
     let task = created;
 
     while (Date.now() - startedAt < IMAGE_TASK_TIMEOUT_MS) {
@@ -382,6 +386,7 @@ async function requestRemoteImageTask(config: AiConfig, path: "/images/generatio
         }
         await delay(IMAGE_TASK_POLL_MS);
         task = unwrapEnvelope((await axios.get<ApiEnvelope<ImageTaskResponse>>(`/api/v1/images/tasks/${encodeURIComponent(created.id)}`, { headers: aiHeaders(config) })).data, "生成任务不存在");
+        notifyGenerationProgress(onProgress, task.progress);
     }
 
     throw new Error("生成任务仍在进行，请稍后重试或减少生成张数");
@@ -391,7 +396,7 @@ function isFpbrowserVideoImageModel(model: string) {
     return FPBROWSER_VIDEO_IMAGE_MODELS.has(model.trim().toLowerCase());
 }
 
-async function requestFpbrowserVideoImageGeneration(config: AiConfig, prompt: string, references: ReferenceImage[], options: { n: number; quality?: string; size?: string }) {
+async function requestFpbrowserVideoImageGeneration(config: AiConfig, prompt: string, references: ReferenceImage[], options: { n: number; quality?: string; size?: string }, onProgress?: GenerationProgressCallback) {
     const referenceUrls = references.length ? await Promise.all(references.map(resolveFpbrowserImageReferenceUrl)) : [];
     const payload: Record<string, unknown> = {
         model: config.model,
@@ -406,6 +411,7 @@ async function requestFpbrowserVideoImageGeneration(config: AiConfig, prompt: st
 
     try {
         const created = unwrapEnvelope((await axios.post<ApiEnvelope<FpbrowserVideoImageResponse>>(aiApiUrl(config, "/videos"), payload, { headers: aiHeaders(config, "application/json") })).data, "图片任务创建失败");
+        notifyGenerationProgress(onProgress, created.progress);
         if (!created.id) throw new Error("图片任务没有返回任务 ID");
         const createdUrls = readFpbrowserVideoImageUrls(created);
         if (createdUrls.length) {
@@ -417,6 +423,7 @@ async function requestFpbrowserVideoImageGeneration(config: AiConfig, prompt: st
         while (Date.now() - startedAt < IMAGE_TASK_TIMEOUT_MS) {
             await delay(IMAGE_TASK_POLL_MS);
             const task = unwrapEnvelope((await axios.get<ApiEnvelope<FpbrowserVideoImageResponse>>(aiApiUrl(config, `/videos/${created.id}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: config.model } : undefined })).data, "图片任务不存在");
+            notifyGenerationProgress(onProgress, task.progress);
             const urls = readFpbrowserVideoImageUrls(task);
             if (isFpbrowserCompletedStatus(task.status) && urls.length) {
                 refreshRemoteUser(config);
