@@ -372,7 +372,7 @@ export async function fetchImageModels(config: AiConfig) {
 async function requestRemoteImageTask(config: AiConfig, path: "/images/generations" | "/images/edits", body: Record<string, unknown> | FormData, headers: ReturnType<typeof aiHeaders>, onProgress?: GenerationProgressCallback) {
     const startedAt = Date.now();
     const created = unwrapEnvelope((await axios.post<ApiEnvelope<ImageTaskResponse>>(`/api/v1${path}/tasks`, body, { headers })).data, "生成任务创建失败");
-    notifyGenerationProgress(onProgress, created.progress);
+    notifyGenerationProgress(onProgress, created);
     let task = created;
 
     while (Date.now() - startedAt < IMAGE_TASK_TIMEOUT_MS) {
@@ -386,7 +386,7 @@ async function requestRemoteImageTask(config: AiConfig, path: "/images/generatio
         }
         await delay(IMAGE_TASK_POLL_MS);
         task = unwrapEnvelope((await axios.get<ApiEnvelope<ImageTaskResponse>>(`/api/v1/images/tasks/${encodeURIComponent(created.id)}`, { headers: aiHeaders(config) })).data, "生成任务不存在");
-        notifyGenerationProgress(onProgress, task.progress);
+        notifyGenerationProgress(onProgress, task);
     }
 
     throw new Error("生成任务仍在进行，请稍后重试或减少生成张数");
@@ -411,7 +411,7 @@ async function requestFpbrowserVideoImageGeneration(config: AiConfig, prompt: st
 
     try {
         const created = unwrapEnvelope((await axios.post<ApiEnvelope<FpbrowserVideoImageResponse>>(aiApiUrl(config, "/videos"), payload, { headers: aiHeaders(config, "application/json") })).data, "图片任务创建失败");
-        notifyGenerationProgress(onProgress, created.progress);
+        notifyGenerationProgress(onProgress, created);
         if (!created.id) throw new Error("图片任务没有返回任务 ID");
         const createdUrls = readFpbrowserVideoImageUrls(created);
         if (createdUrls.length) {
@@ -423,7 +423,7 @@ async function requestFpbrowserVideoImageGeneration(config: AiConfig, prompt: st
         while (Date.now() - startedAt < IMAGE_TASK_TIMEOUT_MS) {
             await delay(IMAGE_TASK_POLL_MS);
             const task = unwrapEnvelope((await axios.get<ApiEnvelope<FpbrowserVideoImageResponse>>(aiApiUrl(config, `/videos/${created.id}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: config.model } : undefined })).data, "图片任务不存在");
-            notifyGenerationProgress(onProgress, task.progress);
+            notifyGenerationProgress(onProgress, task);
             const urls = readFpbrowserVideoImageUrls(task);
             if (isFpbrowserCompletedStatus(task.status) && urls.length) {
                 refreshRemoteUser(config);

@@ -7,8 +7,25 @@ export function normalizeGenerationProgress(value: unknown) {
     return Math.max(0, Math.min(100, Math.round(percent)));
 }
 
+export function readGenerationProgress(value: unknown) {
+    const direct = normalizeGenerationProgress(value);
+    if (direct !== undefined) return direct;
+    if (!value || typeof value !== "object") return undefined;
+
+    const record = value as Record<string, unknown>;
+    for (const key of ["progress", "progress_pct", "progressPercent", "progress_percent", "percentage"]) {
+        const progress = normalizeGenerationProgress(record[key]);
+        if (progress !== undefined) return progress;
+    }
+    for (const key of ["data", "metadata", "result", "response", "content"]) {
+        const progress = readGenerationProgress(record[key]);
+        if (progress !== undefined) return progress;
+    }
+    return undefined;
+}
+
 export function notifyGenerationProgress(onProgress: GenerationProgressCallback | undefined, value: unknown) {
-    const progress = normalizeGenerationProgress(value);
+    const progress = readGenerationProgress(value);
     if (progress === undefined) return;
     onProgress?.(progress);
 }

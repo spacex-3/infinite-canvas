@@ -254,7 +254,7 @@ async function requestVeoOmniGeneration(config: AiConfig, model: string, prompt:
 
     try {
         const created = unwrapVeoOmniTask((await axios.post<ApiEnvelope<VeoOmniTask>>(aiApiUrl(config, "/videos"), payload, { headers: aiHeaders(config, "application/json") })).data);
-        notifyGenerationProgress(onProgress, created.progress);
+        notifyGenerationProgress(onProgress, created);
         const taskId = veoOmniTaskId(created);
         if (!taskId) throw new Error("Veo Omni 接口没有返回任务 ID");
         const createdUrl = veoOmniTaskUrl(created);
@@ -264,7 +264,7 @@ async function requestVeoOmniGeneration(config: AiConfig, model: string, prompt:
         }
         for (let attempt = 0; attempt < 120; attempt += 1) {
             const task = unwrapVeoOmniTask((await axios.get<ApiEnvelope<VeoOmniTask>>(aiApiUrl(config, `/videos/${taskId}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: payload.model } : undefined })).data);
-            notifyGenerationProgress(onProgress, task.progress);
+            notifyGenerationProgress(onProgress, task);
             if (isVeoOmniCompleted(task)) {
                 const url = veoOmniTaskUrl(task);
                 if (!url) throw new Error("Veo Omni 任务成功但没有返回视频 URL");
