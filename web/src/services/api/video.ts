@@ -38,8 +38,39 @@ type SeedanceTask = {
     error?: { code?: string; message?: string } | null;
     content?: { video_url?: string; last_frame_url?: string } | null;
 };
+type VeoOmniTask = {
+    id?: string;
+    task_id?: string;
+    status?: string;
+    state?: string;
+    task_status?: string;
+    progress?: number;
+    error?: { code?: string; message?: string } | null;
+    error_message?: string;
+    msg?: string;
+    message?: string;
+    video_url?: string | null;
+    image_url?: string | null;
+    url?: string | null;
+    content?: { video_url?: string; image_url?: string; url?: string } | null;
+    metadata?: { result_urls?: unknown } | null;
+    result?: unknown;
+};
 type ApiEnvelope<T> = T | { code?: number; data?: T | null; msg?: string };
 type ReferenceMediaUploadResponse = { id: string; url: string; mimeType: string; bytes: number };
+type VeoOmniPayload = {
+    model: string;
+    prompt: string;
+    aspect_ratio: "16:9" | "9:16";
+    duration: 10;
+    width: number;
+    height: number;
+    video_width: number;
+    video_height: number;
+    video_url?: string;
+    Ingredients_images?: string[];
+};
+type VeoOmniPayloadVideo = { url?: string; width?: number; height?: number };
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
 
@@ -67,8 +98,8 @@ function refreshRemoteUser(config: AiConfig) {
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = []): Promise<VideoGenerationResult> {
     const model = (config.model || config.videoModel).trim();
     assertVideoConfig(config, model);
-    if (isVeoOmniFlashVideoEditModel(model)) {
-        return requestVeoOmniFlashVideoEditGeneration(config, model, prompt, references, videoReferences, audioReferences);
+    if (isVeoOmniVideoModel(model)) {
+        return requestVeoOmniGeneration(config, model, prompt, references, videoReferences, audioReferences);
     }
     if (isSeedanceVideoConfig({ ...config, model })) {
         return requestSeedanceGeneration(config, model, prompt, references, videoReferences, audioReferences);
@@ -204,6 +235,105 @@ async function requestSeedanceGeneration(config: AiConfig, model: string, prompt
     } catch (error) {
         throw new Error(readAxiosError(error, "Seedance 视频生成失败"));
     }
+}
+
+async function requestVeoOmniGeneration(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
+    if (audioReferences.length) throw new Error("Veo Omni Flash 不支持参考音频，请移除参考音频");
+    if (videoReferences.length > 1) throw new Error("Veo Omni Flash Video Edit 目前只支持 1 个参考视频");
+    if (isVeoOmniVideoEditModel(model) && !videoReferences.length) throw new Error("Veo Omni Flash Video Edit 需要连接 1 个参考视频");
+    const imageUrls = await Promise.all(references.slice(0, 3).map(resolveVeoReferenceImageUrl));
+    const videoUrls = await Promise.all(videoReferences.slice(0, 1).map(resolveVeoReferenceVideoUrl));
+    const payload = buildVeoOmniPayload(
+        config,
+        model,
+        prompt,
+        imageUrls,
+        videoReferences.slice(0, 1).map((video, index) => ({ url: videoUrls[index], width: video.width, height: video.height })),
+    );
+
+    try {
+        const created = unwrapVeoOmniTask((await axios.post<ApiEnvelope<VeoOmniTask>>(aiApiUrl(config, "/videos"), payload, { headers: aiHeaders(config, "application/json") })).data);
+        const taskId = veoOmniTaskId(created);
+        if (!taskId) throw new Error("Veo Omni 接口没有返回任务 ID");
+        const createdUrl = veoOmniTaskUrl(created);
+        if (isVeoOmniCompleted(created) && createdUrl) {
+            refreshRemoteUser(config);
+            return videoResultFromUrl(createdUrl);
+        }
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+            const task = unwrapVeoOmniTask((await axios.get<ApiEnvelope<VeoOmniTask>>(aiApiUrl(config, `/videos/${taskId}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: payload.model } : undefined })).data);
+            if (isVeoOmniCompleted(task)) {
+                const url = veoOmniTaskUrl(task);
+                if (!url) throw new Error("Veo Omni 任务成功但没有返回视频 URL");
+                refreshRemoteUser(config);
+                return videoResultFromUrl(url);
+            }
+            if (isVeoOmniFailed(task)) throw new Error(veoOmniTaskError(task) || "Veo Omni 视频生成失败");
+            if (attempt === 119) throw new Error("Veo Omni 视频生成超时，请稍后重试");
+            await delay(5000);
+        }
+        throw new Error("Veo Omni 视频生成超时，请稍后重试");
+    } catch (error) {
+        throw new Error(readAxiosError(error, "Veo Omni 视频生成失败"));
+    }
+}
+
+export function isVeoOmniVideoModel(model: string) {
+    return isVeoOmniVideoEditModel(model) || model.trim().toLowerCase() === "veo-omni-flash";
+}
+
+function isVeoOmniVideoEditModel(model: string) {
+    return model.trim().toLowerCase() === "veo-omni-flash-video-edit";
+}
+
+export function buildVeoOmniPayload(config: Pick<AiConfig, "size">, model: string, prompt: string, imageUrls: string[], videoReferences: VeoOmniPayloadVideo[]): VeoOmniPayload {
+    const dimensions = veoOmniDimensions(config.size, videoReferences[0]);
+    const images = imageUrls.map((url) => url.trim()).filter(Boolean).slice(0, 3);
+    const videoUrl = String(videoReferences[0]?.url || "").trim();
+    return {
+        model: videoUrl ? "veo-omni-flash-video-edit" : model,
+        prompt: buildVeoOmniPromptText(prompt, images.length, videoUrl ? 1 : 0),
+        aspect_ratio: dimensions.width > dimensions.height ? "16:9" : "9:16",
+        duration: 10,
+        width: dimensions.width,
+        height: dimensions.height,
+        video_width: dimensions.width,
+        video_height: dimensions.height,
+        ...(videoUrl ? { video_url: videoUrl } : {}),
+        ...(images.length ? { Ingredients_images: images } : {}),
+    };
+}
+
+function buildVeoOmniPromptText(prompt: string, imageCount: number, videoCount: number) {
+    const labels: string[] = [];
+    if (videoCount) labels.push("视频1");
+    if (imageCount) labels.push(Array.from({ length: imageCount }, (_, index) => `图片${index + 1}`).join("、"));
+    const text = prompt.trim();
+    if (!labels.length) return text;
+    return `参考素材编号：${labels.join("、")}。请按这些编号理解提示词中的参考视频和参考图。\n\n${text}`;
+}
+
+function veoOmniDimensions(size: string, video?: VeoOmniPayloadVideo) {
+    const videoDimensions = normalizePositiveDimensions(video?.width, video?.height);
+    if (videoDimensions) return videoDimensions;
+    const sizeDimensions = parseVeoOmniSizeDimensions(size);
+    if (sizeDimensions) return sizeDimensions.width > sizeDimensions.height ? { width: 1920, height: 1080 } : { width: 1080, height: 1920 };
+    const lower = String(size || "").trim().toLowerCase();
+    if (lower.includes("16:9") || lower.includes("landscape") || lower.includes("横")) return { width: 1920, height: 1080 };
+    if (lower.includes("9:16") || lower.includes("portrait") || lower.includes("竖")) return { width: 1080, height: 1920 };
+    return { width: 1080, height: 1920 };
+}
+
+function normalizePositiveDimensions(width?: number, height?: number) {
+    const w = Math.round(Number(width) || 0);
+    const h = Math.round(Number(height) || 0);
+    return w > 0 && h > 0 ? { width: w, height: h } : null;
+}
+
+function parseVeoOmniSizeDimensions(size: string) {
+    const match = String(size || "").match(/(\d+)\s*[xX*×]\s*(\d+)/);
+    if (!match) return null;
+    return normalizePositiveDimensions(Number(match[1]), Number(match[2]));
 }
 
 function assertSeedanceVideoReferences(videoReferences: ReferenceVideo[]) {
@@ -352,6 +482,60 @@ function unwrapSeedanceTask(payload: ApiEnvelope<SeedanceTask>) {
     return unwrapEnvelope(payload, "Seedance 接口没有返回任务");
 }
 
+function unwrapVeoOmniTask(payload: ApiEnvelope<VeoOmniTask>) {
+    return unwrapEnvelope(payload, "Veo Omni 接口没有返回任务");
+}
+
+function veoOmniTaskId(task: VeoOmniTask) {
+    return String(task.id || task.task_id || "").trim();
+}
+
+function veoOmniTaskStatus(task: VeoOmniTask) {
+    const status = String(task.status || task.state || task.task_status || "").trim().toLowerCase();
+    if (status === "succeeded" || status === "success") return "completed";
+    if (status === "running") return "processing";
+    return status;
+}
+
+function isVeoOmniCompleted(task: VeoOmniTask) {
+    return veoOmniTaskStatus(task) === "completed";
+}
+
+function isVeoOmniFailed(task: VeoOmniTask) {
+    return ["failed", "cancelled", "canceled", "expired"].includes(veoOmniTaskStatus(task));
+}
+
+function veoOmniTaskUrl(task: VeoOmniTask): string {
+    return firstMediaUrl([task.video_url, task.url, task.image_url, task.content?.video_url, task.content?.url, task.content?.image_url, task.metadata?.result_urls, task.result]);
+}
+
+function veoOmniTaskError(task: VeoOmniTask) {
+    return task.error?.message || task.error_message || task.msg || task.message;
+}
+
+function firstMediaUrl(value: unknown): string {
+    if (!value) return "";
+    if (typeof value === "string") return isPublicMediaUrl(value) ? value.trim() : "";
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            const url = firstMediaUrl(item);
+            if (url) return url;
+        }
+        return "";
+    }
+    if (typeof value !== "object") return "";
+    const record = value as Record<string, unknown>;
+    for (const key of ["video_url", "url", "share_url", "image_url"]) {
+        const url = firstMediaUrl(record[key]);
+        if (url) return url;
+    }
+    for (const item of Object.values(record)) {
+        const url = firstMediaUrl(item);
+        if (url) return url;
+    }
+    return "";
+}
+
 function unwrapEnvelope<T>(payload: ApiEnvelope<T>, emptyMessage: string): T {
     if (!payload) throw new Error(emptyMessage);
     if (typeof payload === "object" && "code" in payload && typeof payload.code === "number") {
@@ -363,9 +547,9 @@ function unwrapEnvelope<T>(payload: ApiEnvelope<T>, emptyMessage: string): T {
 }
 
 function readAxiosError(error: unknown, fallback: string) {
-    if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; code?: number }>(error)) {
+    if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; detail?: string; code?: number }>(error)) {
         const responseData = error.response?.data;
-        return responseData?.msg || responseData?.error?.message || statusMessage(error.response?.status, fallback);
+        return responseData?.msg || responseData?.detail || responseData?.error?.message || statusMessage(error.response?.status, fallback);
     }
     return error instanceof Error ? error.message : fallback;
 }
