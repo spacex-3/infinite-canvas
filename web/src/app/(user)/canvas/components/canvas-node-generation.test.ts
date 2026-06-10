@@ -45,4 +45,45 @@ describe("buildNodeGenerationContext", () => {
         ]);
         expect(context.videoCount).toBe(1);
     });
+
+    test("replaces node mentions from saved config prompts without composer content", () => {
+        const configNode: CanvasNodeData = {
+            id: "config-1",
+            type: CanvasNodeType.Config,
+            title: "Config",
+            position: { x: 0, y: 0 },
+            width: 240,
+            height: 160,
+            metadata: { prompt: "把 @[node:video-1] 的飞机改成 @[node:image-1] 玩具乌龟" },
+        };
+        const videoNode: CanvasNodeData = {
+            id: "video-1",
+            type: CanvasNodeType.Video,
+            title: "Input video",
+            position: { x: 0, y: 0 },
+            width: 320,
+            height: 180,
+            metadata: { content: "https://cdn.example.com/input.mp4", mimeType: "video/mp4" },
+        };
+        const imageNode: CanvasNodeData = {
+            id: "image-1",
+            type: CanvasNodeType.Image,
+            title: "Toy turtle",
+            position: { x: 0, y: 0 },
+            width: 180,
+            height: 180,
+            metadata: { content: "data:image/png;base64,abc", mimeType: "image/png" },
+        };
+        const nodes = [configNode, videoNode, imageNode];
+        const connections: CanvasConnection[] = [
+            { id: "video-to-config", fromNodeId: "video-1", toNodeId: "config-1" },
+            { id: "image-to-config", fromNodeId: "image-1", toNodeId: "config-1" },
+        ];
+
+        const context = buildNodeGenerationContext("config-1", nodes, connections, configNode.metadata.prompt);
+
+        expect(context.prompt).toBe("把 视频1 的飞机改成 图片1 玩具乌龟");
+        expect(context.referenceVideos.map((video) => video.id)).toEqual(["video-1"]);
+        expect(context.referenceImages.map((image) => image.id)).toEqual(["image-1"]);
+    });
 });
