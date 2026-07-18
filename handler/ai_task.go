@@ -83,7 +83,7 @@ func startAIImageTask(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	path = resolveAIProxyPath(channel, modelName, path)
 	task := newAIImageTask()
 	go runAIImageTask(task.ID, channel, modelName, path, body, contentType, user.ID, credits)
 	OK(w, task)

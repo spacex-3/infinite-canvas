@@ -648,7 +648,7 @@ export default function AdminSettingsPage() {
                                     dataSource={channelTableData}
                                     columns={[
                                         { title: "名称", dataIndex: "name", render: (value) => value || "未命名渠道" },
-                                        { title: "协议", dataIndex: "protocol", width: 96, render: (value) => <Tag>{value || "openai"}</Tag> },
+                                        { title: "协议", dataIndex: "protocol", width: 140, render: (value) => <Tag>{protocolLabel(value)}</Tag> },
                                         { title: "状态", dataIndex: "enabled", width: 96, render: (value) => <Tag color={value ? "success" : "default"}>{value ? "已启用" : "已停用"}</Tag> },
                                         {
                                             title: "模型",
@@ -727,8 +727,18 @@ export default function AdminSettingsPage() {
                                 </Form.Item>
                             </Col>
                             <Col span={12}>
-                                <Form.Item name="protocol" label="协议">
-                                    <Select options={[{ label: "OpenAI", value: "openai" }]} />
+                                <Form.Item
+                                    name="protocol"
+                                    label="协议"
+                                    extra="选择上游供应商协议：ZeroFall 走 /v1/video/generations（omni-flash）；fpbrowser2api 走 /videos（veo-omni-*）。模型名仍决定前端 payload。"
+                                >
+                                    <Select
+                                        options={[
+                                            { label: "OpenAI 兼容", value: "openai" },
+                                            { label: "fpbrowser2api（veo-omni-*）", value: "fpbrowser2api" },
+                                            { label: "ZeroFall / NewAPI（omni-flash）", value: "zerofall" },
+                                        ]}
+                                    />
                                 </Form.Item>
                             </Col>
                             <Col span={12}>
@@ -1016,9 +1026,21 @@ function setEpayPaymentMethods(form: any, values: string[]) {
     );
 }
 
+function protocolLabel(protocol?: string) {
+    switch (protocol) {
+        case "zerofall":
+            return "ZeroFall";
+        case "fpbrowser2api":
+            return "fpbrowser2api";
+        default:
+            return "OpenAI";
+    }
+}
+
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {
+    const protocol = item.protocol === "zerofall" || item.protocol === "fpbrowser2api" || item.protocol === "openai" ? item.protocol : "openai";
     return {
-        protocol: "openai",
+        protocol,
         name: item.name || "",
         baseUrl: item.baseUrl || "",
         apiKey: item.apiKey || "",

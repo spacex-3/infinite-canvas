@@ -189,16 +189,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 	}
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
 	for i := range setting.Channels {
-		if setting.Channels[i].Protocol == "" {
-			setting.Channels[i].Protocol = "openai"
-		}
-		if setting.Channels[i].Models == nil {
-			setting.Channels[i].Models = []string{}
-		}
-		setting.Channels[i].ImageQualities = normalizeImageQualities(setting.Channels[i].ImageQualities)
-		if setting.Channels[i].Weight <= 0 {
-			setting.Channels[i].Weight = 1
-		}
+		setting.Channels[i] = normalizeModelChannel(setting.Channels[i])
 	}
 	setting.Auth.SMTP.Host = strings.TrimSpace(setting.Auth.SMTP.Host)
 	setting.Auth.SMTP.Username = strings.TrimSpace(setting.Auth.SMTP.Username)
@@ -329,9 +320,15 @@ func isNoChatProbeModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
 	return name == "fpbrowser-use" ||
 		isSeedanceModelName(name) ||
+		isOmniFlashModelName(name) ||
 		strings.HasPrefix(name, "veo-") ||
 		strings.HasPrefix(name, "nana-banana-") ||
 		strings.HasPrefix(name, "gpt-image2-")
+}
+
+func isOmniFlashModelName(modelName string) bool {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	return name == "omni-flash" || name == "omni-flash-vref" || strings.HasPrefix(name, "omni-flash")
 }
 
 func enabledChannelModels(channels []model.ModelChannel) []string {
@@ -379,7 +376,10 @@ func repairDefaultModel(current string, models []string, preferred func(string) 
 
 func isVideoModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedance") || strings.Contains(name, "video") || strings.Contains(name, "veo")
+	return strings.Contains(name, "seedance") ||
+		strings.Contains(name, "video") ||
+		strings.Contains(name, "veo") ||
+		isOmniFlashModelName(name)
 }
 
 func isImageModelName(modelName string) bool {
@@ -393,6 +393,9 @@ func isTextModelName(modelName string) bool {
 
 func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 	if channel.Protocol == "" {
+		channel.Protocol = "openai"
+	}
+	if channel.Protocol != "openai" && channel.Protocol != "zerofall" && channel.Protocol != "fpbrowser2api" {
 		channel.Protocol = "openai"
 	}
 	if channel.Models == nil {

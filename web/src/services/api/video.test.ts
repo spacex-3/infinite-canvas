@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { describe, expect, test } from "bun:test";
 
-import { buildVeoOmniFlashEditPayload, buildVeoOmniPayload, isVeoOmniVideoModel, readVideoResultUrl } from "./video";
+import { buildOmniFlashPayload, buildVeoOmniFlashEditPayload, buildVeoOmniPayload, isVeoOmniVideoModel, readVideoResultUrl } from "./video";
 
 describe("buildVeoOmniFlashEditPayload", () => {
     test("builds the fpbrowser2api Veo edit JSON payload", () => {
@@ -94,5 +94,90 @@ describe("Veo Omni video payload", () => {
         expect(isVeoOmniVideoModel("veo-omni-flash")).toBe(true);
         expect(isVeoOmniVideoModel("veo-omni-flash-video-edit")).toBe(true);
         expect(isVeoOmniVideoModel("seedance-2-0")).toBe(false);
+        expect(isVeoOmniVideoModel("omni-flash")).toBe(false);
+    });
+});
+
+describe("ZeroFall omni-flash payload", () => {
+    test("maps 16:9 size and 720 quality for generate mode", () => {
+        const payload = buildOmniFlashPayload({
+            model: "omni-flash",
+            prompt: "两个角色在战斗",
+            size: "16:9",
+            quality: "720",
+            seconds: "6",
+            imageUrls: ["https://example.com/a.png", "https://example.com/b.png"],
+        });
+
+        expect(payload).toEqual({
+            model: "omni-flash",
+            prompt: "两个角色在战斗",
+            duration: 6,
+            aspect_ratio: "landscape",
+            resolution: "720p",
+            images: ["https://example.com/a.png", "https://example.com/b.png"],
+        });
+    });
+
+    test("maps portrait size and 1080p for generate mode without images", () => {
+        const payload = buildOmniFlashPayload({
+            model: "omni-flash",
+            prompt: "纯文生视频",
+            size: "720x1280",
+            quality: "1080p",
+            seconds: "10",
+            imageUrls: [],
+        });
+
+        expect(payload).toEqual({
+            model: "omni-flash",
+            prompt: "纯文生视频",
+            duration: 10,
+            aspect_ratio: "portrait",
+            resolution: "1080p",
+        });
+        expect(payload.images).toBeUndefined();
+    });
+
+    test("builds edit payload with video and optional images", () => {
+        const payload = buildOmniFlashPayload({
+            model: "omni-flash",
+            prompt: "make it cinematic",
+            size: "9:16",
+            quality: "high",
+            seconds: "4",
+            imageUrls: ["https://example.com/style.png"],
+            videoUrl: "https://example.com/source.mp4",
+            videoWidth: 720,
+            videoHeight: 1280,
+        });
+
+        expect(payload).toEqual({
+            model: "omni-flash-vref",
+            prompt: "make it cinematic",
+            duration: 10,
+            aspect_ratio: "portrait",
+            resolution: "1080p",
+            video: "https://example.com/source.mp4",
+            images: ["https://example.com/style.png"],
+        });
+    });
+
+    test("edit mode with no images still sends empty images array", () => {
+        const payload = buildOmniFlashPayload({
+            model: "omni-flash-vref",
+            prompt: "cinematic lighting",
+            size: "1280x720",
+            quality: "720",
+            seconds: "10",
+            imageUrls: [],
+            videoUrl: "https://example.com/source.mp4",
+        });
+
+        expect(payload.model).toBe("omni-flash-vref");
+        expect(payload.video).toBe("https://example.com/source.mp4");
+        expect(payload.images).toEqual([]);
+        expect(payload.duration).toBe(10);
+        expect(payload.aspect_ratio).toBe("landscape");
     });
 });

@@ -1,9 +1,18 @@
 import axios from "axios";
 
 import { dataUrlToFile } from "@/lib/image-utils";
+import {
+    isOmniFlashEditModel,
+    isOmniFlashVideoModel,
+    normalizeOmniFlashAspectRatio,
+    normalizeOmniFlashDuration,
+    normalizeOmniFlashResolution,
+    OMNI_FLASH_REFERENCE_LIMITS,
+    resolveOmniFlashModel,
+} from "@/lib/omni-flash-video";
+import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { buildApiUrl, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
@@ -72,6 +81,36 @@ type VeoOmniPayload = {
     Ingredients_images?: string[];
 };
 type VeoOmniPayloadVideo = { url?: string; width?: number; height?: number };
+/** ZeroFall / NewAPI omni-flash payload: POST /v1/video/generations */
+export type OmniFlashPayload = {
+    model: string;
+    prompt: string;
+    duration: 4 | 6 | 8 | 10;
+    aspect_ratio: "landscape" | "portrait";
+    resolution?: "720p" | "1080p";
+    images?: string[];
+    video?: string;
+};
+type OmniFlashTask = {
+    task_id?: string;
+    id?: string;
+    status?: string;
+    data?: {
+        status?: string;
+        progress?: number | string;
+        fail_reason?: string;
+        error?: string;
+        data?: { url?: string; format?: string; metadata?: unknown } | null;
+        url?: string;
+    } | null;
+    progress?: number | string;
+    url?: string;
+    error?: string | { message?: string } | null;
+    fail_reason?: string;
+    msg?: string;
+    message?: string;
+    metadata?: { result_urls?: unknown } | null;
+};
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
 
@@ -99,6 +138,11 @@ function refreshRemoteUser(config: AiConfig) {
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], onProgress?: GenerationProgressCallback): Promise<VideoGenerationResult> {
     const model = (config.model || config.videoModel).trim();
     assertVideoConfig(config, model);
+    // ZeroFall omni-flash / omni-flash-vref → /v1/video/generations
+    if (isOmniFlashVideoModel(model)) {
+        return requestOmniFlashGeneration(config, model, prompt, references, videoReferences, audioReferences, onProgress);
+    }
+    // fpbrowser2api Veo Omni Flash / Video Edit → /videos JSON
     if (isVeoOmniVideoModel(model)) {
         return requestVeoOmniGeneration(config, model, prompt, references, videoReferences, audioReferences, onProgress);
     }
@@ -106,7 +150,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
         return requestSeedanceGeneration(config, model, prompt, references, videoReferences, audioReferences);
     }
     if (videoReferences.length || audioReferences.length) {
-        throw new Error("当前视频接口不支持参考视频或参考音频，请切换到 Seedance 2.0 / 火山 Agent Plan 模型，或移除参考素材");
+        throw new Error("当前视频接口不支持参考视频或参考音频，请切换到 omni-flash / Seedance / Veo Omni 模型，或移除参考素材");
     }
     return requestOpenAIVideoGeneration(config, model, prompt, references);
 }
@@ -236,6 +280,181 @@ async function requestSeedanceGeneration(config: AiConfig, model: string, prompt
     } catch (error) {
         throw new Error(readAxiosError(error, "Seedance 视频生成失败"));
     }
+}
+
+/** ZeroFall omni-flash / omni-flash-vref via POST /v1/video/generations */
+async function requestOmniFlashGeneration(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], onProgress?: GenerationProgressCallback) {
+    if (audioReferences.length) throw new Error("omni-flash 不支持参考音频，请移除参考音频");
+    if (videoReferences.length > OMNI_FLASH_REFERENCE_LIMITS.editVideos) {
+        throw new Error(`omni-flash-vref 目前只支持 ${OMNI_FLASH_REFERENCE_LIMITS.editVideos} 个参考视频`);
+    }
+
+    const resolvedModel = resolveOmniFlashModel(model, videoReferences.length > 0);
+    const isEdit = isOmniFlashEditModel(resolvedModel);
+    if (isEdit && !videoReferences.length) {
+        throw new Error("omni-flash-vref 视频编辑需要连接 1 个参考视频");
+    }
+
+    const imageLimit = isEdit ? OMNI_FLASH_REFERENCE_LIMITS.editImages : OMNI_FLASH_REFERENCE_LIMITS.generateImages;
+    if (references.length > imageLimit) {
+        throw new Error(`${resolvedModel} 最多支持 ${imageLimit} 张参考图`);
+    }
+    if (!isEdit && videoReferences.length) {
+        // resolveOmniFlashModel should have switched; defensive
+        throw new Error("带参考视频时请使用 omni-flash-vref");
+    }
+
+    const imageUrls = await Promise.all(references.slice(0, imageLimit).map(resolveVeoReferenceImageUrl));
+    const videoUrl = videoReferences[0] ? await resolveVeoReferenceVideoUrl(videoReferences[0]) : "";
+    if (videoReferences[0]?.durationMs && videoReferences[0].durationMs > OMNI_FLASH_REFERENCE_LIMITS.videoMaxSeconds * 1000) {
+        throw new Error(`参考视频不能超过 ${OMNI_FLASH_REFERENCE_LIMITS.videoMaxSeconds} 秒`);
+    }
+
+    const payload = buildOmniFlashPayload({
+        model: resolvedModel,
+        prompt,
+        size: config.size,
+        quality: config.vquality,
+        seconds: config.videoSeconds,
+        imageUrls,
+        videoUrl,
+        videoWidth: videoReferences[0]?.width,
+        videoHeight: videoReferences[0]?.height,
+    });
+
+    try {
+        const created = unwrapOmniFlashTask((await axios.post<ApiEnvelope<OmniFlashTask>>(omniFlashApiUrl(config), payload, { headers: aiHeaders(config, "application/json") })).data);
+        notifyGenerationProgress(onProgress, created);
+        const taskId = omniFlashTaskId(created);
+        if (!taskId) throw new Error("omni-flash 接口没有返回 task_id");
+        const immediateUrl = omniFlashTaskUrl(created);
+        if (isOmniFlashCompleted(created) && immediateUrl) {
+            refreshRemoteUser(config);
+            return videoResultFromUrl(immediateUrl);
+        }
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+            const task = unwrapOmniFlashTask(
+                (
+                    await axios.get<ApiEnvelope<OmniFlashTask>>(omniFlashApiUrl(config, taskId), {
+                        headers: aiHeaders(config),
+                        params: config.channelMode === "remote" ? { model: payload.model } : undefined,
+                    })
+                ).data,
+            );
+            notifyGenerationProgress(onProgress, {
+                status: omniFlashTaskStatus(task),
+                progress: omniFlashTaskProgress(task),
+            });
+            if (isOmniFlashCompleted(task)) {
+                const url = omniFlashTaskUrl(task);
+                if (!url) throw new Error("omni-flash 任务成功但没有返回视频 URL（请尽快下载，链接会过期）");
+                refreshRemoteUser(config);
+                return videoResultFromUrl(url);
+            }
+            if (isOmniFlashFailed(task)) throw new Error(omniFlashTaskError(task) || "omni-flash 视频生成失败");
+            if (attempt === 119) throw new Error("omni-flash 视频生成超时，请稍后重试");
+            await delay(5000);
+        }
+        throw new Error("omni-flash 视频生成超时，请稍后重试");
+    } catch (error) {
+        throw new Error(readAxiosError(error, "omni-flash 视频生成失败"));
+    }
+}
+
+export function buildOmniFlashPayload(input: {
+    model: string;
+    prompt: string;
+    size: string;
+    quality: string;
+    seconds: string;
+    imageUrls: string[];
+    videoUrl?: string;
+    videoWidth?: number;
+    videoHeight?: number;
+}): OmniFlashPayload {
+    const videoUrl = String(input.videoUrl || "").trim();
+    const model = resolveOmniFlashModel(input.model, Boolean(videoUrl));
+    const isEdit = isOmniFlashEditModel(model);
+    const images = input.imageUrls.map((url) => url.trim()).filter(Boolean).slice(0, isEdit ? OMNI_FLASH_REFERENCE_LIMITS.editImages : OMNI_FLASH_REFERENCE_LIMITS.generateImages);
+    const payload: OmniFlashPayload = {
+        model,
+        prompt: input.prompt,
+        duration: normalizeOmniFlashDuration(input.seconds, isEdit),
+        aspect_ratio: normalizeOmniFlashAspectRatio(input.size, input.videoWidth, input.videoHeight),
+        resolution: normalizeOmniFlashResolution(input.quality),
+    };
+    if (isEdit) {
+        if (!videoUrl) throw new Error("omni-flash-vref 需要参考视频");
+        payload.video = videoUrl;
+        // always send images array for edit (empty = pure video edit)
+        payload.images = images;
+    } else if (images.length) {
+        payload.images = images;
+    }
+    return payload;
+}
+
+function omniFlashApiUrl(config: AiConfig, taskId?: string) {
+    const path = taskId ? `/video/generations/${encodeURIComponent(taskId)}` : "/video/generations";
+    return config.channelMode === "remote" ? `/api/v1${path}` : buildApiUrl(config.baseUrl, path);
+}
+
+function unwrapOmniFlashTask(payload: ApiEnvelope<OmniFlashTask>): OmniFlashTask {
+    // Some gateways nest as { data: { status, data: { url } } }; others return flat task.
+    if (payload && typeof payload === "object" && "code" in payload && typeof (payload as { code?: number }).code === "number") {
+        const envelope = payload as { code: number; data?: OmniFlashTask | null; msg?: string };
+        if (envelope.code !== 0) throw new Error(envelope.msg || "请求失败");
+        if (!envelope.data) throw new Error("omni-flash 接口没有返回任务");
+        return envelope.data;
+    }
+    return payload as OmniFlashTask;
+}
+
+function omniFlashTaskId(task: OmniFlashTask) {
+    return String(task.task_id || task.id || "").trim();
+}
+
+function omniFlashTaskStatus(task: OmniFlashTask) {
+    const nested = task.data && typeof task.data === "object" ? String(task.data.status || "").trim() : "";
+    const status = String(nested || task.status || "")
+        .trim()
+        .toLowerCase();
+    if (status === "success" || status === "succeeded" || status === "completed") return "completed";
+    if (status === "failure" || status === "failed" || status === "error") return "failed";
+    if (status === "running" || status === "processing" || status === "pending" || status === "queued" || status === "in_progress") return "processing";
+    return status;
+}
+
+function isOmniFlashCompleted(task: OmniFlashTask) {
+    return omniFlashTaskStatus(task) === "completed";
+}
+
+function isOmniFlashFailed(task: OmniFlashTask) {
+    return omniFlashTaskStatus(task) === "failed";
+}
+
+function omniFlashTaskProgress(task: OmniFlashTask) {
+    const nested = task.data && typeof task.data === "object" ? task.data.progress : undefined;
+    const value = nested ?? task.progress;
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string") {
+        const parsed = Number(value.replace(/%/g, "").trim());
+        return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    return undefined;
+}
+
+function omniFlashTaskUrl(task: OmniFlashTask): string {
+    const nestedData = task.data && typeof task.data === "object" ? task.data : null;
+    const inner = nestedData?.data && typeof nestedData.data === "object" ? nestedData.data : null;
+    return firstMediaUrl([inner?.url, nestedData?.url, task.url, task.metadata?.result_urls]);
+}
+
+function omniFlashTaskError(task: OmniFlashTask) {
+    const nested = task.data && typeof task.data === "object" ? task.data.fail_reason || task.data.error : "";
+    if (typeof task.error === "string" && task.error) return task.error;
+    if (task.error && typeof task.error === "object" && task.error.message) return task.error.message;
+    return nested || task.fail_reason || task.msg || task.message || "";
 }
 
 async function requestVeoOmniGeneration(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], onProgress?: GenerationProgressCallback) {

@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import { Switch } from "antd";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
+import { isOmniFlashVideoModel, omniFlashDurationOptions, omniFlashResolutionOptions, normalizeOmniFlashDuration, normalizeOmniFlashResolution } from "@/lib/omni-flash-video";
 import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptions, seedancePixelLabel, seedanceRatioOptions, seedanceResolutionOptions } from "@/lib/seedance-video";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
@@ -23,6 +24,12 @@ const sizeOptions = [
     { value: "auto", label: "auto", width: 0, height: 0 },
 ];
 
+/** Simplified landscape / portrait presets for ZeroFall omni-flash */
+const omniFlashSizeOptions = [
+    { value: "1280x720", label: "横屏 landscape", width: 1280, height: 720 },
+    { value: "720x1280", label: "竖屏 portrait", width: 720, height: 1280 },
+];
+
 const secondOptions = [6, 10, 12, 16, 20];
 
 type VideoSettingsPanelProps = {
@@ -36,6 +43,9 @@ type VideoSettingsPanelProps = {
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
     if (isSeedanceVideoConfig(config)) {
         return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
+    }
+    if (isOmniFlashVideoModel(config.model || config.videoModel)) {
+        return <OmniFlashVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
     }
 
     const seconds = config.videoSeconds || "6";
@@ -97,6 +107,71 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         ))}
                         <NumberInput value={seconds} min={1} max={20} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />
                     </div>
+                </SettingGroup>
+            </div>
+        </ImageSettingsTheme>
+    );
+}
+
+function OmniFlashVideoSettingsPanel({ config, onConfigChange, theme, showTitle, className }: VideoSettingsPanelProps) {
+    const model = config.model || config.videoModel;
+    const isEdit = model.trim().toLowerCase() === "omni-flash-vref";
+    const resolution = normalizeOmniFlashResolution(config.vquality);
+    const size = normalizeVideoSizeValue(config.size === "auto" ? "1280x720" : config.size);
+    const duration = normalizeOmniFlashDuration(config.videoSeconds, isEdit);
+    const isLandscape = !["9:16", "2:3", "3:4"].includes(config.size) && !/^(\d+)x(\d+)$/.test(size) ? true : (() => {
+        const dims = readSizeDimensions(size);
+        return dims.width >= dims.height;
+    })();
+
+    return (
+        <ImageSettingsTheme theme={theme}>
+            <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
+                {showTitle ? <div className="text-lg font-semibold">视频设置</div> : null}
+                <div className="rounded-xl border px-2.5 py-2 text-[11px] leading-4 opacity-70" style={{ borderColor: theme.node.stroke, color: theme.node.muted }}>
+                    ZeroFall {isEdit ? "omni-flash-vref（视频编辑）" : "omni-flash"}：比例会映射为 landscape / portrait，分辨率 720p / 1080p。
+                </div>
+                <SettingGroup title="分辨率" color={theme.node.muted}>
+                    <div className="grid grid-cols-2 gap-2.5">
+                        {omniFlashResolutionOptions.map((item) => (
+                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("vquality", item.value.replace(/p$/i, ""))}>
+                                {item.label}
+                            </OptionPill>
+                        ))}
+                    </div>
+                </SettingGroup>
+                <SettingGroup title="比例" color={theme.node.muted}>
+                    <div className="grid grid-cols-2 gap-2.5">
+                        {omniFlashSizeOptions.map((item) => {
+                            const selected = item.value === "1280x720" ? isLandscape : !isLandscape;
+                            return (
+                                <button
+                                    key={item.value}
+                                    type="button"
+                                    className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent px-1 text-sm transition hover:opacity-80"
+                                    style={{ borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onClick={() => onConfigChange("size", item.value)}
+                                >
+                                    <SizePreview width={item.width} height={item.height} color={theme.node.text} />
+                                    <span>{item.label}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </SettingGroup>
+                <SettingGroup title="时长" color={theme.node.muted}>
+                    {isEdit ? (
+                        <div className="text-sm opacity-70">视频编辑固定 duration=10，实际时长跟随输入视频。</div>
+                    ) : (
+                        <div className="grid grid-cols-4 gap-2.5">
+                            {omniFlashDurationOptions.map((value) => (
+                                <OptionPill key={value} selected={duration === value} theme={theme} onClick={() => onConfigChange("videoSeconds", String(value))}>
+                                    {value}s
+                                </OptionPill>
+                            ))}
+                        </div>
+                    )}
                 </SettingGroup>
             </div>
         </ImageSettingsTheme>

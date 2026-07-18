@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/basketikun/infinite-canvas/model"
 )
 
 func TestAIUpstreamErrorDetail(t *testing.T) {
@@ -56,5 +58,33 @@ func TestAIUpstreamStatusMessageExplainsGatewayTimeout(t *testing.T) {
 	got := aiUpstreamStatusMessage(504, nil)
 	if !strings.Contains(got, "耗时过长") {
 		t.Fatalf("gateway timeout message = %q", got)
+	}
+}
+
+func TestResolveAIProxyPathOmniFlash(t *testing.T) {
+	zero := model.ModelChannel{BaseURL: "https://llm.zerofall.top", Protocol: "zerofall"}
+	if got := resolveAIProxyPath(zero, "omni-flash", "/videos"); got != "/video/generations" {
+		t.Fatalf("create path = %q", got)
+	}
+	if got := resolveAIProxyPath(zero, "omni-flash-vref", "/videos/task-1"); got != "/video/generations/task-1" {
+		t.Fatalf("poll path = %q", got)
+	}
+	// Protocol alone is enough even if model name is not omni-flash*
+	if got := resolveAIProxyPath(zero, "custom-video", "/videos"); got != "/video/generations" {
+		t.Fatalf("protocol-based rewrite = %q", got)
+	}
+	// fpbrowser2api veo models stay on OpenAI-style /videos
+	fp := model.ModelChannel{BaseURL: "https://fp.example.com", Protocol: "fpbrowser2api"}
+	if got := resolveAIProxyPath(fp, "veo-omni-flash", "/videos"); got != "/videos" {
+		t.Fatalf("veo path rewritten unexpectedly: %q", got)
+	}
+}
+
+func TestIsOmniFlashVideo(t *testing.T) {
+	if !isOmniFlashVideo("omni-flash") || !isOmniFlashVideo("omni-flash-vref") {
+		t.Fatalf("expected omni-flash models to match")
+	}
+	if isOmniFlashVideo("veo-omni-flash") {
+		t.Fatalf("veo-omni-flash should not be treated as ZeroFall omni-flash")
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
 )
 
@@ -42,6 +43,15 @@ func AIVideoContent(w http.ResponseWriter, r *http.Request, id string) {
 	proxyAIGetRequest(w, r, "/videos/"+id+"/content")
 }
 
+// ZeroFall / NewAPI video generations (omni-flash, omni-flash-vref)
+func AIVideoGenerations(w http.ResponseWriter, r *http.Request) {
+	proxyAIRequest(w, r, "/video/generations")
+}
+
+func AIVideoGeneration(w http.ResponseWriter, r *http.Request, id string) {
+	proxyAIGetRequest(w, r, "/video/generations/"+id)
+}
+
 func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 	modelName := r.URL.Query().Get("model")
 	if strings.TrimSpace(modelName) == "" {
@@ -53,7 +63,7 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	path = resolveAIProxyPath(channel, modelName, path)
 	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, service.BuildModelChannelURL(channel, path), nil)
 	if err != nil {
 		Fail(w, "AI 接口请求失败")
@@ -88,7 +98,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	path = resolveAIProxyPath(channel, modelName, path)
 	request, err := newAIProxyPostRequest(r.Context(), channel, path, body, contentType)
 	if err != nil {
 		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
@@ -209,8 +219,18 @@ func readAIRequestCount(body []byte, contentType string) int {
 
 var errMissingModel = &aiError{"缺少模型名称"}
 
-func resolveAIProxyPath(baseURL string, modelName string, path string) string {
-	if !isArkSeedanceVideo(baseURL, modelName) {
+func resolveAIProxyPath(channel model.ModelChannel, modelName string, path string) string {
+	// ZeroFall / NewAPI: model name or explicit channel protocol.
+	if isOmniFlashVideo(modelName) || strings.EqualFold(strings.TrimSpace(channel.Protocol), "zerofall") {
+		if path == "/videos" {
+			return "/video/generations"
+		}
+		if strings.HasPrefix(path, "/videos/") && !strings.HasSuffix(path, "/content") {
+			return "/video/generations/" + strings.TrimPrefix(path, "/videos/")
+		}
+		return path
+	}
+	if !isArkSeedanceVideo(channel.BaseURL, modelName) {
 		return path
 	}
 	if path == "/videos" {
@@ -226,6 +246,11 @@ func isArkSeedanceVideo(baseURL string, modelName string) bool {
 	base := strings.ToLower(baseURL)
 	model := strings.ToLower(modelName)
 	return strings.Contains(model, "seedance") || strings.Contains(model, "doubao-seedance") || strings.Contains(base, "/api/plan/v3")
+}
+
+func isOmniFlashVideo(modelName string) bool {
+	model := strings.ToLower(strings.TrimSpace(modelName))
+	return model == "omni-flash" || model == "omni-flash-vref" || strings.HasPrefix(model, "omni-flash")
 }
 
 func aiStatusMessage(statusCode int) string {
