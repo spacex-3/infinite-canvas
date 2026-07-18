@@ -7,6 +7,7 @@ import {
     normalizeOmniFlashAspectRatio,
     normalizeOmniFlashDuration,
     normalizeOmniFlashResolution,
+    OMNI_FLASH_EDIT_MODEL,
     OMNI_FLASH_REFERENCE_LIMITS,
     resolveOmniFlashModel,
 } from "@/lib/omni-flash-video";
@@ -138,12 +139,14 @@ function refreshRemoteUser(config: AiConfig) {
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], onProgress?: GenerationProgressCallback): Promise<VideoGenerationResult> {
     const model = (config.model || config.videoModel).trim();
     assertVideoConfig(config, model);
-    // ZeroFall omni-flash / omni-flash-vref → /v1/video/generations
-    if (isOmniFlashVideoModel(model)) {
-        return requestOmniFlashGeneration(config, model, prompt, references, videoReferences, audioReferences, onProgress);
+    const protocol = resolveVideoRequestProtocol(config, model);
+    // zpika omni-flash / omni-flash-vref → /v1/video/generations
+    if (protocol === "zerofall") {
+        const routedModel = config.channelMode === "local" && config.protocol === "zerofall" && videoReferences.length && !isOmniFlashVideoModel(model) ? OMNI_FLASH_EDIT_MODEL : model;
+        return requestOmniFlashGeneration(config, routedModel, prompt, references, videoReferences, audioReferences, onProgress);
     }
     // fpbrowser2api Veo Omni Flash / Video Edit → /videos JSON
-    if (isVeoOmniVideoModel(model)) {
+    if (protocol === "fpbrowser2api") {
         return requestVeoOmniGeneration(config, model, prompt, references, videoReferences, audioReferences, onProgress);
     }
     if (isSeedanceVideoConfig({ ...config, model })) {
@@ -153,6 +156,13 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
         throw new Error("当前视频接口不支持参考视频或参考音频，请切换到 omni-flash / Seedance / Veo Omni 模型，或移除参考素材");
     }
     return requestOpenAIVideoGeneration(config, model, prompt, references);
+}
+
+export function resolveVideoRequestProtocol(config: Pick<AiConfig, "channelMode" | "protocol">, model: string): "openai" | "fpbrowser2api" | "zerofall" {
+    if (config.channelMode === "local" && config.protocol !== "openai") return config.protocol;
+    if (isOmniFlashVideoModel(model)) return "zerofall";
+    if (isVeoOmniVideoModel(model)) return "fpbrowser2api";
+    return "openai";
 }
 
 export async function storeGeneratedVideo(result: VideoGenerationResult): Promise<UploadedFile> {

@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { App } from "antd";
 
-import { useConfigStore } from "@/stores/use-config-store";
+import { canUseCustomChannel, useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
@@ -16,6 +16,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const user = useUserStore((state) => state.user);
     const isUserReady = useUserStore((state) => state.isReady);
     const loadPublicSettings = useConfigStore((state) => state.loadPublicSettings);
+    const publicSettings = useConfigStore((state) => state.publicSettings);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const isLoginPage = pathname === "/login" || pathname === "/admin/login";
@@ -34,23 +35,24 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         const baseUrl = searchParams.get("baseUrl") || searchParams.get("baseurl");
         const apiKey = searchParams.get("apiKey") || searchParams.get("apikey");
         if (!baseUrl && !apiKey) return;
-        if (!isUserReady) return;
+        if (!isUserReady || !publicSettings) return;
         handledConfigParams.current = true;
         searchParams.delete("baseUrl");
         searchParams.delete("baseurl");
         searchParams.delete("apiKey");
         searchParams.delete("apikey");
         window.history.replaceState(null, "", `${window.location.pathname}${searchParams.size ? `?${searchParams}` : ""}${window.location.hash}`);
-        if (user?.role !== "admin") {
+        const allowCustomChannel = publicSettings.modelChannel.allowCustomChannel === true;
+        if (!canUseCustomChannel(user?.role, allowCustomChannel)) {
             openConfigDialog(false);
-            message.error("只有管理员可以导入本地直连配置，普通用户仅可使用云端渠道");
+            message.error("管理员未开放自定义渠道");
             return;
         }
         updateConfig("channelMode", "local");
         if (baseUrl) updateConfig("baseUrl", baseUrl);
         if (apiKey) updateConfig("apiKey", apiKey);
         openConfigDialog(false);
-    }, [isUserReady, message, openConfigDialog, updateConfig, user?.role]);
+    }, [isUserReady, message, openConfigDialog, publicSettings, updateConfig, user?.role]);
 
     return <>{children}</>;
 }

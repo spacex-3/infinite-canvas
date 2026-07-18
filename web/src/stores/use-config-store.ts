@@ -10,6 +10,7 @@ import { useUserStore } from "@/stores/use-user-store";
 
 export type AiConfig = {
     channelMode: "remote" | "local";
+    protocol: CustomChannelProtocol;
     baseUrl: string;
     apiKey: string;
     model: string;
@@ -39,9 +40,11 @@ export type AiConfig = {
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
+export type CustomChannelProtocol = "openai" | "fpbrowser2api" | "zerofall";
 
 export const defaultConfig: AiConfig = {
     channelMode: "remote",
+    protocol: "openai",
     baseUrl: "https://api.openai.com",
     apiKey: "",
     model: "gpt-image-2",
@@ -83,7 +86,7 @@ type ConfigStore = {
     clearPromptContinue: () => void;
 };
 
-function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"] | null, canUseLocalChannel: boolean) {
+export function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"] | null, canUseLocalChannel: boolean) {
     const channelMode = canUseLocalChannel ? config.channelMode : "remote";
     if (channelMode === "local" || !modelChannel) return { ...config, channelMode };
     const models = modelChannel.availableModels;
@@ -111,6 +114,14 @@ function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSetti
         audioModel: audioModels.includes(config.audioModel) ? config.audioModel : fallbackAudioModel,
         systemPrompt: modelChannel.systemPrompt,
     };
+}
+
+export function canUseCustomChannel(role: "guest" | "user" | "admin" | undefined, allowCustomChannel: boolean) {
+    return role === "admin" || (role === "user" && allowCustomChannel);
+}
+
+export function normalizeCustomChannelProtocol(value: unknown): CustomChannelProtocol {
+    return value === "zerofall" || value === "fpbrowser2api" ? value : "openai";
 }
 
 function validDefault(model: string, models: string[]) {
@@ -205,6 +216,7 @@ export const useConfigStore = create<ConfigStore>()(
                     config: {
                         ...config,
                         channelMode: config.channelMode === "local" ? "local" : "remote",
+                        protocol: normalizeCustomChannelProtocol(persistedConfig.protocol),
                         imageModel: config.imageModel || config.model,
                         videoModel: config.videoModel || "grok-imagine-video",
                         textModel: config.textModel || config.model,
@@ -236,7 +248,8 @@ function normalizeModelList(models: string[]) {
 export function useEffectiveConfig() {
     const config = useConfigStore((state) => state.config);
     const modelChannel = useConfigStore((state) => state.publicSettings?.modelChannel || null);
-    const canUseLocalChannel = useUserStore((state) => state.user?.role === "admin");
+    const userRole = useUserStore((state) => state.user?.role);
+    const canUseLocalChannel = canUseCustomChannel(userRole, modelChannel?.allowCustomChannel === true);
     return useMemo(() => resolveEffectiveConfig(config, modelChannel, canUseLocalChannel), [canUseLocalChannel, config, modelChannel]);
 }
 

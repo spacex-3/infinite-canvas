@@ -229,7 +229,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, onProg
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
-    if (isFpbrowserVideoImageModel(config.model)) {
+    if (shouldUseFpbrowserVideoImageApi(config)) {
         return requestFpbrowserVideoImageGeneration(config, prompt, [], { n, quality, size: requestSize }, onProgress);
     }
     const payload = {
@@ -259,7 +259,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const requestPrompt = buildImageReferencePromptText(prompt, references);
-    if (isFpbrowserVideoImageModel(config.model)) {
+    if (shouldUseFpbrowserVideoImageApi(config)) {
         if (mask) throw new Error("当前 fpbrowser2api 图片模型暂不支持蒙版编辑");
         return requestFpbrowserVideoImageGeneration(config, requestPrompt, references, { n, quality, size: requestSize }, onProgress);
     }
@@ -394,6 +394,10 @@ async function requestRemoteImageTask(config: AiConfig, path: "/images/generatio
 
 function isFpbrowserVideoImageModel(model: string) {
     return FPBROWSER_VIDEO_IMAGE_MODELS.has(model.trim().toLowerCase());
+}
+
+export function shouldUseFpbrowserVideoImageApi(config: Pick<AiConfig, "channelMode" | "protocol" | "model">) {
+    return (config.channelMode === "local" && config.protocol === "fpbrowser2api") || isFpbrowserVideoImageModel(config.model);
 }
 
 async function requestFpbrowserVideoImageGeneration(config: AiConfig, prompt: string, references: ReferenceImage[], options: { n: number; quality?: string; size?: string }, onProgress?: GenerationProgressCallback) {

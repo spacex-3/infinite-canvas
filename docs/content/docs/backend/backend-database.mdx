@@ -125,7 +125,7 @@ description: 当前后端主要数据表与字段说明
 | `defaultVideoModel` | string | 默认视频模型 |
 | `defaultTextModel` | string | 默认文本模型 |
 | `systemPrompt` | string | 系统提示词 |
-| `allowCustomChannel` | bool | 历史字段，当前公开配置会强制归一为 `false`；普通用户始终只使用云端渠道，本地直连仅管理员可用 |
+| `allowCustomChannel` | bool | 是否允许已登录普通用户配置浏览器本地自定义渠道；默认关闭，用户 API Key 不写入后端数据库 |
 
 `modelCosts` 每项字段：
 
@@ -162,7 +162,7 @@ description: 当前后端主要数据表与字段说明
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `protocol` | string | 协议，当前支持 `openai` |
+| `protocol` | string | 协议，支持 `openai`、`fpbrowser2api`、`zerofall`；`zerofall` 在界面显示为 zpika |
 | `name` | string | 渠道名称 |
 | `baseUrl` | string | 渠道接口地址 |
 | `apiKey` | string | 渠道密钥 |

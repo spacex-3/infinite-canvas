@@ -1,7 +1,19 @@
 // @ts-nocheck
 import { describe, expect, test } from "bun:test";
 
-import { buildOmniFlashPayload, buildVeoOmniFlashEditPayload, buildVeoOmniPayload, isVeoOmniVideoModel, readVideoResultUrl } from "./video";
+import { buildOmniFlashPayload, buildVeoOmniFlashEditPayload, buildVeoOmniPayload, isVeoOmniVideoModel, readVideoResultUrl, resolveVideoRequestProtocol } from "./video";
+
+describe("custom channel video protocol routing", () => {
+    test("uses the selected local protocol for provider aliases", () => {
+        expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "zerofall" }, "custom-video")).toBe("zerofall");
+        expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "fpbrowser2api" }, "custom-video")).toBe("fpbrowser2api");
+    });
+
+    test("does not let a saved local protocol override cloud routing", () => {
+        expect(resolveVideoRequestProtocol({ channelMode: "remote", protocol: "zerofall" }, "custom-video")).toBe("openai");
+        expect(resolveVideoRequestProtocol({ channelMode: "remote", protocol: "fpbrowser2api" }, "omni-flash")).toBe("zerofall");
+    });
+});
 
 describe("buildVeoOmniFlashEditPayload", () => {
     test("builds the fpbrowser2api Veo edit JSON payload", () => {

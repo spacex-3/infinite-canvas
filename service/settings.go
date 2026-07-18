@@ -85,8 +85,10 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 			setting.ModelChannel.ModelCosts[i].Credits = 0
 		}
 	}
-	disabled := false
-	setting.ModelChannel.AllowCustomChannel = &disabled
+	if setting.ModelChannel.AllowCustomChannel == nil {
+		disabled := false
+		setting.ModelChannel.AllowCustomChannel = &disabled
+	}
 	if setting.Auth.AllowRegister == nil {
 		enabled := true
 		setting.Auth.AllowRegister = &enabled

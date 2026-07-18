@@ -1,12 +1,13 @@
 "use client";
 
 import { App, Button, Form, Input, Modal, Segmented, Select } from "antd";
+import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
 import { fetchImageModels } from "@/services/api/image";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { filterModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { canUseCustomChannel, filterModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig, type CustomChannelProtocol, type ModelCapability } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 type ModelGroup = {
@@ -34,9 +35,10 @@ export function AppConfigModal() {
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
     const publicSettings = useConfigStore((state) => state.publicSettings);
-    const canUseLocalChannel = useUserStore((state) => state.user?.role === "admin");
+    const user = useUserStore((state) => state.user);
     const effectiveConfig = useEffectiveConfig();
     const modelChannel = publicSettings?.modelChannel;
+    const canUseLocalChannel = canUseCustomChannel(user?.role, modelChannel?.allowCustomChannel === true);
     const effectiveMode = canUseLocalChannel ? config.channelMode : "remote";
     const modelConfig = effectiveMode === "remote" ? effectiveConfig : config;
     const modelOptions = config.models.map((model) => ({ label: model, value: model }));
@@ -45,7 +47,6 @@ export function AppConfigModal() {
         setConfigDialogOpen(false);
         if (effectiveMode === "local" && (!config.baseUrl.trim() || !config.apiKey.trim())) return;
         if (!modelConfig.imageModel.trim() || !modelConfig.videoModel.trim() || !modelConfig.textModel.trim()) return;
-        if (!canUseLocalChannel && config.channelMode !== "remote") updateConfig("channelMode", "remote");
         message.success(shouldPromptContinue ? "配置已保存，请继续刚才的请求" : "配置已保存");
         clearPromptContinue();
     };
@@ -58,7 +59,7 @@ export function AppConfigModal() {
         }
         setLoadingModels(true);
         try {
-            const models = await fetchImageModels(config);
+            const models = uniqueModels([...config.models, ...(await fetchImageModels(config))]);
             const imageModels = filterModelsByCapability(models, "image");
             const videoModels = filterModelsByCapability(models, "video");
             const textModels = filterModelsByCapability(models, "text");
@@ -90,6 +91,17 @@ export function AppConfigModal() {
         if (!next.includes(config[group.modelKey])) updateConfig(group.modelKey, next[0] || "");
     };
 
+    const updateChannelModels = (models: string[]) => {
+        const next = uniqueModels(models);
+        updateConfig("models", next);
+        for (const group of modelGroups) {
+            const selected = uniqueModels(config[group.modelsKey]).filter((model) => next.includes(model));
+            const capabilityModels = selected.length ? selected : filterModelsByCapability(next, group.capability);
+            updateConfig(group.modelsKey, capabilityModels);
+            if (!capabilityModels.includes(config[group.modelKey])) updateConfig(group.modelKey, capabilityModels[0] || "");
+        }
+    };
+
     return (
         <Modal
             title={
@@ -119,7 +131,7 @@ export function AppConfigModal() {
                                 value={effectiveMode}
                                 onChange={(value) => updateConfig("channelMode", value as AiConfig["channelMode"])}
                                 options={[
-                                    { label: "本地直连", value: "local" },
+                                    { label: "自定义渠道", value: "local" },
                                     { label: "云端渠道", value: "remote" },
                                 ]}
                             />
@@ -128,34 +140,56 @@ export function AppConfigModal() {
                     {effectiveMode === "local" ? (
                         <>
                             <div className="grid gap-4 md:grid-cols-2">
+                                <Form.Item label="协议" className="mb-4">
+                                    <Select
+                                        value={config.protocol}
+                                        options={[
+                                            { label: "OpenAI 兼容", value: "openai" },
+                                            { label: "fpbrowser2api（veo-omni-*）", value: "fpbrowser2api" },
+                                            { label: "zpika（omni-flash）", value: "zerofall" },
+                                        ]}
+                                        onChange={(value) => updateConfig("protocol", value as CustomChannelProtocol)}
+                                    />
+                                </Form.Item>
                                 <Form.Item label="Base URL" className="mb-4">
                                     <Input value={config.baseUrl} onChange={(event) => updateConfig("baseUrl", event.target.value)} />
                                 </Form.Item>
-                                <Form.Item label="API Key" className="mb-4">
+                                <Form.Item label="API Key" className="mb-4 md:col-span-2">
                                     <Input.Password value={config.apiKey} onChange={(event) => updateConfig("apiKey", event.target.value)} />
                                 </Form.Item>
                             </div>
-                            <div className="mb-5 flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-3 py-2 dark:border-stone-800">
-                                <div className="min-w-0">
-                                    <div className="text-sm font-medium">模型列表</div>
-                                    <div className="mt-1 text-xs text-stone-500">当前已保存 {config.models.length} 个模型</div>
+                            <Form.Item label="渠道模型" className="mb-5">
+                                <div className="flex items-start gap-2">
+                                    <Select
+                                        mode="tags"
+                                        showSearch
+                                        allowClear
+                                        maxTagCount="responsive"
+                                        tokenSeparators={[",", "\n"]}
+                                        className="min-w-0 flex-1"
+                                        placeholder="输入模型名称或从上游拉取"
+                                        value={config.models}
+                                        options={modelOptions}
+                                        onChange={updateChannelModels}
+                                    />
+                                    <Button icon={<RefreshCw className="size-4" />} loading={loadingModels} onClick={() => void refreshModels()}>
+                                        拉取模型
+                                    </Button>
                                 </div>
-                                <Button size="small" loading={loadingModels} onClick={() => void refreshModels()}>
-                                    拉取模型列表
-                                </Button>
-                            </div>
+                            </Form.Item>
                         </>
                     ) : (
                         <div className="mb-5 rounded-lg border border-stone-200 p-3 text-sm text-stone-500 dark:border-stone-800">
                             <div className="font-medium text-stone-900 dark:text-stone-100">云端渠道</div>
-                            <div className="mt-1">{canUseLocalChannel ? "当前使用系统后台渠道转发请求" : "普通用户仅可使用系统后台渠道"}，当前可用 {modelChannel?.availableModels.length || 0} 个模型。</div>
+                            <div className="mt-1">
+                                {canUseLocalChannel ? "当前使用系统后台渠道转发请求" : "管理员未开放自定义渠道"}，当前可用 {modelChannel?.availableModels.length || 0} 个模型。
+                            </div>
                         </div>
                     )}
                     {effectiveMode === "local" ? (
                         <section className="mb-5 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                             <div className="mb-3">
-                                <div className="text-sm font-semibold">本地模型可选项</div>
-                                <div className="mt-1 text-xs text-stone-500">从已拉取模型中选择哪些模型可进入各类下拉。</div>
+                                <div className="text-sm font-semibold">模型分类</div>
                             </div>
                             <div className="grid gap-4 md:grid-cols-2">
                                 {modelGroups.map((group) => (

@@ -439,6 +439,16 @@ export default function AdminSettingsPage() {
                                             <Select mode="multiple" placeholder="请选择系统可用模型" options={channelModels.map((item) => ({ label: item, value: item }))} />
                                         </Form.Item>
                                     </Col>
+                                    <Col xs={24} md={8}>
+                                        <Form.Item
+                                            name={["public", "modelChannel", "allowCustomChannel"]}
+                                            label="允许普通用户自定义渠道"
+                                            extra="开启后，已登录普通用户可在浏览器中保存自己的协议、接口地址、API Key 和模型列表，密钥不会上传到后台。"
+                                            valuePropName="checked"
+                                        >
+                                            <Switch />
+                                        </Form.Item>
+                                    </Col>
                                     <Col xs={24} md={6}>
                                         <Form.Item name={["public", "modelChannel", "defaultModel"]} label="默认模型">
                                             <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
@@ -727,16 +737,12 @@ export default function AdminSettingsPage() {
                                 </Form.Item>
                             </Col>
                             <Col span={12}>
-                                <Form.Item
-                                    name="protocol"
-                                    label="协议"
-                                    extra="选择上游供应商协议：ZeroFall 走 /v1/video/generations（omni-flash）；fpbrowser2api 走 /videos（veo-omni-*）。模型名仍决定前端 payload。"
-                                >
+                                <Form.Item name="protocol" label="协议" extra="选择上游供应商协议：zpika 走 /v1/video/generations（omni-flash）；fpbrowser2api 走 /videos（veo-omni-*）。模型名仍决定前端 payload。">
                                     <Select
                                         options={[
                                             { label: "OpenAI 兼容", value: "openai" },
                                             { label: "fpbrowser2api（veo-omni-*）", value: "fpbrowser2api" },
-                                            { label: "ZeroFall / NewAPI（omni-flash）", value: "zerofall" },
+                                            { label: "zpika（omni-flash）", value: "zerofall" },
                                         ]}
                                     />
                                 </Form.Item>
@@ -945,7 +951,7 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
             ...(setting.modelChannel || {}),
             availableModels: setting.modelChannel?.availableModels || [],
             modelCosts: normalizeModelCosts(setting.modelChannel?.modelCosts || []),
-            allowCustomChannel: false,
+            allowCustomChannel: setting.modelChannel?.allowCustomChannel === true,
         },
         auth: {
             allowRegister: setting.auth?.allowRegister !== false,
@@ -1029,7 +1035,7 @@ function setEpayPaymentMethods(form: any, values: string[]) {
 function protocolLabel(protocol?: string) {
     switch (protocol) {
         case "zerofall":
-            return "ZeroFall";
+            return "zpika";
         case "fpbrowser2api":
             return "fpbrowser2api";
         default:

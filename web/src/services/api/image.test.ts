@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 
+import { shouldUseFpbrowserVideoImageApi } from "./image";
+
 const source = readFileSync(resolve(import.meta.dir, "image.ts"), "utf8");
 
 describe("fpbrowser2api image model routing", () => {
@@ -12,5 +14,10 @@ describe("fpbrowser2api image model routing", () => {
         expect(source).toContain('"gpt-image2-1k"');
         expect(source).toContain('aiApiUrl(config, "/videos")');
         expect(source).toContain('aiApiUrl(config, `/videos/${created.id}`)');
+    });
+
+    test("uses an explicitly selected local fpbrowser2api protocol", () => {
+        expect(shouldUseFpbrowserVideoImageApi({ channelMode: "local", protocol: "fpbrowser2api", model: "custom-image" })).toBe(true);
+        expect(shouldUseFpbrowserVideoImageApi({ channelMode: "remote", protocol: "fpbrowser2api", model: "custom-image" })).toBe(false);
     });
 });

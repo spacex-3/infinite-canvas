@@ -65,7 +65,7 @@ description: settings 表中 public 和 private 配置结构说明
 | `defaultVideoModel` | string | 默认视频模型，从 `availableModels` 中选择；为空或失效时优先选择 `seedance`、`video` 模型 |
 | `defaultTextModel` | string | 默认文本模型，从 `availableModels` 中选择；为空或失效时优先选择非图片/视频模型 |
 | `systemPrompt` | string | 系统提示词 |
-| `allowCustomChannel` | boolean | 历史字段，当前公开配置会强制归一为 `false`；普通用户始终只使用云端渠道 |
+| `allowCustomChannel` | boolean | 是否允许已登录普通用户在浏览器本地配置自定义渠道；默认 `false`，管理员始终可用 |
 
 `modelCosts` 每项字段：
 
@@ -78,8 +78,8 @@ description: settings 表中 public 和 private 配置结构说明
 
 | 模式 | 说明 |
 | --- | --- |
-| 云端渠道 | 普通用户唯一可用模式；使用后端 `/api/v1/*` 代理接口，请求会按模型名匹配 `private.value.channels` 中的可用渠道 |
-| 本地直连 | 仅管理员可在前端配置弹窗中使用；浏览器本地配置 `baseUrl`、`apiKey` 和模型列表后直接请求模型接口 |
+| 云端渠道 | 使用后端 `/api/v1/*` 代理接口，请求会按模型名匹配 `private.value.channels` 中的可用渠道 |
+| 自定义渠道 | 管理员始终可用；`allowCustomChannel=true` 时已登录普通用户也可用。协议、`baseUrl`、`apiKey`、模型列表和各能力默认模型保存在浏览器本地，请求直接发往上游，不扣除 Canvas 云端渠道算力点 |
 
 `auth` 字段：
 
@@ -154,7 +154,7 @@ description: settings 表中 public 和 private 配置结构说明
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `protocol` | string | 协议，当前为 `openai` |
+| `protocol` | string | 协议，支持 `openai`、`fpbrowser2api`、`zerofall`；`zerofall` 在界面显示为 zpika |
 | `name` | string | 渠道名称 |
 | `baseUrl` | string | OpenAI 兼容接口地址 |
 | `apiKey` | string | 渠道密钥 |
