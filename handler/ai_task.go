@@ -162,6 +162,10 @@ func newAIProxyPostRequest(ctx context.Context, channel model.ModelChannel, path
 		}
 		return nil, geminiImageRequestError{"Gemini 原生图片协议仅支持图片生成和参考图编辑"}
 	}
+	body, err := normalizeOfficialOpenAIImageRequest(channel, path, body, contentType)
+	if err != nil {
+		return nil, err
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
 	if err != nil {
 		return nil, err

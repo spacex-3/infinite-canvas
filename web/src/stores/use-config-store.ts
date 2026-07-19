@@ -45,6 +45,7 @@ export type AiConfig = {
 };
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
+export const CONFIG_STORE_VERSION = 2;
 export type ModelCapability = "image" | "video" | "text" | "audio";
 export type CustomChannelProtocol = "openai" | "gemini" | "fpbrowser2api" | "zerofall";
 export type CustomAiChannel = {
@@ -100,7 +101,7 @@ export const defaultConfig: AiConfig = {
     videoModels: [],
     textModels: [],
     audioModels: [],
-    quality: "auto",
+    quality: "high",
     size: "1:1",
     count: "1",
     canvasImageCount: "1",
@@ -162,6 +163,11 @@ export function canUseCustomChannel(role: "guest" | "user" | "admin" | undefined
 
 export function normalizeCustomChannelProtocol(value: unknown): CustomChannelProtocol {
     return value === "gemini" || value === "zerofall" || value === "fpbrowser2api" ? value : "openai";
+}
+
+export function migrateImageDefaults<T extends { quality?: string; size?: string }>(config: T, persistedVersion: number): T {
+    if (persistedVersion >= CONFIG_STORE_VERSION || config.quality !== "auto" || config.size !== "1:1") return config;
+    return { ...config, quality: "high" };
 }
 
 export function assertChannelSupportsCapability(config: Pick<AiConfig, "channelMode" | "protocol">, capability: ModelCapability) {
@@ -281,6 +287,11 @@ export const useConfigStore = create<ConfigStore>()(
         }),
         {
             name: CONFIG_STORE_KEY,
+            version: CONFIG_STORE_VERSION,
+            migrate: (persisted, version) => {
+                const state = persisted as Partial<ConfigStore>;
+                return { ...state, config: migrateImageDefaults(state.config || {}, version) };
+            },
             partialize: (state) => ({ config: state.config }),
             merge: (persisted, current) => {
                 const persistedConfig = ((persisted as Partial<ConfigStore>).config || {}) as Partial<AiConfig>;

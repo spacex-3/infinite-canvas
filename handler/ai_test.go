@@ -128,6 +128,65 @@ func TestNewAIProxyPostRequestRejectsGeminiNonImageCapability(t *testing.T) {
 	}
 }
 
+func TestNewAIProxyPostRequestFitsOfficialOpenAI4KSquare(t *testing.T) {
+	channel := model.ModelChannel{Protocol: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "openai-key"}
+	request, err := newAIProxyPostRequest(context.Background(), channel, "/images/generations", []byte(`{"model":"gpt-image-2","quality":"high","size":"4096x4096"}`), "application/json")
+	if err != nil {
+		t.Fatalf("newAIProxyPostRequest returned error: %v", err)
+	}
+	body, _ := io.ReadAll(request.Body)
+	var payload struct {
+		Size string `json:"size"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("payload is invalid JSON: %v", err)
+	}
+	if payload.Size != "2880x2880" {
+		t.Fatalf("size = %q, want 2880x2880", payload.Size)
+	}
+}
+
+func TestNewAIProxyPostRequestFitsOfficialOpenAI4KSquareEdit(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	_ = writer.WriteField("model", "gpt-image-2")
+	_ = writer.WriteField("quality", "high")
+	_ = writer.WriteField("size", "4096x4096")
+	file, _ := writer.CreateFormFile("image", "reference.png")
+	_, _ = file.Write([]byte("png-data"))
+	_ = writer.Close()
+
+	channel := model.ModelChannel{Protocol: "openai", BaseURL: "https://api.openai.com", APIKey: "openai-key"}
+	request, err := newAIProxyPostRequest(context.Background(), channel, "/images/edits", body.Bytes(), writer.FormDataContentType())
+	if err != nil {
+		t.Fatalf("newAIProxyPostRequest returned error: %v", err)
+	}
+	form, err := request.MultipartReader()
+	if err != nil {
+		t.Fatalf("MultipartReader returned error: %v", err)
+	}
+	parsed, err := form.ReadForm(32 << 20)
+	if err != nil {
+		t.Fatalf("ReadForm returned error: %v", err)
+	}
+	defer parsed.RemoveAll()
+	if got := firstFormValue(parsed.Value, "size"); got != "2880x2880" {
+		t.Fatalf("size = %q, want 2880x2880", got)
+	}
+}
+
+func TestNewAIProxyPostRequestKeepsZpika4KSquare(t *testing.T) {
+	channel := model.ModelChannel{Protocol: "openai", BaseURL: "https://vip.zpika.com/v1", APIKey: "zpika-key"}
+	request, err := newAIProxyPostRequest(context.Background(), channel, "/images/generations", []byte(`{"model":"gpt-image-2","quality":"high","size":"4096x4096"}`), "application/json")
+	if err != nil {
+		t.Fatalf("newAIProxyPostRequest returned error: %v", err)
+	}
+	body, _ := io.ReadAll(request.Body)
+	if !bytes.Contains(body, []byte(`"size":"4096x4096"`)) {
+		t.Fatalf("payload = %s", body)
+	}
+}
+
 func TestNewAIProxyPostRequestConvertsGeminiImageEdit(t *testing.T) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)

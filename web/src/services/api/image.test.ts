@@ -24,6 +24,25 @@ describe("fpbrowser2api image model routing", () => {
     });
 });
 
+describe("semantic image resolution mapping", () => {
+    test("maps 4K square to the selected OpenAI-compatible provider", () => {
+        expect(typeof imageApi.resolveImageRequestSize).toBe("function");
+        const resolveImageRequestSize = imageApi.resolveImageRequestSize!;
+
+        expect(resolveImageRequestSize({ channelMode: "remote", baseUrl: "https://api.openai.com" }, "high", "1:1")).toBe("4096x4096");
+        expect(resolveImageRequestSize({ channelMode: "local", baseUrl: "https://api.openai.com" }, "high", "1:1")).toBe("2880x2880");
+        expect(resolveImageRequestSize({ channelMode: "local", baseUrl: "https://vip.zpika.com" }, "high", "1:1")).toBe("4096x4096");
+    });
+
+    test("maps 2K and 1K independently from aspect ratio", () => {
+        const resolveImageRequestSize = imageApi.resolveImageRequestSize!;
+
+        expect(resolveImageRequestSize({ channelMode: "remote", baseUrl: "" }, "medium", "16:9")).toBe("2048x1152");
+        expect(resolveImageRequestSize({ channelMode: "remote", baseUrl: "" }, "low", "9:16")).toBe("576x1024");
+        expect(resolveImageRequestSize({ channelMode: "local", baseUrl: "https://api.openai.com" }, "low", "9:16")).toBe("608x1088");
+    });
+});
+
 describe("Gemini native image protocol", () => {
     test("builds the documented generateContent URL and payload", () => {
         expect(buildGeminiApiUrl("https://vip.zpika.com/v1", "gemini-3.1-flash-image-preview")).toBe("https://vip.zpika.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent");
@@ -31,6 +50,7 @@ describe("Gemini native image protocol", () => {
             contents: [{ role: "user", parts: [{ text: "把参考图融合成海报" }, { inlineData: { mimeType: "image/png", data: "BASE64_REF" } }] }],
             generationConfig: { imageConfig: { imageSize: "4K", aspectRatio: "9:16" } },
         });
+        expect(buildGeminiImagePayload({ prompt: "4K 正方形", quality: "high", size: "1:1", references: [] }).generationConfig.imageConfig).toEqual({ imageSize: "4K", aspectRatio: "1:1" });
     });
 
     test("infers Gemini image resolution from explicit pixel dimensions", () => {

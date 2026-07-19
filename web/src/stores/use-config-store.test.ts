@@ -28,7 +28,15 @@ describe("custom channel access", () => {
         expect(defaultConfig.videoSize).toBe("9:16");
         expect(defaultConfig.videoSeconds).toBe("10");
         expect(defaultConfig.vquality).toBe("1080p");
+        expect(defaultConfig.quality).toBe("high");
         expect(defaultConfig.size).toBe("1:1");
+    });
+
+    test("upgrades the previous untouched image defaults once", () => {
+        expect(typeof configStore.migrateImageDefaults).toBe("function");
+        expect(configStore.migrateImageDefaults!({ quality: "auto", size: "1:1" }, 0)).toMatchObject({ quality: "high", size: "1:1" });
+        expect(configStore.migrateImageDefaults!({ quality: "auto", size: "16:9" }, 0)).toMatchObject({ quality: "auto", size: "16:9" });
+        expect(configStore.migrateImageDefaults!({ quality: "auto", size: "1:1" }, 2)).toMatchObject({ quality: "auto", size: "1:1" });
     });
 
     test("resolves image and video models through different custom channels", () => {
