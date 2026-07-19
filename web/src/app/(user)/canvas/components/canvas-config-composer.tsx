@@ -8,7 +8,7 @@ import { FileText, Image as ImageIcon, Music2, Video, X } from "lucide-react";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { NodeGenerationInput } from "./canvas-node-generation";
-import { matchesCanvasReferenceQuery, readCanvasReferenceMention } from "../utils/canvas-resource-query";
+import { matchesCanvasReferenceQuery, readCanvasReferenceMention, shouldResetCanvasReferenceSelection } from "../utils/canvas-resource-query";
 
 type CanvasConfigComposerProps = {
     value: string;
@@ -22,6 +22,7 @@ type Token =
     | { type: "reference"; nodeId: string };
 
 type MentionState = {
+    start: number;
     query: string;
 };
 
@@ -73,8 +74,8 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
             closeMention();
             return;
         }
-        setMention({ query: nextMention.query });
-        setActiveIndex(0);
+        if (shouldResetCanvasReferenceSelection(mention, nextMention)) setActiveIndex(0);
+        setMention(nextMention);
     };
 
     const closeMention = () => {

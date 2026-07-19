@@ -12,6 +12,10 @@ export function readCanvasReferenceMention(value: string, cursor: number) {
     return { start: cursor - match[1].length - 1, query: match[1] };
 }
 
+export function shouldResetCanvasReferenceSelection(current: { start: number; query: string } | null, next: { start: number; query: string }) {
+    return !current || current.start !== next.start || current.query !== next.query;
+}
+
 function normalizeQuery(value: string) {
     return value.toLowerCase().replace(/[\s@#【】\[\]（）()_-]+/g, "");
 }

@@ -9,7 +9,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 import { canonicalizeCanvasResourceMentionText, renderCanvasResourceMentionText } from "../utils/canvas-resource-mention-format";
-import { matchesCanvasReferenceQuery, readCanvasReferenceMention } from "../utils/canvas-resource-query";
+import { matchesCanvasReferenceQuery, readCanvasReferenceMention, shouldResetCanvasReferenceSelection } from "../utils/canvas-resource-query";
 
 type MentionState = {
     start: number;
@@ -20,11 +20,10 @@ type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "onChange" | "val
     value: string;
     references: CanvasResourceReference[];
     onChange: (value: string) => void;
-    onSubmit?: () => void;
     containerClassName?: string;
 };
 
-export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Props>(function CanvasResourceMentionTextarea({ value, references, onChange, onSubmit, onKeyDown, className, containerClassName, style, ...props }, forwardedRef) {
+export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Props>(function CanvasResourceMentionTextarea({ value, references, onChange, onKeyDown, className, containerClassName, style, ...props }, forwardedRef) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
     const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -61,8 +60,8 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
             closeMention();
             return;
         }
+        if (shouldResetCanvasReferenceSelection(mention, nextMention)) setActiveIndex(0);
         setMention(nextMention);
-        setActiveIndex(0);
     };
 
     const syncCurrentMention = () => {
@@ -146,11 +145,6 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                             closeMention();
                             return;
                         }
-                    }
-                    if (event.key === "Enter" && onSubmit && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-                        event.preventDefault();
-                        onSubmit();
-                        return;
                     }
                     onKeyDown?.(event);
                 }}

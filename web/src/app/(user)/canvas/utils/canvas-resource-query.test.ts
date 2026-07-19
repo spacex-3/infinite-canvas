@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { matchesCanvasReferenceQuery, readCanvasReferenceMention } from "./canvas-resource-query";
+import { matchesCanvasReferenceQuery, readCanvasReferenceMention, shouldResetCanvasReferenceSelection } from "./canvas-resource-query";
 
 describe("matchesCanvasReferenceQuery", () => {
     test("matches shortened Chinese resource labels", () => {
@@ -14,5 +14,14 @@ describe("readCanvasReferenceMention", () => {
     test("detects mentions after Chinese text without whitespace", () => {
         const value = "图片1 的小猫改为@图";
         expect(readCanvasReferenceMention(value, value.length)).toEqual({ start: 9, query: "图" });
+    });
+});
+
+describe("shouldResetCanvasReferenceSelection", () => {
+    test("keeps the keyboard selection for the same active mention", () => {
+        const mention = { start: 5, query: "图" };
+        expect(shouldResetCanvasReferenceSelection(mention, mention)).toBe(false);
+        expect(shouldResetCanvasReferenceSelection(mention, { ...mention, query: "图片" })).toBe(true);
+        expect(shouldResetCanvasReferenceSelection(mention, { ...mention, start: 12 })).toBe(true);
     });
 });
