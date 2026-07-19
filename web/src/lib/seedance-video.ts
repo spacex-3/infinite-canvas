@@ -77,24 +77,25 @@ export function isArkPlanBaseUrl(baseUrl: string) {
 export function normalizeSeedanceResolution(value: string, model = "") {
     const normalized = normalizeResolutionToken(value);
     if (isSeedanceFastModel(model) && normalized === "1080p") return "720p";
-    return seedanceResolutionOptions.some((item) => item.value === normalized) ? normalized : "720p";
+    return seedanceResolutionOptions.some((item) => item.value === normalized) ? normalized : isSeedanceFastModel(model) ? "720p" : "1080p";
 }
 
 export function normalizeResolutionToken(value: string) {
     if (value === "low") return "480p";
     if (value === "auto" || value === "high" || value === "medium") return "720p";
-    const resolution = String(value || "").replace(/p$/i, "") || "720";
+    const resolution = String(value || "").replace(/p$/i, "") || "1080";
     return `${resolution}p`;
 }
 
 export function normalizeSeedanceDuration(value: string) {
     if (String(value).trim() === "-1") return -1;
-    const seconds = Math.floor(Number(value) || 5);
+    const seconds = Math.floor(Number(value) || 10);
     return Math.max(4, Math.min(15, seconds));
 }
 
 export function normalizeSeedanceRatio(value: string) {
-    if (!value || value === "auto" || value === "adaptive") return "adaptive";
+    if (!value) return "9:16";
+    if (value === "auto" || value === "adaptive") return "adaptive";
     if (seedanceRatioOptions.some((item) => item.value === value)) return value;
     const match = value.match(/^(\d+)x(\d+)$/);
     if (!match) return "adaptive";

@@ -34,7 +34,7 @@ const secondOptions = [6, 10, 12, 16, 20];
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark", value: string) => void;
+    onConfigChange: (key: "vquality" | "videoSize" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -48,13 +48,13 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
         return <OmniFlashVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
     }
 
-    const seconds = config.videoSeconds || "6";
-    const size = normalizeVideoSizeValue(config.size);
+    const seconds = config.videoSeconds || "10";
+    const size = normalizeVideoSizeValue(config.videoSize);
     const dimensions = readSizeDimensions(size);
     const resolution = normalizeVideoResolutionValue(config.vquality);
     const updateDimension = (key: "width" | "height", value: number | null) => {
         const next = Math.max(1, Math.floor(value || dimensions[key] || 720));
-        onConfigChange("size", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
+        onConfigChange("videoSize", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
     };
 
     return (
@@ -85,7 +85,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                                 className="flex h-[78px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
                                 style={{ borderColor: size === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
                                 onMouseDown={(event) => event.stopPropagation()}
-                                onClick={() => onConfigChange("size", item.value)}
+                                onClick={() => onConfigChange("videoSize", item.value)}
                             >
                                 <SizePreview width={item.width} height={item.height} color={theme.node.text} />
                                 <span>{item.label}</span>
@@ -117,9 +117,9 @@ function OmniFlashVideoSettingsPanel({ config, onConfigChange, theme, showTitle,
     const model = config.model || config.videoModel;
     const isEdit = model.trim().toLowerCase() === "omni-flash-vref";
     const resolution = normalizeOmniFlashResolution(config.vquality);
-    const size = normalizeVideoSizeValue(config.size === "auto" ? "1280x720" : config.size);
+    const size = normalizeVideoSizeValue(config.videoSize === "auto" ? "1280x720" : config.videoSize);
     const duration = normalizeOmniFlashDuration(config.videoSeconds, isEdit);
-    const isLandscape = !["9:16", "2:3", "3:4"].includes(config.size) && !/^(\d+)x(\d+)$/.test(size) ? true : (() => {
+    const isLandscape = !["9:16", "2:3", "3:4"].includes(config.videoSize) && !/^(\d+)x(\d+)$/.test(size) ? true : (() => {
         const dims = readSizeDimensions(size);
         return dims.width >= dims.height;
     })();
@@ -151,7 +151,7 @@ function OmniFlashVideoSettingsPanel({ config, onConfigChange, theme, showTitle,
                                     className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent px-1 text-sm transition hover:opacity-80"
                                     style={{ borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }}
                                     onMouseDown={(event) => event.stopPropagation()}
-                                    onClick={() => onConfigChange("size", item.value)}
+                                    onClick={() => onConfigChange("videoSize", item.value)}
                                 >
                                     <SizePreview width={item.width} height={item.height} color={theme.node.text} />
                                     <span>{item.label}</span>
@@ -181,7 +181,7 @@ function OmniFlashVideoSettingsPanel({ config, onConfigChange, theme, showTitle,
 function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, className }: VideoSettingsPanelProps) {
     const model = config.model || config.videoModel;
     const resolution = normalizeSeedanceResolution(config.vquality, model);
-    const ratio = normalizeSeedanceRatio(config.size);
+    const ratio = normalizeSeedanceRatio(config.videoSize);
     const duration = normalizeSeedanceDuration(config.videoSeconds);
     const generateAudio = boolConfig(config.videoGenerateAudio, true);
     const watermark = boolConfig(config.videoWatermark, false);
@@ -212,7 +212,7 @@ function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, 
                                 className="flex h-[68px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent px-1 text-sm transition hover:opacity-80"
                                 style={{ borderColor: ratio === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
                                 onMouseDown={(event) => event.stopPropagation()}
-                                onClick={() => onConfigChange("size", item.value)}
+                                onClick={() => onConfigChange("videoSize", item.value)}
                             >
                                 <SizePreview width={ratioPreview(item.value).width} height={ratioPreview(item.value).height} color={theme.node.text} />
                                 <span>{item.label}</span>
@@ -256,19 +256,19 @@ export function videoSizeLabel(value: string) {
 
 export function videoSecondsLabel(value: string) {
     if (String(value).trim() === "-1") return "智能";
-    return `${value || "6"}s`;
+    return `${value || "10"}s`;
 }
 
 export function normalizeVideoSizeValue(value: string) {
     if (value === "auto") return "auto";
     if (/^\d+x\d+$/.test(value || "")) return value;
-    return ["9:16", "2:3", "3:4"].includes(value) ? "720x1280" : "1280x720";
+    return !value || ["9:16", "2:3", "3:4"].includes(value) ? "720x1280" : "1280x720";
 }
 
 export function normalizeVideoResolutionValue(value: string) {
     if (value === "480p" || value === "low") return "480";
     if (value === "720p" || value === "auto" || value === "high" || value === "medium") return "720";
-    return value.replace(/p$/i, "") || "720";
+    return value.replace(/p$/i, "") || "1080";
 }
 
 function OptionPill({ selected, disabled = false, theme, onClick, children }: { selected: boolean; disabled?: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {

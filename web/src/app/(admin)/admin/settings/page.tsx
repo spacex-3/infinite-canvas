@@ -737,10 +737,11 @@ export default function AdminSettingsPage() {
                                 </Form.Item>
                             </Col>
                             <Col span={12}>
-                                <Form.Item name="protocol" label="协议" extra="zpika-veo-omni-flash 走 /videos；zpika-omni-flash 走 /v1/video/generations。模型名仍决定前端 payload。">
+                                <Form.Item name="protocol" label="协议">
                                     <Select
                                         options={[
                                             { label: "OpenAI 兼容", value: "openai" },
+                                            { label: "Gemini 原生图片", value: "gemini" },
                                             { label: "zpika-veo-omni-flash", value: "fpbrowser2api" },
                                             { label: "zpika-omni-flash", value: "zerofall" },
                                         ]}
@@ -1034,6 +1035,8 @@ function setEpayPaymentMethods(form: any, values: string[]) {
 
 function protocolLabel(protocol?: string) {
     switch (protocol) {
+        case "gemini":
+            return "Gemini 原生图片";
         case "zerofall":
             return "zpika-omni-flash";
         case "fpbrowser2api":
@@ -1044,7 +1047,7 @@ function protocolLabel(protocol?: string) {
 }
 
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {
-    const protocol = item.protocol === "zerofall" || item.protocol === "fpbrowser2api" || item.protocol === "openai" ? item.protocol : "openai";
+    const protocol = item.protocol === "gemini" || item.protocol === "zerofall" || item.protocol === "fpbrowser2api" || item.protocol === "openai" ? item.protocol : "openai";
     return {
         protocol,
         name: item.name || "",
@@ -1103,11 +1106,7 @@ function collectChannelModels(channels: AdminModelChannel[]) {
 }
 
 function collectKnownModels(settings: AdminSettings) {
-    return uniqueModels([
-        ...(settings.public.modelChannel.availableModels || []),
-        ...(settings.public.modelChannel.modelCosts || []).map((item) => item.model),
-        ...settings.private.channels.flatMap((channel) => channel.models || []),
-    ]);
+    return uniqueModels([...(settings.public.modelChannel.availableModels || []), ...(settings.public.modelChannel.modelCosts || []).map((item) => item.model), ...settings.private.channels.flatMap((channel) => channel.models || [])]);
 }
 
 function buildModelSelectGroups(sourceModels: string[], existingModels: string[]): Record<ModelSelectTabKey, string[]> {

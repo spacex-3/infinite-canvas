@@ -33,6 +33,7 @@ export type CanvasNodeMetadata = {
     generationType?: CanvasImageGenerationType;
     model?: string;
     size?: string;
+    videoSize?: string;
     quality?: string;
     count?: number;
     seconds?: string;

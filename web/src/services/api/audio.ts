@@ -2,7 +2,7 @@ import axios from "axios";
 
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
-import { buildApiUrl, type AiConfig } from "@/stores/use-config-store";
+import { assertChannelSupportsCapability, buildApiUrl, resolveCustomChannelConfig, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 function aiApiUrl(config: AiConfig, path: string) {
@@ -27,7 +27,10 @@ function refreshRemoteUser(config: AiConfig) {
 }
 
 export async function requestAudioGeneration(config: AiConfig, prompt: string): Promise<Blob> {
-    const model = (config.model || config.audioModel).trim();
+    const requestedModel = (config.model || config.audioModel).trim();
+    config = resolveCustomChannelConfig(config, "audio", requestedModel);
+    assertChannelSupportsCapability(config, "audio");
+    const model = config.model.trim();
     assertAudioConfig(config, model);
     const format = normalizeAudioFormatValue(config.audioFormat);
     const instructions = config.audioInstructions.trim();

@@ -156,7 +156,7 @@ export async function deleteAdminAsset(token: string, id: string) {
 }
 
 export type AdminModelChannel = {
-    protocol: "openai" | "zerofall" | "fpbrowser2api";
+    protocol: "openai" | "gemini" | "zerofall" | "fpbrowser2api";
     name: string;
     baseUrl: string;
     apiKey: string;

@@ -8,7 +8,7 @@ const initSource = readFileSync(join(import.meta.dir, "client-root-init.tsx"), "
 describe("ordinary-user custom channel configuration", () => {
     test("shows the same core channel fields without image quality routing", () => {
         expect(modalSource).toContain('label="协议"');
-        expect(modalSource).toContain("value={config.protocol}");
+        expect(modalSource).toContain("value={selectedChannel.protocol}");
         expect(modalSource).toContain('{ label: "zpika-veo-omni-flash", value: "fpbrowser2api" }');
         expect(modalSource).toContain('{ label: "zpika-omni-flash", value: "zerofall" }');
         expect(modalSource).toContain('label="渠道模型"');
@@ -20,8 +20,8 @@ describe("ordinary-user custom channel configuration", () => {
         expect(modalSource).toContain("const selectedModelOptions");
         expect(modalSource).toContain("options={channelModelOptions}");
         expect(modalSource).toContain("options={selectedModelOptions}");
-        expect(modalSource).toContain('if (effectiveMode === "local" && !config.models.length)');
-        expect(modalSource).toContain("config[group.modelsKey].includes(config[group.modelKey])");
+        expect(modalSource).toContain('if (effectiveMode === "local" && !configuredChannels.length)');
+        expect(modalSource).toContain("bindingOptions(group)");
         expect(modalSource).not.toContain("imageQualities");
     });
 
@@ -29,6 +29,20 @@ describe("ordinary-user custom channel configuration", () => {
         expect(modalSource).toContain("canUseCustomChannel(user?.role, modelChannel?.allowCustomChannel === true)");
         expect(modalSource).not.toContain("普通用户仅可使用系统后台渠道");
         expect(initSource).toContain("canUseCustomChannel(user?.role, allowCustomChannel)");
+        expect(initSource).toContain('"customChannels"');
+        expect(initSource).not.toContain('updateConfig("baseUrl"');
         expect(initSource).not.toContain("只有管理员可以导入本地直连配置");
+    });
+
+    test("manages multiple custom channels and capability bindings", () => {
+        expect(modalSource).toContain("customChannels");
+        expect(modalSource).toContain("新增渠道");
+        expect(modalSource).toContain("删除渠道");
+        expect(modalSource).toContain('value: "gemini"');
+        expect(modalSource).toContain("imageChannelId");
+        expect(modalSource).toContain("videoChannelId");
+        expect(modalSource).toContain("const visibleModelGroups");
+        expect(modalSource).toContain('selectedChannel?.protocol === "gemini"');
+        expect(modalSource).toContain("updateChannelProtocol");
     });
 });

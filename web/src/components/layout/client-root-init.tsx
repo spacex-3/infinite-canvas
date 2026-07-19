@@ -17,6 +17,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const isUserReady = useUserStore((state) => state.isReady);
     const loadPublicSettings = useConfigStore((state) => state.loadPublicSettings);
     const publicSettings = useConfigStore((state) => state.publicSettings);
+    const customChannels = useConfigStore((state) => state.config.customChannels);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const isLoginPage = pathname === "/login" || pathname === "/admin/login";
@@ -49,10 +50,12 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
             return;
         }
         updateConfig("channelMode", "local");
-        if (baseUrl) updateConfig("baseUrl", baseUrl);
-        if (apiKey) updateConfig("apiKey", apiKey);
+        updateConfig(
+            "customChannels",
+            customChannels.map((channel, index) => (index === 0 ? { ...channel, ...(baseUrl ? { baseUrl } : {}), ...(apiKey ? { apiKey } : {}) } : channel)),
+        );
         openConfigDialog(false);
-    }, [isUserReady, message, openConfigDialog, publicSettings, updateConfig, user?.role]);
+    }, [customChannels, isUserReady, message, openConfigDialog, publicSettings, updateConfig, user?.role]);
 
     return <>{children}</>;
 }

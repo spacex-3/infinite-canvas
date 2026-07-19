@@ -56,7 +56,7 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 	if err != nil {
 		return "", err
 	}
-	if isArkAgentPlanChannel(resolved) || isNoChatProbeModelName(modelName) {
+	if resolved.Protocol == "gemini" || isArkAgentPlanChannel(resolved) || isNoChatProbeModelName(modelName) {
 		return testGenerationChannelModel(resolved, modelName)
 	}
 	return testAdminChannelModel(resolved, modelName)
@@ -288,6 +288,18 @@ func BuildModelChannelURL(channel model.ModelChannel, path string) string {
 	return baseURL + path
 }
 
+func BuildGeminiChannelURL(channel model.ModelChannel, path string) string {
+	baseURL := strings.TrimRight(strings.TrimSpace(channel.BaseURL), "/")
+	lowerBaseURL := strings.ToLower(baseURL)
+	for _, suffix := range []string{"/v1beta", "/v1"} {
+		if strings.HasSuffix(lowerBaseURL, suffix) {
+			baseURL = baseURL[:len(baseURL)-len(suffix)]
+			break
+		}
+	}
+	return baseURL + "/v1beta" + path
+}
+
 func normalizeModelChannelBaseURL(baseURL string) string {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	parsed, err := url.Parse(baseURL)
@@ -397,7 +409,7 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 	if channel.Protocol == "" {
 		channel.Protocol = "openai"
 	}
-	if channel.Protocol != "openai" && channel.Protocol != "zerofall" && channel.Protocol != "fpbrowser2api" {
+	if channel.Protocol != "openai" && channel.Protocol != "gemini" && channel.Protocol != "zerofall" && channel.Protocol != "fpbrowser2api" {
 		channel.Protocol = "openai"
 	}
 	if channel.Models == nil {
@@ -445,11 +457,18 @@ func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelCha
 }
 
 func fetchAdminChannelModels(channel model.ModelChannel) ([]string, error) {
-	request, err := http.NewRequest(http.MethodGet, BuildModelChannelURL(channel, "/models"), nil)
+	requestURL := BuildModelChannelURL(channel, "/models")
+	if channel.Protocol == "gemini" {
+		requestURL = BuildGeminiChannelURL(channel, "/models")
+	}
+	request, err := http.NewRequest(http.MethodGet, requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	if channel.Protocol == "gemini" {
+		request.Header.Set("x-goog-api-key", channel.APIKey)
+	}
 	response, err := adminModelHTTPClient.Do(request)
 	if err != nil {
 		return nil, safeMessageError{message: "读取模型失败：上游接口无响应或网络不可达"}
@@ -461,6 +480,27 @@ func fetchAdminChannelModels(channel model.ModelChannel) ([]string, error) {
 			return nil, safeMessageError{message: "火山方舟 Agent Plan 未提供 OpenAI /models 模型列表接口，请手动填写模型名称，例如 doubao-seedance-2.0。"}
 		}
 		return nil, readAdminChannelError(body, response.StatusCode, "读取模型失败")
+	}
+	if channel.Protocol == "gemini" {
+		var payload struct {
+			Models []struct {
+				Name                       string   `json:"name"`
+				SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+			} `json:"models"`
+		}
+		_ = json.Unmarshal(body, &payload)
+		result := []string{}
+		for _, item := range payload.Models {
+			if len(item.SupportedGenerationMethods) > 0 && !containsString(item.SupportedGenerationMethods, "generateContent") {
+				continue
+			}
+			name := strings.TrimPrefix(strings.TrimSpace(item.Name), "models/")
+			if name != "" && isImageModelName(name) {
+				result = append(result, name)
+			}
+		}
+		sort.Strings(result)
+		return uniqueModelNames(result), nil
 	}
 	var payload struct {
 		Data []struct {
@@ -476,6 +516,15 @@ func fetchAdminChannelModels(channel model.ModelChannel) ([]string, error) {
 	}
 	sort.Strings(result)
 	return result, nil
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func testAdminChannelModel(channel model.ModelChannel, modelName string) (string, error) {

@@ -57,11 +57,15 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 	if strings.TrimSpace(modelName) == "" {
 		modelName = "grok-imagine-video"
 	}
-	channel, err := service.SelectModelChannel(modelName)
-	if err != nil {
-		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
-		Fail(w, "AI 接口请求失败")
-		return
+	channel, ok := boundAIAsyncTaskChannel(path)
+	if !ok {
+		var err error
+		channel, err = service.SelectModelChannel(modelName)
+		if err != nil {
+			log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
+			Fail(w, "AI 接口请求失败")
+			return
+		}
 	}
 	path = resolveAIProxyPath(channel, modelName, path)
 	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, service.BuildModelChannelURL(channel, path), nil)
@@ -70,7 +74,7 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
-	copyAIResponse(w, request, nil)
+	copyAIResponse(w, request, nil, nil)
 }
 
 func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
@@ -99,24 +103,48 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	path = resolveAIProxyPath(channel, modelName, path)
+	if isGeminiImageRequest(channel, path) {
+		if err := service.ConsumeUserCredits(user.ID, modelName, credits, path); err != nil {
+			FailError(w, err)
+			return
+		}
+		responseBody, err := executeGeminiImageRequests(r.Context(), channel, path, body, contentType, readAIRequestCount(body, contentType))
+		if err != nil {
+			if refundErr := service.RefundUserCredits(user.ID, modelName, credits, path); refundErr != nil {
+				log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, refundErr)
+			}
+			Fail(w, safeAIErrorMessage(err, "AI 接口请求失败"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(responseBody)
+		return
+	}
 	request, err := newAIProxyPostRequest(r.Context(), channel, path, body, contentType)
 	if err != nil {
 		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
-		Fail(w, "AI 接口请求失败")
+		Fail(w, safeAIErrorMessage(err, "AI 接口请求失败"))
 		return
 	}
 	if err := service.ConsumeUserCredits(user.ID, modelName, credits, path); err != nil {
 		FailError(w, err)
 		return
 	}
+	var onSuccess func([]byte)
+	if isAIAsyncCreatePath(path) {
+		onSuccess = func(responseBody []byte) {
+			bindAIAsyncTaskChannel(path, channel, responseBody)
+		}
+	}
 	copyAIResponse(w, request, func() {
 		if err := service.RefundUserCredits(user.ID, modelName, credits, path); err != nil {
 			log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
 		}
-	})
+	}, onSuccess)
 }
 
-func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func()) {
+func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func(), onSuccess func([]byte)) {
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		log.Printf("AI proxy request failed: url=%s err=%v", request.URL.String(), err)
@@ -137,6 +165,18 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 		Fail(w, aiUpstreamStatusMessage(response.StatusCode, body))
 		return
 	}
+	var responseBody []byte
+	if onSuccess != nil {
+		responseBody, err = io.ReadAll(response.Body)
+		if err != nil {
+			if onFailure != nil {
+				onFailure()
+			}
+			Fail(w, "AI 接口响应读取失败")
+			return
+		}
+		onSuccess(responseBody)
+	}
 
 	for key, values := range response.Header {
 		if strings.EqualFold(key, "Content-Length") {
@@ -147,6 +187,10 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 		}
 	}
 	w.WriteHeader(response.StatusCode)
+	if onSuccess != nil {
+		_, _ = w.Write(responseBody)
+		return
+	}
 	_, _ = io.Copy(w, response.Body)
 }
 

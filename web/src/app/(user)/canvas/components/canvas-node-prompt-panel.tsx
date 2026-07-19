@@ -5,7 +5,7 @@ import { ArrowUp, LoaderCircle } from "lucide-react";
 import { Button } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
-import { defaultConfig, modelMatchesCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { defaultConfig, isModelAvailableForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { CreditSymbol, requestCreditCost, shouldShowRequestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -138,9 +138,10 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
     const savedModel = node.metadata?.model;
     return {
         ...globalConfig,
-        model: savedModel && modelMatchesCapability(savedModel, mode) ? savedModel : defaultModel || (mode === "audio" ? defaultConfig.audioModel : globalConfig.model || defaultConfig.model),
+        model: savedModel && isModelAvailableForCapability(globalConfig, savedModel, mode) ? savedModel : defaultModel || (mode === "audio" ? defaultConfig.audioModel : globalConfig.model || defaultConfig.model),
         quality: node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
-        size: node.metadata?.size || globalConfig.size || defaultConfig.size,
+        size: mode === "image" ? node.metadata?.size || globalConfig.size || defaultConfig.size : globalConfig.size,
+        videoSize: mode === "video" ? node.metadata?.videoSize || (node.type === CanvasNodeType.Video ? node.metadata?.size : undefined) || globalConfig.videoSize || defaultConfig.videoSize : globalConfig.videoSize,
         videoSeconds: node.metadata?.seconds || globalConfig.videoSeconds || defaultConfig.videoSeconds,
         vquality: node.metadata?.vquality || globalConfig.vquality || defaultConfig.vquality,
         videoGenerateAudio: node.metadata?.generateAudio || globalConfig.videoGenerateAudio || defaultConfig.videoGenerateAudio,
@@ -161,6 +162,7 @@ function promptPlaceholder(mode: CanvasNodeGenerationMode, hasImageContent: bool
 }
 
 function videoConfigPatch(key: keyof AiConfig, value: string) {
+    if (key === "videoSize") return { videoSize: value };
     if (key === "videoSeconds") return { seconds: value };
     if (key === "videoGenerateAudio") return { generateAudio: value };
     if (key === "videoWatermark") return { watermark: value };

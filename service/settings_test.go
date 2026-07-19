@@ -32,6 +32,36 @@ func TestFetchAdminChannelModelsParsesOpenAIModels(t *testing.T) {
 	}
 }
 
+func TestFetchAdminChannelModelsParsesGeminiModels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1beta/models" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("x-goog-api-key"); got != "gemini-key" {
+			t.Fatalf("x-goog-api-key = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"models":[{"name":"models/gemini-3.1-flash-image-preview","supportedGenerationMethods":["generateContent"]},{"name":"models/gemini-2.5-pro","supportedGenerationMethods":["generateContent"]},{"name":"models/embedding-001","supportedGenerationMethods":["embedContent"]}]}`))
+	}))
+	defer server.Close()
+
+	models, err := fetchAdminChannelModels(model.ModelChannel{Protocol: "gemini", BaseURL: server.URL + "/v1", APIKey: "gemini-key"})
+	if err != nil {
+		t.Fatalf("fetchAdminChannelModels returned error: %v", err)
+	}
+	if want := []string{"gemini-3.1-flash-image-preview"}; !reflect.DeepEqual(models, want) {
+		t.Fatalf("models = %#v, want %#v", models, want)
+	}
+}
+
+func TestBuildGeminiChannelURLNormalizesVersionPath(t *testing.T) {
+	got := BuildGeminiChannelURL(model.ModelChannel{BaseURL: "https://vip.zpika.com/v1"}, "/models/gemini-image:generateContent")
+	want := "https://vip.zpika.com/v1beta/models/gemini-image:generateContent"
+	if got != want {
+		t.Fatalf("BuildGeminiChannelURL = %q, want %q", got, want)
+	}
+}
+
 func TestFetchAdminChannelModelsReportsArkPlanModelsUnsupported(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/plan/v3/models" {

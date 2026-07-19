@@ -43,7 +43,8 @@ export function normalizeOmniFlashAspectRatio(size: string, videoWidth?: number,
     if (w > 0 && h > 0) return w >= h ? "landscape" : "portrait";
 
     const raw = String(size || "").trim().toLowerCase();
-    if (!raw || raw === "auto" || raw === "adaptive") return "landscape";
+    if (!raw) return "portrait";
+    if (raw === "auto" || raw === "adaptive") return "landscape";
     if (raw === "landscape" || raw.includes("横")) return "landscape";
     if (raw === "portrait" || raw.includes("竖")) return "portrait";
     if (raw.includes("16:9") || raw.includes("21:9") || raw.includes("4:3") || raw.includes("3:2")) return "landscape";
@@ -61,6 +62,7 @@ export function normalizeOmniFlashAspectRatio(size: string, videoWidth?: number,
 /** Map UI quality (720 / 720p / high / 1080…) to ZeroFall resolution. */
 export function normalizeOmniFlashResolution(value: string): "720p" | "1080p" {
     const raw = String(value || "").trim().toLowerCase();
+    if (!raw) return "1080p";
     if (raw === "1080" || raw === "1080p" || raw === "high" || raw.includes("1080")) return "1080p";
     return "720p";
 }
@@ -68,6 +70,7 @@ export function normalizeOmniFlashResolution(value: string): "720p" | "1080p" {
 /** Generate mode: 4 / 6 / 8 / 10. Edit mode is fixed to 10. */
 export function normalizeOmniFlashDuration(value: string, isEdit: boolean): 4 | 6 | 8 | 10 {
     if (isEdit) return 10;
+    if (!String(value).trim()) return 10;
     const seconds = Math.floor(Number(value) || 0);
     if (seconds <= 4) return 4;
     if (seconds <= 6) return 6;

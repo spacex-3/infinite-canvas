@@ -43,4 +43,10 @@ describe("omni-flash video helpers", () => {
         expect(normalizeOmniFlashDuration("4", true)).toBe(10);
         expect(normalizeOmniFlashDuration("12", false)).toBe(10);
     });
+
+    test("uses vertical 1080p and 10 seconds for empty defaults", () => {
+        expect(normalizeOmniFlashAspectRatio("")).toBe("portrait");
+        expect(normalizeOmniFlashResolution("")).toBe("1080p");
+        expect(normalizeOmniFlashDuration("", false)).toBe(10);
+    });
 });

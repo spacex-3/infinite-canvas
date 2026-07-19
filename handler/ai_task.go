@@ -100,10 +100,20 @@ func runAIImageTask(id string, channel model.ModelChannel, modelName string, pat
 
 	ctx, cancel := context.WithTimeout(context.Background(), aiImageTaskTimeout)
 	defer cancel()
+	if isGeminiImageRequest(channel, path) {
+		responseBody, err := executeGeminiImageRequests(ctx, channel, path, body, contentType, readAIRequestCount(body, contentType))
+		if err != nil {
+			refundAIImageTaskCredits(userID, modelName, credits, path)
+			finishAIImageTaskFailed(id, safeAIErrorMessage(err, "AI 接口请求失败"))
+			return
+		}
+		finishAIImageTaskSuccess(id, json.RawMessage(responseBody))
+		return
+	}
 	request, err := newAIProxyPostRequest(ctx, channel, path, body, contentType)
 	if err != nil {
 		refundAIImageTaskCredits(userID, modelName, credits, path)
-		finishAIImageTaskFailed(id, "AI 接口请求失败")
+		finishAIImageTaskFailed(id, safeAIErrorMessage(err, "AI 接口请求失败"))
 		return
 	}
 	response, err := http.DefaultClient.Do(request)
@@ -146,6 +156,12 @@ func refundAIImageTaskCredits(userID string, modelName string, credits int, path
 }
 
 func newAIProxyPostRequest(ctx context.Context, channel model.ModelChannel, path string, body []byte, contentType string) (*http.Request, error) {
+	if strings.EqualFold(strings.TrimSpace(channel.Protocol), "gemini") {
+		if isGeminiImageRequest(channel, path) {
+			return newGeminiImageRequest(ctx, channel, body, contentType)
+		}
+		return nil, geminiImageRequestError{"Gemini 原生图片协议仅支持图片生成和参考图编辑"}
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
 	if err != nil {
 		return nil, err

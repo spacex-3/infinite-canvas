@@ -13,7 +13,7 @@ describe("AdminSettingsPage", () => {
     test("exposes epay payment methods as admin configurable options", () => {
         expect(source).toContain('label="支付渠道"');
         expect(source).toContain("paymentMethodOptions");
-        expect(source).toContain('setEpayPaymentMethods(form, values as string[])');
+        expect(source).toContain("setEpayPaymentMethods(form, values as string[])");
     });
 
     test("does not use deprecated InputNumber addonAfter", () => {
@@ -33,5 +33,9 @@ describe("AdminSettingsPage", () => {
     test("keeps upstream channel models unselected until the administrator chooses them", () => {
         expect(source).toContain("setModelSelectSelected(current);");
         expect(source).not.toContain("setModelSelectSelected(uniqueModels([...current, ...channelModels]));");
+    });
+
+    test("offers the Gemini native image channel protocol", () => {
+        expect(source).toContain('{ label: "Gemini 原生图片", value: "gemini" }');
     });
 });

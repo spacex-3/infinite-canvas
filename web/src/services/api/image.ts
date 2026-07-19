@@ -1,12 +1,13 @@
 import axios from "axios";
 
-import { buildApiUrl, type AiConfig } from "@/stores/use-config-store";
+import { assertChannelSupportsCapability, buildApiUrl, resolveCustomChannelConfig, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
 import type { ReferenceImage } from "@/types/image";
+import { buildGeminiApiUrl, buildGeminiImagePayload, buildGeminiModelsUrl, parseGeminiImagePayload, parseGeminiModels, readGeminiDataUrl } from "./gemini-image";
 import { notifyGenerationProgress, type GenerationProgressCallback } from "./progress";
 
 export type ChatCompletionMessage = {
@@ -16,6 +17,7 @@ export type ChatCompletionMessage = {
 
 type ImageApiResponse = {
     data?: Array<Record<string, unknown>>;
+    candidates?: unknown[];
     error?: { message?: string };
     code?: number;
     msg?: string;
@@ -143,15 +145,17 @@ function resolveImageDataUrl(item: Record<string, unknown>) {
     return null;
 }
 
-function parseImagePayload(payload: ImageApiResponse) {
+export function parseImagePayload(payload: ImageApiResponse) {
     if (typeof payload.code === "number" && payload.code !== 0) {
         throw new Error(payload.msg || "请求失败");
     }
-    const images =
+    const openAIImages =
         payload.data
             ?.map(resolveImageDataUrl)
             .filter((value): value is string => Boolean(value))
             .map((dataUrl) => ({ id: nanoid(), dataUrl })) || [];
+    const geminiImages = payload.candidates ? parseGeminiImagePayload(payload as never).map((dataUrl) => ({ id: nanoid(), dataUrl })) : [];
+    const images = [...openAIImages, ...geminiImages];
 
     if (images.length === 0) {
         throw new Error("接口没有返回图片");
@@ -226,7 +230,9 @@ function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) 
 }
 
 export async function requestGeneration(config: AiConfig, prompt: string, onProgress?: GenerationProgressCallback) {
+    config = resolveCustomChannelConfig(config, "image", (config.model || config.imageModel).trim());
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    if (config.channelMode === "local" && config.protocol === "gemini") return requestGeminiImage(config, prompt, [], n, onProgress);
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     if (shouldUseFpbrowserVideoImageApi(config)) {
@@ -255,10 +261,15 @@ export async function requestGeneration(config: AiConfig, prompt: string, onProg
 }
 
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, onProgress?: GenerationProgressCallback) {
+    config = resolveCustomChannelConfig(config, "image", (config.model || config.imageModel).trim());
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const requestPrompt = buildImageReferencePromptText(prompt, references);
+    if (config.channelMode === "local" && config.protocol === "gemini") {
+        if (mask) throw new Error("Gemini 原生图片协议暂不支持蒙版编辑");
+        return requestGeminiImage(config, requestPrompt, references, n, onProgress);
+    }
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
-    const requestPrompt = buildImageReferencePromptText(prompt, references);
     if (shouldUseFpbrowserVideoImageApi(config)) {
         if (mask) throw new Error("当前 fpbrowser2api 图片模型暂不支持蒙版编辑");
         return requestFpbrowserVideoImageGeneration(config, requestPrompt, references, { n, quality, size: requestSize }, onProgress);
@@ -281,7 +292,9 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 
     try {
         const payloadData =
-            config.channelMode === "remote" ? await requestRemoteImageTask(config, "/images/edits", formData, aiHeaders(config), onProgress) : (await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config) })).data;
+            config.channelMode === "remote"
+                ? await requestRemoteImageTask(config, "/images/edits", formData, aiHeaders(config), onProgress)
+                : (await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config) })).data;
         const images = parseImagePayload(payloadData);
         refreshRemoteUser(config);
         return images;
@@ -291,6 +304,8 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 }
 
 export async function requestImageQuestion(config: AiConfig, messages: ChatCompletionMessage[], onDelta: (text: string) => void) {
+    config = resolveCustomChannelConfig(config, "text", (config.model || config.textModel).trim());
+    assertChannelSupportsCapability(config, "text");
     let buffer = "";
     let answer = "";
     let processedLength = 0;
@@ -355,6 +370,12 @@ export async function requestImageQuestion(config: AiConfig, messages: ChatCompl
 export async function fetchImageModels(config: AiConfig) {
     if (config.channelMode === "remote") return config.models;
     try {
+        if (config.protocol === "gemini") {
+            const response = await axios.get(buildGeminiModelsUrl(config.baseUrl), {
+                headers: { "x-goog-api-key": config.apiKey, Authorization: `Bearer ${config.apiKey}` },
+            });
+            return parseGeminiModels(response.data);
+        }
         const response = await axios.get<{ data?: Array<{ id?: string }>; error?: { message?: string } }>(buildApiUrl(config.baseUrl, "/models"), {
             headers: {
                 Authorization: `Bearer ${config.apiKey}`,
@@ -366,6 +387,26 @@ export async function fetchImageModels(config: AiConfig) {
             .sort((a, b) => a.localeCompare(b));
     } catch (error) {
         throw new Error(readAxiosError(error, "读取模型失败"));
+    }
+}
+
+async function requestGeminiImage(config: AiConfig, prompt: string, references: ReferenceImage[], count: number, onProgress?: GenerationProgressCallback) {
+    const imageParts = await Promise.all(references.map(async (image) => readGeminiDataUrl(await imageToDataUrl(image))));
+    const payload = buildGeminiImagePayload({ prompt: withSystemPrompt(config, prompt), quality: config.quality, size: config.size, references: imageParts });
+    notifyGenerationProgress(onProgress, { progress: 0 });
+    try {
+        const responses = await Promise.all(
+            Array.from({ length: count }, () =>
+                axios.post(buildGeminiApiUrl(config.baseUrl, config.model), payload, {
+                    headers: { "x-goog-api-key": config.apiKey, Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
+                }),
+            ),
+        );
+        const images = responses.flatMap((response) => parseGeminiImagePayload(response.data)).map((dataUrl) => ({ id: nanoid(), dataUrl }));
+        notifyGenerationProgress(onProgress, { progress: 100 });
+        return images;
+    } catch (error) {
+        throw new Error(readAxiosError(error, "Gemini 图片生成失败"));
     }
 }
 
@@ -426,7 +467,10 @@ async function requestFpbrowserVideoImageGeneration(config: AiConfig, prompt: st
         const startedAt = Date.now();
         while (Date.now() - startedAt < IMAGE_TASK_TIMEOUT_MS) {
             await delay(IMAGE_TASK_POLL_MS);
-            const task = unwrapEnvelope((await axios.get<ApiEnvelope<FpbrowserVideoImageResponse>>(aiApiUrl(config, `/videos/${created.id}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: config.model } : undefined })).data, "图片任务不存在");
+            const task = unwrapEnvelope(
+                (await axios.get<ApiEnvelope<FpbrowserVideoImageResponse>>(aiApiUrl(config, `/videos/${created.id}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: config.model } : undefined })).data,
+                "图片任务不存在",
+            );
             notifyGenerationProgress(onProgress, task);
             const urls = readFpbrowserVideoImageUrls(task);
             if (isFpbrowserCompletedStatus(task.status) && urls.length) {

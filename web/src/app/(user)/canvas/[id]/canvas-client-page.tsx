@@ -10,7 +10,7 @@ import { requestEdit, requestGeneration, requestImageQuestion } from "@/services
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { DOCS_URL } from "@/constant/env";
-import { defaultConfig, modelMatchesCapability, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { defaultConfig, isModelAvailableForCapability, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
@@ -508,7 +508,7 @@ function InfiniteCanvasPage() {
 
     const createConnectedNode = useCallback(
         (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio, pending: PendingConnectionCreate) => {
-            const metadata = type === CanvasNodeType.Config ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count) } : undefined;
+            const metadata = type === CanvasNodeType.Config ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, videoSize: effectiveConfig.videoSize, count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count) } : undefined;
             const newNode = createCanvasNode(type, pending.position, metadata);
             const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
             if (!connection) {
@@ -523,7 +523,7 @@ function InfiniteCanvasPage() {
             setPendingConnectionCreate(null);
             setConnecting(null);
         },
-        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, message, setConnecting],
+        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, effectiveConfig.videoSize, message, setConnecting],
     );
 
     const cancelPendingConnectionCreate = useCallback(() => {
@@ -654,6 +654,7 @@ function InfiniteCanvasPage() {
                     ? {
                           model: effectiveConfig.imageModel || effectiveConfig.model,
                           size: effectiveConfig.size,
+                          videoSize: effectiveConfig.videoSize,
                           count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count),
                       }
                     : undefined;
@@ -664,7 +665,7 @@ function InfiniteCanvasPage() {
             setSelectedConnectionId(null);
             if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
         },
-        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
+        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, effectiveConfig.videoSize, getCanvasCenter],
     );
 
     const deleteNodes = useCallback(
@@ -1939,7 +1940,7 @@ function InfiniteCanvasPage() {
                 }
 
                 if (mode === "video") {
-                    const spec = nodeSizeFromRatio(generationConfig.size, NODE_DEFAULT_SIZE[CanvasNodeType.Video].width, NODE_DEFAULT_SIZE[CanvasNodeType.Video].height) || NODE_DEFAULT_SIZE[CanvasNodeType.Video];
+                    const spec = nodeSizeFromRatio(generationConfig.videoSize, NODE_DEFAULT_SIZE[CanvasNodeType.Video].width, NODE_DEFAULT_SIZE[CanvasNodeType.Video].height) || NODE_DEFAULT_SIZE[CanvasNodeType.Video];
                     const isEmptyVideoNode = sourceNode?.type === CanvasNodeType.Video && !sourceNode.metadata?.content;
                     const videoId = isEmptyVideoNode ? nodeId : nanoid();
                     const parent = sourceNode?.position || { x: 0, y: 0 };
@@ -1950,14 +1951,14 @@ function InfiniteCanvasPage() {
                         position: isEmptyVideoNode ? sourceNode.position : { x: parent.x + (sourceNode?.width || spec.width) + 96, y: parent.y },
                         width: isEmptyVideoNode ? sourceNode.width : spec.width,
                         height: isEmptyVideoNode ? sourceNode.height : spec.height,
-                        metadata: { prompt: effectivePrompt, status: NODE_STATUS_LOADING, progress: undefined, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark, references: generationReferenceUrls(generationContext) },
+                        metadata: { prompt: effectivePrompt, status: NODE_STATUS_LOADING, progress: undefined, model: generationConfig.model, size: generationConfig.videoSize, videoSize: generationConfig.videoSize, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark, references: generationReferenceUrls(generationContext) },
                     };
                     pendingChildIds = [videoId];
                     setNodes((prev) => (isEmptyVideoNode ? prev.map((node) => (node.id === nodeId ? { ...node, ...videoNode } : node)) : [...prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS, progress: undefined } } : node)), videoNode]));
                     if (!isEmptyVideoNode) setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: videoId }]);
                     const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, effectivePrompt, generationContext.referenceImages, generationContext.referenceVideos, generationContext.referenceAudios, (progress) => updateGenerationProgress(videoId, progress)));
                     const videoSize = fitNodeSize(video.width || spec.width, video.height || spec.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
-                    setNodes((prev) => prev.map((node) => (node.id === videoId ? { ...node, width: videoSize.width, height: videoSize.height, position: { x: node.position.x + node.width / 2 - videoSize.width / 2, y: node.position.y + node.height / 2 - videoSize.height / 2 }, metadata: { ...node.metadata, ...videoMetadata(video), progress: undefined, prompt: effectivePrompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark, references: generationReferenceUrls(generationContext) } } : node)));
+                    setNodes((prev) => prev.map((node) => (node.id === videoId ? { ...node, width: videoSize.width, height: videoSize.height, position: { x: node.position.x + node.width / 2 - videoSize.width / 2, y: node.position.y + node.height / 2 - videoSize.height / 2 }, metadata: { ...node.metadata, ...videoMetadata(video), progress: undefined, prompt: effectivePrompt, model: generationConfig.model, size: generationConfig.videoSize, videoSize: generationConfig.videoSize, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark, references: generationReferenceUrls(generationContext) } } : node)));
                     return;
                 }
 
@@ -2054,7 +2055,7 @@ function InfiniteCanvasPage() {
                 hasSavedImageMetadata && savedImageMetadata
                     ? {
                           ...effectiveConfig,
-                          model: savedImageMetadata.model && modelMatchesCapability(savedImageMetadata.model, "image") ? savedImageMetadata.model : effectiveConfig.imageModel || effectiveConfig.model,
+                          model: savedImageMetadata.model && isModelAvailableForCapability(effectiveConfig, savedImageMetadata.model, "image") ? savedImageMetadata.model : effectiveConfig.imageModel || effectiveConfig.model,
                           quality: savedImageMetadata.quality || effectiveConfig.quality,
                           size: savedImageMetadata.size || effectiveConfig.size,
                           count: "1",
@@ -2102,7 +2103,7 @@ function InfiniteCanvasPage() {
                 if (node.type === CanvasNodeType.Video) {
                     const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, prompt, retryImages, context?.referenceVideos || [], context?.referenceAudios || [], updateRetryProgress));
                     const videoSize = fitNodeSize(video.width || node.width, video.height || node.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
-                    setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, width: videoSize.width, height: videoSize.height, position: { x: item.position.x + item.width / 2 - videoSize.width / 2, y: item.position.y + item.height / 2 - videoSize.height / 2 }, metadata: { ...item.metadata, ...videoMetadata(video), progress: undefined, prompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark } } : item)));
+                    setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, width: videoSize.width, height: videoSize.height, position: { x: item.position.x + item.width / 2 - videoSize.width / 2, y: item.position.y + item.height / 2 - videoSize.height / 2 }, metadata: { ...item.metadata, ...videoMetadata(video), progress: undefined, prompt, model: generationConfig.model, size: generationConfig.videoSize, videoSize: generationConfig.videoSize, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark } } : item)));
                     return;
                 }
                 if (node.type === CanvasNodeType.Audio) {
@@ -2162,6 +2163,7 @@ function InfiniteCanvasPage() {
                     prompt: "",
                     model: effectiveConfig.imageModel || effectiveConfig.model,
                     size: effectiveConfig.size,
+                    videoSize: effectiveConfig.videoSize,
                     count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count),
                 },
             );
@@ -2176,7 +2178,7 @@ function InfiniteCanvasPage() {
             setSelectedConnectionId(null);
             setDialogNodeId(configNode.id);
         },
-        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, message],
+        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, effectiveConfig.videoSize, message],
     );
 
     const insertAssistantImage = useCallback(
@@ -2882,7 +2884,8 @@ function applyNodeConfigPatch(node: CanvasNodeData, patch: Partial<CanvasNodeDat
     const safePatch = patch || {};
     const next = { ...node, metadata: { ...node.metadata, ...safePatch } };
     const spec = node.type === CanvasNodeType.Video ? NODE_DEFAULT_SIZE[CanvasNodeType.Video] : NODE_DEFAULT_SIZE[CanvasNodeType.Image];
-    const size = typeof safePatch.size === "string" && !node.metadata?.content ? nodeSizeFromRatio(safePatch.size, spec.width, spec.height) : null;
+    const ratio = node.type === CanvasNodeType.Video ? safePatch.videoSize : safePatch.size;
+    const size = typeof ratio === "string" && !node.metadata?.content ? nodeSizeFromRatio(ratio, spec.width, spec.height) : null;
     return size && (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video) ? { ...next, ...size, position: { x: node.position.x + node.width / 2 - size.width / 2, y: node.position.y + node.height / 2 - size.height / 2 } } : next;
 }
 
@@ -2916,7 +2919,7 @@ function getInputSummary(inputs: NodeGenerationInput[]) {
 function generationModelForMode(config: AiConfig, node: CanvasNodeData | undefined, mode: CanvasNodeGenerationMode) {
     const defaultModel = mode === "image" ? config.imageModel : mode === "video" ? config.videoModel : mode === "audio" ? config.audioModel : config.textModel;
     const savedModel = node?.metadata?.model;
-    return savedModel && modelMatchesCapability(savedModel, mode) ? savedModel : defaultModel || (mode === "audio" ? defaultConfig.audioModel : config.model || defaultConfig.model);
+    return savedModel && isModelAvailableForCapability(config, savedModel, mode) ? savedModel : defaultModel || (mode === "audio" ? defaultConfig.audioModel : config.model || defaultConfig.model);
 }
 
 function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefined, mode: CanvasNodeGenerationMode): AiConfig {
@@ -2924,7 +2927,8 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         ...config,
         model: generationModelForMode(config, node, mode),
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
-        size: node?.metadata?.size || config.size || defaultConfig.size,
+        size: mode === "image" ? node?.metadata?.size || config.size || defaultConfig.size : config.size,
+        videoSize: mode === "video" ? node?.metadata?.videoSize || (node?.type === CanvasNodeType.Video ? node.metadata?.size : undefined) || config.videoSize || defaultConfig.videoSize : config.videoSize,
         videoSeconds: node?.metadata?.seconds || config.videoSeconds || defaultConfig.videoSeconds,
         vquality: node?.metadata?.vquality || config.vquality || defaultConfig.vquality,
         videoGenerateAudio: node?.metadata?.generateAudio || config.videoGenerateAudio || defaultConfig.videoGenerateAudio,

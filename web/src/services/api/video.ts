@@ -14,7 +14,7 @@ import {
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { buildApiUrl, type AiConfig } from "@/stores/use-config-store";
+import { assertChannelSupportsCapability, buildApiUrl, resolveCustomChannelConfig, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -137,7 +137,10 @@ function refreshRemoteUser(config: AiConfig) {
 }
 
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], onProgress?: GenerationProgressCallback): Promise<VideoGenerationResult> {
-    const model = (config.model || config.videoModel).trim();
+    const requestedModel = (config.model || config.videoModel).trim();
+    config = resolveCustomChannelConfig(config, "video", requestedModel);
+    assertChannelSupportsCapability(config, "video");
+    const model = config.model.trim();
     assertVideoConfig(config, model);
     const protocol = resolveVideoRequestProtocol(config, model);
     // zpika omni-flash / omni-flash-vref → /v1/video/generations
@@ -159,7 +162,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
 }
 
 export function resolveVideoRequestProtocol(config: Pick<AiConfig, "channelMode" | "protocol">, model: string): "openai" | "fpbrowser2api" | "zerofall" {
-    if (config.channelMode === "local" && config.protocol !== "openai") return config.protocol;
+    if (config.channelMode === "local" && (config.protocol === "zerofall" || config.protocol === "fpbrowser2api")) return config.protocol;
     if (isOmniFlashVideoModel(model)) return "zerofall";
     if (isVeoOmniVideoModel(model)) return "fpbrowser2api";
     return "openai";
@@ -181,7 +184,7 @@ async function requestVeoOmniFlashVideoEditGeneration(config: AiConfig, model: s
         model,
         prompt,
         duration: config.videoSeconds,
-        aspectRatio: normalizeVeoAspectRatio(config.size),
+        aspectRatio: normalizeVeoAspectRatio(config.videoSize),
         videoUrl,
         imageUrls,
     });
@@ -229,7 +232,7 @@ async function requestOpenAIVideoGeneration(config: AiConfig, model: string, pro
     body.append("model", model);
     body.append("prompt", prompt);
     body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
-    if (normalizeVideoSize(config.size)) body.append("size", normalizeVideoSize(config.size)!);
+    if (normalizeVideoSize(config.videoSize)) body.append("size", normalizeVideoSize(config.videoSize)!);
     body.append("resolution_name", normalizeVideoResolution(config.vquality));
     body.append("preset", "normal");
     const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
@@ -264,7 +267,7 @@ async function requestSeedanceGeneration(config: AiConfig, model: string, prompt
     const payload = {
         model,
         content,
-        ratio: normalizeSeedanceRatio(config.size),
+        ratio: normalizeSeedanceRatio(config.videoSize),
         resolution: normalizeSeedanceResolution(config.vquality, model),
         duration: normalizeSeedanceDuration(config.videoSeconds),
         generate_audio: boolConfig(config.videoGenerateAudio, true),
@@ -323,7 +326,7 @@ async function requestOmniFlashGeneration(config: AiConfig, model: string, promp
     const payload = buildOmniFlashPayload({
         model: resolvedModel,
         prompt,
-        size: config.size,
+        size: config.videoSize,
         quality: config.vquality,
         seconds: config.videoSeconds,
         imageUrls,
@@ -518,8 +521,8 @@ function isVeoOmniVideoEditModel(model: string) {
     return model.trim().toLowerCase() === "veo-omni-flash-video-edit";
 }
 
-export function buildVeoOmniPayload(config: Pick<AiConfig, "size">, model: string, prompt: string, imageUrls: string[], videoReferences: VeoOmniPayloadVideo[]): VeoOmniPayload {
-    const dimensions = veoOmniDimensions(config.size, videoReferences[0]);
+export function buildVeoOmniPayload(config: Pick<AiConfig, "videoSize">, model: string, prompt: string, imageUrls: string[], videoReferences: VeoOmniPayloadVideo[]): VeoOmniPayload {
+    const dimensions = veoOmniDimensions(config.videoSize, videoReferences[0]);
     const images = imageUrls.map((url) => url.trim()).filter(Boolean).slice(0, 3);
     const videoUrl = String(videoReferences[0]?.url || "").trim();
     return {
@@ -688,13 +691,13 @@ function assertVideoConfig(config: AiConfig, model: string) {
 }
 
 function normalizeVideoSeconds(value: string) {
-    const seconds = Math.floor(Number(value) || 6);
+    const seconds = Math.floor(Number(value) || 10);
     return String(Math.max(1, Math.min(20, seconds)));
 }
 
 function normalizeVideoSize(value: string) {
     if (value === "auto") return null;
-    const size = value || "1280x720";
+    const size = value || "720x1280";
     if (/^\d+x\d+$/.test(size)) return size;
     return ["9:16", "2:3", "3:4"].includes(size) ? "720x1280" : "1280x720";
 }
@@ -702,7 +705,7 @@ function normalizeVideoSize(value: string) {
 function normalizeVideoResolution(value: string) {
     if (value === "low") return "480p";
     if (value === "auto" || value === "high" || value === "medium") return "720p";
-    const resolution = value.replace(/p$/i, "") || "720";
+    const resolution = value.replace(/p$/i, "") || "1080";
     return `${resolution}p`;
 }
 

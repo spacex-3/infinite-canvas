@@ -1,9 +1,16 @@
 // @ts-nocheck
 import { describe, expect, test } from "bun:test";
 
-import { buildOmniFlashPayload, buildVeoOmniFlashEditPayload, buildVeoOmniPayload, isVeoOmniVideoModel, readVideoResultUrl, resolveVideoRequestProtocol } from "./video";
+import { buildOmniFlashPayload, buildVeoOmniFlashEditPayload, buildVeoOmniPayload, isVeoOmniVideoModel, readVideoResultUrl, requestVideoGeneration, resolveVideoRequestProtocol } from "./video";
+import { defaultConfig } from "@/stores/use-config-store";
 
 describe("custom channel video protocol routing", () => {
+    test("rejects Gemini native image channels before sending a video request", async () => {
+        await expect(requestVideoGeneration({ ...defaultConfig, channelMode: "local", protocol: "gemini", baseUrl: "https://gemini.example.com", apiKey: "key", model: "custom-video", videoModel: "custom-video" }, "生成视频")).rejects.toThrow(
+            "Gemini 原生图片协议仅支持图片生成和参考图编辑",
+        );
+    });
+
     test("uses the selected local protocol for provider aliases", () => {
         expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "zerofall" }, "custom-video")).toBe("zerofall");
         expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "fpbrowser2api" }, "custom-video")).toBe("fpbrowser2api");
@@ -65,14 +72,25 @@ describe("readVideoResultUrl", () => {
 });
 
 describe("Veo Omni video payload", () => {
+    test("uses the global vertical video default independently from image size", () => {
+        const payload = buildVeoOmniPayload(defaultConfig, "veo-omni-flash", "生成视频", [], []);
+
+        expect(payload.aspect_ratio).toBe("9:16");
+        expect(payload.width).toBe(1080);
+        expect(payload.height).toBe(1920);
+        expect(defaultConfig.size).toBe("1:1");
+    });
+
+    test("uses videoSize instead of the image size", () => {
+        const payload = buildVeoOmniPayload({ size: "1:1", videoSize: "16:9" }, "veo-omni-flash", "生成横屏视频", [], []);
+
+        expect(payload.aspect_ratio).toBe("16:9");
+        expect(payload.width).toBe(1920);
+        expect(payload.height).toBe(1080);
+    });
+
     test("uses the edit model and source video ratio when a reference video is present", () => {
-        const payload = buildVeoOmniPayload(
-            { size: "1:1" },
-            "veo-omni-flash",
-            "把视频1里的恐龙改成图片1里的乌龟",
-            ["https://example.com/turtle.png"],
-            [{ url: "https://example.com/source.mov", width: 720, height: 1280 }],
-        );
+        const payload = buildVeoOmniPayload({ videoSize: "1:1" }, "veo-omni-flash", "把视频1里的恐龙改成图片1里的乌龟", ["https://example.com/turtle.png"], [{ url: "https://example.com/source.mov", width: 720, height: 1280 }]);
 
         expect(payload).toMatchObject({
             model: "veo-omni-flash-video-edit",
@@ -91,7 +109,7 @@ describe("Veo Omni video payload", () => {
     });
 
     test("keeps image references in order and defaults to vertical ratio", () => {
-        const payload = buildVeoOmniPayload({ size: "auto" }, "veo-omni-flash", "生成视频", ["https://example.com/a.png", "https://example.com/b.png"], []);
+        const payload = buildVeoOmniPayload({ videoSize: "auto" }, "veo-omni-flash", "生成视频", ["https://example.com/a.png", "https://example.com/b.png"], []);
 
         expect(payload.model).toBe("veo-omni-flash");
         expect(payload.aspect_ratio).toBe("9:16");

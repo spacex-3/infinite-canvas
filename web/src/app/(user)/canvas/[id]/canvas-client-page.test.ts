@@ -24,7 +24,7 @@ describe("CanvasClientPage connected text generation", () => {
 
 describe("CanvasClientPage retry config", () => {
     test("ignores stale node models that do not match the retry generation mode", () => {
-        expect(source).toContain("modelMatchesCapability(savedModel, mode)");
+        expect(source).toContain("isModelAvailableForCapability(config, savedModel, mode)");
         expect(source).toContain("generationModelForMode(config, node, mode)");
     });
 });
