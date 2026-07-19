@@ -24,4 +24,9 @@ describe("LoginPage redirects", () => {
         expect(source).not.toContain(".catch(() => {");
         expect(source).not.toContain("clearSession();");
     });
+
+    test("explains that registration waits for administrator approval", () => {
+        expect(source).toContain("注册申请已提交，等待管理员审核通过后才能登录");
+        expect(source).toContain("setMode(\"login\")");
+    });
 });

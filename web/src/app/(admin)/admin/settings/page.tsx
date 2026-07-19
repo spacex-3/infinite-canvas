@@ -237,7 +237,7 @@ export default function AdminSettingsPage() {
             }
             setModelSelectExisting(current);
             setModelSelectSource(uniqueModels(channelModels));
-            setModelSelectSelected(uniqueModels([...current, ...channelModels]));
+            setModelSelectSelected(current);
             setModelSelectKeyword("");
             setModelSelectNewModel("");
             setModelSelectTab("new");
@@ -255,7 +255,7 @@ export default function AdminSettingsPage() {
         const source = uniqueModels(sourceModels !== undefined ? sourceModels : [...knownModels, ...current]);
         setModelSelectExisting(current);
         setModelSelectSource(source);
-        setModelSelectSelected(sourceModels ? uniqueModels([...current, ...source]) : current);
+        setModelSelectSelected(current);
         setModelSelectKeyword("");
         setModelSelectNewModel("");
         setModelSelectTab(sourceModels ? "new" : "current");
@@ -737,12 +737,12 @@ export default function AdminSettingsPage() {
                                 </Form.Item>
                             </Col>
                             <Col span={12}>
-                                <Form.Item name="protocol" label="协议" extra="选择上游供应商协议：zpika 走 /v1/video/generations（omni-flash）；fpbrowser2api 走 /videos（veo-omni-*）。模型名仍决定前端 payload。">
+                                <Form.Item name="protocol" label="协议" extra="zpika-veo-omni-flash 走 /videos；zpika-omni-flash 走 /v1/video/generations。模型名仍决定前端 payload。">
                                     <Select
                                         options={[
                                             { label: "OpenAI 兼容", value: "openai" },
-                                            { label: "fpbrowser2api（veo-omni-*）", value: "fpbrowser2api" },
-                                            { label: "zpika（omni-flash）", value: "zerofall" },
+                                            { label: "zpika-veo-omni-flash", value: "fpbrowser2api" },
+                                            { label: "zpika-omni-flash", value: "zerofall" },
                                         ]}
                                     />
                                 </Form.Item>
@@ -1035,9 +1035,9 @@ function setEpayPaymentMethods(form: any, values: string[]) {
 function protocolLabel(protocol?: string) {
     switch (protocol) {
         case "zerofall":
-            return "zpika";
+            return "zpika-omni-flash";
         case "fpbrowser2api":
-            return "fpbrowser2api";
+            return "zpika-veo-omni-flash";
         default:
             return "OpenAI";
     }

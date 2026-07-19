@@ -6,7 +6,7 @@ import { Button, Segmented } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
-import { CreditSymbol, requestCreditCost } from "@/constant/credits";
+import { CreditSymbol, requestCreditCost, shouldShowRequestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
@@ -119,10 +119,12 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                 onClick={() => onGenerate(node.id)}
             >
                 <span className="inline-flex items-center gap-1.5">
-                    <span className="inline-flex items-center gap-1">
-                        <CreditSymbol />
-                        {credits.toLocaleString()}
-                    </span>
+                    {shouldShowRequestCreditCost(config.channelMode) ? (
+                        <span className="inline-flex items-center gap-1">
+                            <CreditSymbol />
+                            {credits.toLocaleString()}
+                        </span>
+                    ) : null}
                     {isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4" />}
                     <span>开始生成</span>
                 </span>

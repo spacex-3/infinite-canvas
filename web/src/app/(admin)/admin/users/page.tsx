@@ -1,6 +1,6 @@
 "use client";
 
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { CheckOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
 import { Avatar, Button, Card, Col, Divider, Flex, Form, Input, InputNumber, Modal, Row, Select, Space, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
@@ -18,6 +18,7 @@ const roleOptions = [
 
 const statusOptions = [
     { label: "正常", value: "active" },
+    { label: "待审核", value: "pending" },
     { label: "禁用", value: "ban" },
 ];
 
@@ -76,7 +77,7 @@ export default function AdminUsersPage() {
             title: "状态",
             dataIndex: "status",
             width: 90,
-            render: (_, item) => <Tag color={item.status === "ban" ? "red" : "green"}>{item.status === "ban" ? "禁用" : "正常"}</Tag>,
+            render: (_, item) => <Tag color={item.status === "ban" ? "red" : item.status === "pending" ? "orange" : "green"}>{item.status === "ban" ? "禁用" : item.status === "pending" ? "待审核" : "正常"}</Tag>,
         },
         {
             title: "算力点",
@@ -97,6 +98,11 @@ export default function AdminUsersPage() {
             align: "right",
             render: (_, item) => (
                 <Space size={4}>
+                    {item.status === "pending" ? (
+                        <Tooltip title="通过审核">
+                            <Button type="text" size="small" icon={<CheckOutlined />} onClick={() => void saveAdminUser({ ...item, status: "active" })} />
+                        </Tooltip>
+                    ) : null}
                     <Tooltip title="编辑">
                         <Button type="text" size="small" icon={<EditOutlined />} onClick={() => setEditingUser(item)} />
                     </Tooltip>

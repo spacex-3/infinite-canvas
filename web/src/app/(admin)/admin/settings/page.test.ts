@@ -23,8 +23,15 @@ describe("AdminSettingsPage", () => {
     test("exposes the ordinary-user custom channel switch and zpika protocol label", () => {
         expect(source).toContain('name={["public", "modelChannel", "allowCustomChannel"]}');
         expect(source).toContain('label="允许普通用户自定义渠道"');
-        expect(source).toContain('{ label: "zpika（omni-flash）", value: "zerofall" }');
-        expect(source).toContain('return "zpika";');
+        expect(source).toContain('{ label: "zpika-veo-omni-flash", value: "fpbrowser2api" }');
+        expect(source).toContain('{ label: "zpika-omni-flash", value: "zerofall" }');
+        expect(source.indexOf('label: "zpika-veo-omni-flash"')).toBeLessThan(source.indexOf('label: "zpika-omni-flash"'));
+        expect(source).toContain('return "zpika-omni-flash";');
         expect(source).not.toContain('return "ZeroFall";');
+    });
+
+    test("keeps upstream channel models unselected until the administrator chooses them", () => {
+        expect(source).toContain("setModelSelectSelected(current);");
+        expect(source).not.toContain("setModelSelectSelected(uniqueModels([...current, ...channelModels]));");
     });
 });

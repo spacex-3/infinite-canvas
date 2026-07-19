@@ -49,62 +49,62 @@ func EnsureDefaultAdmin() error {
 	return err
 }
 
-func Register(username string, password string, email string, code string) (model.AuthSession, error) {
+func Register(username string, password string, email string, code string) error {
 	settings, err := repository.GetSettings()
 	if err != nil {
-		return model.AuthSession{}, err
+		return err
 	}
 	normalizedSettings := normalizeSettings(settings)
 	if normalizedSettings.Public.Auth.AllowRegister != nil && !*normalizedSettings.Public.Auth.AllowRegister {
-		return model.AuthSession{}, safeMessageError{message: "当前未开放注册"}
+		return safeMessageError{message: "当前未开放注册"}
 	}
 	username = strings.TrimSpace(username)
 	if strings.ContainsAny(username, " \t\r\n") {
-		return model.AuthSession{}, safeMessageError{message: "用户名不能包含空格"}
+		return safeMessageError{message: "用户名不能包含空格"}
 	}
 	if username == "" || password == "" {
-		return model.AuthSession{}, safeMessageError{message: "用户名和密码不能为空"}
+		return safeMessageError{message: "用户名和密码不能为空"}
 	}
 	email, err = normalizeEmailAddress(email)
 	if err != nil {
-		return model.AuthSession{}, err
+		return err
 	}
 	if _, ok, err := repository.GetUserByUsername(username); err != nil || ok {
 		if err != nil {
-			return model.AuthSession{}, err
+			return err
 		}
-		return model.AuthSession{}, safeMessageError{message: "用户名已存在"}
+		return safeMessageError{message: "用户名已存在"}
 	}
 	if email != "" {
 		if _, ok, err := repository.GetUserByEmail(email); err != nil || ok {
 			if err != nil {
-				return model.AuthSession{}, err
+				return err
 			}
-			return model.AuthSession{}, safeMessageError{message: "邮箱已被注册"}
+			return safeMessageError{message: "邮箱已被注册"}
 		}
 	}
 	if err := verifyRegisterEmailCode(email, code); err != nil {
-		return model.AuthSession{}, err
+		return err
 	}
 	hash, err := hashPassword(password)
 	if err != nil {
-		return model.AuthSession{}, err
+		return err
 	}
-	user, err := repository.SaveUser(model.User{
+	_, err = repository.SaveUser(model.User{
 		ID:        newID("user"),
 		Username:  username,
 		Password:  hash,
 		Email:     email,
 		Role:      model.UserRoleUser,
 		AffCode:   newAffCode(),
-		Status:    model.UserStatusActive,
+		Status:    model.UserStatusPending,
 		CreatedAt: now(),
 		UpdatedAt: now(),
 	})
 	if err != nil {
-		return model.AuthSession{}, err
+		return err
 	}
-	return newSession(user)
+	return nil
 }
 
 func Login(username string, password string) (model.AuthSession, error) {
@@ -115,10 +115,10 @@ func Login(username string, password string) (model.AuthSession, error) {
 	if !ok || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) != nil {
 		return model.AuthSession{}, safeMessageError{message: "用户名或密码错误"}
 	}
-	if user.Status == model.UserStatusBan {
-		return model.AuthSession{}, safeMessageError{message: "账号已被禁用"}
-	}
 	normalizeUserDefaults(&user)
+	if user.Status != model.UserStatusActive {
+		return model.AuthSession{}, safeMessageError{message: loginStatusMessage(user.Status)}
+	}
 	user.LastLoginAt = now()
 	user.UpdatedAt = now()
 	user, err = repository.SaveUser(user)
@@ -151,7 +151,8 @@ func CurrentAuthUser(tokenText string) (model.AuthUser, bool) {
 	if err != nil || !ok {
 		return model.AuthUser{}, false
 	}
-	if user.Status == model.UserStatusBan {
+	normalizeUserDefaults(&user)
+	if user.Status != model.UserStatusActive {
 		return model.AuthUser{}, false
 	}
 	return model.PublicUser(user), true
@@ -380,6 +381,13 @@ func normalizeUserDefaults(user *model.User) {
 	if user.AffCode == "" {
 		user.AffCode = newAffCode()
 	}
+}
+
+func loginStatusMessage(status model.UserStatus) string {
+	if status == model.UserStatusPending {
+		return "账号正在等待管理员审核"
+	}
+	return "账号已被禁用"
 }
 
 func RequestOrigin(r *http.Request) string {

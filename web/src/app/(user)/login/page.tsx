@@ -122,9 +122,16 @@ function LoginContent() {
                 message.error("两次输入的密码不一致");
                 return;
             }
-            const action = mode === "register" ? register : login;
-            const user = await action({ username: values.username, password: values.password, email: values.email, code: values.code });
-            message.success(mode === "register" ? "注册成功" : "登录成功");
+            const payload = { username: values.username, password: values.password, email: values.email, code: values.code };
+            if (mode === "register") {
+                await register(payload);
+                message.success("注册申请已提交，等待管理员审核通过后才能登录");
+                form.resetFields(["password", "email", "code", "confirmPassword"]);
+                setMode("login");
+                return;
+            }
+            const user = await login(payload);
+            message.success("登录成功");
             redirectingRef.current = true;
             navigateAfterAuth(explicitRedirect ? redirect : defaultRedirectForRole(user.role));
         } catch (error) {

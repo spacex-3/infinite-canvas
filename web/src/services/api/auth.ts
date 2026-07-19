@@ -32,7 +32,7 @@ export async function login(payload: AuthPayload) {
 }
 
 export async function register(payload: AuthPayload) {
-    return apiPost<AuthSession>("/api/auth/register", payload);
+    return apiPost<boolean>("/api/auth/register", payload);
 }
 
 export async function sendRegisterEmailCode(email: string) {

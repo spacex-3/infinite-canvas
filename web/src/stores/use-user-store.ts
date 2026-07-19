@@ -14,7 +14,7 @@ type UserStore = {
     clearSession: () => void;
     hydrateUser: () => Promise<void>;
     login: (payload: AuthPayload) => Promise<AuthUser>;
-    register: (payload: AuthPayload) => Promise<AuthUser>;
+    register: (payload: AuthPayload) => Promise<void>;
 };
 
 export const useUserStore = create<UserStore>()(
@@ -67,10 +67,8 @@ export const useUserStore = create<UserStore>()(
             register: async (payload) => {
                 set({ isLoading: true });
                 try {
-                    const session = await register(payload);
-                    writeAuthTokenSnapshot(session.token);
-                    set({ token: session.token, user: session.user, isReady: true, isLoading: false });
-                    return session.user;
+                    await register(payload);
+                    set({ isReady: true, isLoading: false });
                 } catch (error) {
                     set({ isLoading: false });
                     throw error;

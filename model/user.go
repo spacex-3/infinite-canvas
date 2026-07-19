@@ -11,8 +11,9 @@ const (
 type UserStatus string
 
 const (
-	UserStatusActive UserStatus = "active"
-	UserStatusBan    UserStatus = "ban"
+	UserStatusActive  UserStatus = "active"
+	UserStatusPending UserStatus = "pending"
+	UserStatusBan     UserStatus = "ban"
 )
 
 // User 系统用户。

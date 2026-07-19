@@ -7,7 +7,7 @@ import { useState } from "react";
 import { ModelPicker } from "@/components/model-picker";
 import { fetchImageModels } from "@/services/api/image";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { canUseCustomChannel, filterModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig, type CustomChannelProtocol, type ModelCapability } from "@/stores/use-config-store";
+import { canUseCustomChannel, useConfigStore, useEffectiveConfig, type AiConfig, type CustomChannelProtocol, type ModelCapability } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 type ModelGroup = {
@@ -28,6 +28,7 @@ const modelGroups: ModelGroup[] = [
 export function AppConfigModal() {
     const { message } = App.useApp();
     const [loadingModels, setLoadingModels] = useState(false);
+    const [fetchedModels, setFetchedModels] = useState<string[]>([]);
     const config = useConfigStore((state) => state.config);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isConfigOpen = useConfigStore((state) => state.isConfigOpen);
@@ -41,12 +42,20 @@ export function AppConfigModal() {
     const canUseLocalChannel = canUseCustomChannel(user?.role, modelChannel?.allowCustomChannel === true);
     const effectiveMode = canUseLocalChannel ? config.channelMode : "remote";
     const modelConfig = effectiveMode === "remote" ? effectiveConfig : config;
-    const modelOptions = config.models.map((model) => ({ label: model, value: model }));
+    const channelModelOptions = uniqueModels([...config.models, ...fetchedModels]).map((model) => ({ label: model, value: model }));
+    const selectedModelOptions = config.models.map((model) => ({ label: model, value: model }));
 
     const finishConfig = () => {
+        if (effectiveMode === "local" && (!config.baseUrl.trim() || !config.apiKey.trim())) {
+            message.error("请先填写 Base URL 和 API Key");
+            return;
+        }
+        if (effectiveMode === "local" && !config.models.length) {
+            message.error("请至少选择一个渠道模型");
+            return;
+        }
+        if (effectiveMode === "remote" && (!modelConfig.imageModel.trim() || !modelConfig.videoModel.trim() || !modelConfig.textModel.trim())) return;
         setConfigDialogOpen(false);
-        if (effectiveMode === "local" && (!config.baseUrl.trim() || !config.apiKey.trim())) return;
-        if (!modelConfig.imageModel.trim() || !modelConfig.videoModel.trim() || !modelConfig.textModel.trim()) return;
         message.success(shouldPromptContinue ? "配置已保存，请继续刚才的请求" : "配置已保存");
         clearPromptContinue();
     };
@@ -59,25 +68,9 @@ export function AppConfigModal() {
         }
         setLoadingModels(true);
         try {
-            const models = uniqueModels([...config.models, ...(await fetchImageModels(config))]);
-            const imageModels = filterModelsByCapability(models, "image");
-            const videoModels = filterModelsByCapability(models, "video");
-            const textModels = filterModelsByCapability(models, "text");
-            const audioModels = filterModelsByCapability(models, "audio");
-            const nextImageModels = resolveNextCapabilityModels(config.imageModels, imageModels, models);
-            const nextVideoModels = resolveNextCapabilityModels(config.videoModels, videoModels, models);
-            const nextTextModels = resolveNextCapabilityModels(config.textModels, textModels, models);
-            const nextAudioModels = resolveNextCapabilityModels(config.audioModels, audioModels, models);
-            updateConfig("models", models);
-            updateConfig("imageModels", nextImageModels);
-            updateConfig("videoModels", nextVideoModels);
-            updateConfig("textModels", nextTextModels);
-            updateConfig("audioModels", nextAudioModels);
-            if (nextImageModels.length && !nextImageModels.includes(config.imageModel)) updateConfig("imageModel", nextImageModels[0]);
-            if (nextVideoModels.length && !nextVideoModels.includes(config.videoModel)) updateConfig("videoModel", nextVideoModels[0]);
-            if (nextTextModels.length && !nextTextModels.includes(config.textModel)) updateConfig("textModel", nextTextModels[0]);
-            if (nextAudioModels.length && !nextAudioModels.includes(config.audioModel)) updateConfig("audioModel", nextAudioModels[0]);
-            message.success("模型列表已更新");
+            const models = uniqueModels(await fetchImageModels(config));
+            setFetchedModels(models);
+            message.success(`已获取 ${models.length} 个模型，请手动选择`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "读取模型失败");
         } finally {
@@ -96,9 +89,8 @@ export function AppConfigModal() {
         updateConfig("models", next);
         for (const group of modelGroups) {
             const selected = uniqueModels(config[group.modelsKey]).filter((model) => next.includes(model));
-            const capabilityModels = selected.length ? selected : filterModelsByCapability(next, group.capability);
-            updateConfig(group.modelsKey, capabilityModels);
-            if (!capabilityModels.includes(config[group.modelKey])) updateConfig(group.modelKey, capabilityModels[0] || "");
+            updateConfig(group.modelsKey, selected);
+            if (!selected.includes(config[group.modelKey])) updateConfig(group.modelKey, selected[0] || "");
         }
     };
 
@@ -145,8 +137,8 @@ export function AppConfigModal() {
                                         value={config.protocol}
                                         options={[
                                             { label: "OpenAI 兼容", value: "openai" },
-                                            { label: "fpbrowser2api（veo-omni-*）", value: "fpbrowser2api" },
-                                            { label: "zpika（omni-flash）", value: "zerofall" },
+                                            { label: "zpika-veo-omni-flash", value: "fpbrowser2api" },
+                                            { label: "zpika-omni-flash", value: "zerofall" },
                                         ]}
                                         onChange={(value) => updateConfig("protocol", value as CustomChannelProtocol)}
                                     />
@@ -169,7 +161,7 @@ export function AppConfigModal() {
                                         className="min-w-0 flex-1"
                                         placeholder="输入模型名称或从上游拉取"
                                         value={config.models}
-                                        options={modelOptions}
+                                        options={channelModelOptions}
                                         onChange={updateChannelModels}
                                     />
                                     <Button icon={<RefreshCw className="size-4" />} loading={loadingModels} onClick={() => void refreshModels()}>
@@ -199,9 +191,9 @@ export function AppConfigModal() {
                                             showSearch
                                             allowClear
                                             maxTagCount="responsive"
-                                            placeholder={config.models.length ? `请选择${group.optionsLabel}` : "请先拉取模型列表"}
+                                            placeholder={config.models.length ? `请选择${group.optionsLabel}` : "请先在上方选择渠道模型"}
                                             value={config[group.modelsKey]}
-                                            options={modelOptions}
+                                            options={selectedModelOptions}
                                             onChange={(models) => updateCapabilityModels(group, models)}
                                         />
                                     </Form.Item>
@@ -212,7 +204,7 @@ export function AppConfigModal() {
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                         {modelGroups.map((group) => (
                             <Form.Item key={group.modelKey} label={group.defaultLabel} className="mb-4">
-                                <ModelPicker config={modelConfig} value={modelConfig[group.modelKey]} onChange={(model) => updateConfig(group.modelKey, model)} capability={group.capability} fullWidth />
+                                <ModelPicker config={modelConfig} value={effectiveMode === "local" && !config[group.modelsKey].includes(config[group.modelKey]) ? "" : modelConfig[group.modelKey]} onChange={(model) => updateConfig(group.modelKey, model)} capability={group.capability} fullWidth />
                             </Form.Item>
                         ))}
                     </div>
@@ -261,12 +253,6 @@ export function AppConfigModal() {
 
 function normalizeImageCount(value: string) {
     return String(Math.max(1, Math.min(15, Math.floor(Math.abs(Number(value)) || 3))));
-}
-
-function resolveNextCapabilityModels(current: string[], suggested: string[], allModels: string[]) {
-    const available = new Set(allModels);
-    const kept = uniqueModels(current).filter((model) => available.has(model));
-    return kept.length ? kept : suggested;
 }
 
 function uniqueModels(models: string[]) {

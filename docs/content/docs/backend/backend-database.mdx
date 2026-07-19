@@ -48,7 +48,7 @@ description: 当前后端主要数据表与字段说明
 | `inviter_id` | string | 邀请人用户 ID |
 | `github_id` | string | GitHub 用户 ID |
 | `wechat_id` | string | 微信用户 ID |
-| `status` | string | 用户状态：`active`、`ban` |
+| `status` | string | 用户状态：`active`、`pending`、`ban`；注册用户初始为 `pending`，管理员审核通过后改为 `active` |
 | `last_login_at` | string | 最近登录时间 |
 | `extra` | json | 扩展信息 |
 | `created_at` | string | 创建时间 |
@@ -162,7 +162,7 @@ description: 当前后端主要数据表与字段说明
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `protocol` | string | 协议，支持 `openai`、`fpbrowser2api`、`zerofall`；`zerofall` 在界面显示为 zpika |
+| `protocol` | string | 协议，支持 `openai`、`fpbrowser2api`、`zerofall`；后两者在界面显示为 `zpika-veo-omni-flash`、`zpika-omni-flash` |
 | `name` | string | 渠道名称 |
 | `baseUrl` | string | 渠道接口地址 |
 | `apiKey` | string | 渠道密钥 |

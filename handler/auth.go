@@ -41,12 +41,11 @@ type adjustUserCreditsRequest struct {
 func Register(w http.ResponseWriter, r *http.Request) {
 	var request registerRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
-	session, err := service.Register(request.Username, request.Password, request.Email, request.Code)
-	if err != nil {
+	if err := service.Register(request.Username, request.Password, request.Email, request.Code); err != nil {
 		FailError(w, err)
 		return
 	}
-	OK(w, session)
+	OK(w, true)
 }
 
 func SendRegisterEmailCode(w http.ResponseWriter, r *http.Request) {

@@ -30,8 +30,7 @@ function responseHeaders(response: Response) {
 
 async function applyAuthCookie(request: NextRequest, response: Response, headers: Headers, path: string[]) {
     const isAuthSessionRequest = request.method === "POST" && path.join("/") === "auth/login";
-    const isRegisterSessionRequest = request.method === "POST" && path.join("/") === "auth/register";
-    if (!isAuthSessionRequest && !isRegisterSessionRequest) return;
+    if (!isAuthSessionRequest) return;
     if (response.status < 200 || response.status >= 300) return;
 
     try {

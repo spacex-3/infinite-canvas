@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an administrator-controlled browser-local channel for ordinary users and rename the visible ZeroFall protocol label to zpika.
+**Goal:** Add an administrator-controlled browser-local channel for ordinary users and expose the two video protocols with zpika display names.
 
 **Architecture:** Preserve the existing public feature flag and persisted Zustand configuration. Centralize custom-channel authorization in a pure helper, then reuse the existing direct request and model-fetching paths from the configuration modal.
 
@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Keep the stored protocol value `zerofall`; change display copy only.
+- Keep the stored protocol values `fpbrowser2api` and `zerofall`; display them as `zpika-veo-omni-flash` and `zpika-omni-flash`.
 - Store user Base URL, API Key, protocol, and model selections in browser-local Zustand persistence.
 - Do not add user credential storage to the backend.
 - Do not expose image resolution routing in the user custom-channel form.
@@ -47,7 +47,7 @@
 - Modify: `web/src/components/layout/client-root-init.tsx`
 - Test: `web/src/components/layout/app-config-modal.test.ts`
 
-- [ ] Write source-level failing assertions for the public switch, zpika label, user protocol field, tag model input, and permission-aware URL import.
+- [ ] Write source-level failing assertions for the public switch, zpika labels, user protocol field, tag model input, and permission-aware URL import.
 - [ ] Run the focused Bun test and confirm failure.
 - [ ] Add the admin switch and preserve it during frontend normalization.
 - [ ] Expose custom-channel mode to eligible users, merge fetched/manual models, and update permission copy.
@@ -77,7 +77,7 @@
 - Modify: `docs/content/docs/progress/pending-test.mdx`
 - Check: `docs/content/docs/progress/todo.mdx`
 
-- [ ] Document the feature flag, browser-local key behavior, model fetching, and zpika display name.
+- [ ] Document the feature flag, browser-local key behavior, unselected fetched models, and zpika display names.
 - [ ] Replace obsolete pending-test statements that ordinary users can only use cloud channels.
 - [ ] Confirm no todo item needs to move.
 

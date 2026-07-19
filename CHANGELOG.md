@@ -2,9 +2,12 @@
 
 ## Unreleased
 
++ [新增] 用户注册申请进入待审核状态，管理员可在用户管理中通过审核；审核前不能登录。
++ [调整] 自定义渠道生成不显示云端算力点提示；上游拉取模型改为仅提供未选候选项，用户手动选择后保存。
++ [调整] 渠道协议显示名称改为 `zpika-veo-omni-flash`、`zpika-omni-flash`，内部协议值保持不变。
 + [新增] 管理员可开启普通用户自定义渠道；已登录用户可在浏览器本地配置协议、接口地址、API Key，拉取或手动填写模型并按能力选择默认模型。
 + [新增] 视频生成直接对接 ZeroFall / NewAPI 的 `omni-flash`（文生/图生视频）与 `omni-flash-vref`（视频编辑），走 `POST/GET /v1/video/generations`；UI 比例/分辨率自动映射为 `landscape|portrait` 与 `720p|1080p`。
-+ [优化] 管理后台渠道协议可选 OpenAI 兼容 / fpbrowser2api（`veo-omni-*`）/ zpika（内部值 `zerofall`，模型 `omni-flash`），并保留原有 fpbrowser2api 视频编辑兼容路径。
++ [优化] 管理后台渠道协议可选 OpenAI 兼容 / `zpika-veo-omni-flash`（内部值 `fpbrowser2api`）/ `zpika-omni-flash`（内部值 `zerofall`），并保留两类视频兼容路径。
 + [调整] 移除首页右上角版本号和 GitHub 快捷入口。
 + [调整] 管理后台系统设置新增独立“注册邮箱”Tab，集中配置注册开关、邮箱验证码和 SMTP。
 + [调整] 管理后台易支付充值配置支持勾选支付宝、微信支付渠道，用户端只展示已启用渠道。

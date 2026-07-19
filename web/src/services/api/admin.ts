@@ -21,7 +21,7 @@ export type AdminUser = {
     affCode: string;
     affCount: number;
     inviterId: string;
-    status: "active" | "ban";
+    status: "active" | "pending" | "ban";
     lastLoginAt: string;
     createdAt: string;
     updatedAt: string;

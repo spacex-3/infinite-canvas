@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { canUseCustomChannel, defaultConfig, filterModelsByCapability, normalizeCustomChannelProtocol, resolveEffectiveConfig } from "./use-config-store";
+import { canUseCustomChannel, defaultConfig, filterModelsByCapability, isModelSelectedForChannel, normalizeCustomChannelProtocol, resolveEffectiveConfig } from "./use-config-store";
 
 describe("custom channel access", () => {
     test("allows administrators regardless of the public switch", () => {
@@ -44,6 +44,13 @@ describe("custom channel access", () => {
         expect(config.models).toEqual(["omni-flash"]);
 
         expect(resolveEffectiveConfig(config, cloudChannel, true).channelMode).toBe("local");
+    });
+
+    test("requires local models to be explicitly selected before generation", () => {
+        expect(isModelSelectedForChannel({ ...defaultConfig, channelMode: "local" }, defaultConfig.model)).toBe(false);
+        expect(isModelSelectedForChannel({ ...defaultConfig, channelMode: "local", models: [defaultConfig.model] }, defaultConfig.model)).toBe(false);
+        expect(isModelSelectedForChannel({ ...defaultConfig, channelMode: "local", models: [defaultConfig.model], imageModels: [defaultConfig.model] }, defaultConfig.model)).toBe(true);
+        expect(isModelSelectedForChannel({ ...defaultConfig, channelMode: "remote" }, defaultConfig.model)).toBe(true);
     });
 });
 

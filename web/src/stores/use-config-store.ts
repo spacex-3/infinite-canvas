@@ -168,12 +168,18 @@ export function selectableModelsByCapability(config: AiConfig, capability?: Mode
     return config[modelListKey(capability)];
 }
 
+export function isModelSelectedForChannel(config: Pick<AiConfig, "channelMode" | "models" | "imageModels" | "videoModels" | "textModels" | "audioModels">, model: string) {
+    if (config.channelMode === "remote") return true;
+    const value = model.trim();
+    return config.models.includes(value) && [...config.imageModels, ...config.videoModels, ...config.textModels, ...config.audioModels].includes(value);
+}
+
 function modelListKey(capability: ModelCapability) {
     return `${capability}Models` as "imageModels" | "videoModels" | "textModels" | "audioModels";
 }
 
 function isAiConfigReady(config: AiConfig, model: string) {
-    return Boolean(model.trim()) && (config.channelMode === "remote" || Boolean(config.baseUrl.trim() && config.apiKey.trim()));
+    return Boolean(model.trim()) && isModelSelectedForChannel(config, model) && (config.channelMode === "remote" || Boolean(config.baseUrl.trim() && config.apiKey.trim()));
 }
 
 export const useConfigStore = create<ConfigStore>()(
