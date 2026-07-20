@@ -16,6 +16,12 @@ describe("custom channel video protocol routing", () => {
         expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "fpbrowser2api" }, "custom-video")).toBe("fpbrowser2api");
     });
 
+    test("lets model names win over the locked zpika video group protocol", () => {
+        expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "fpbrowser2api" }, "omni-flash")).toBe("zerofall");
+        expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "zerofall" }, "veo-omni-flash")).toBe("fpbrowser2api");
+        expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "fpbrowser2api" }, "veo-omni-flash-video-edit")).toBe("fpbrowser2api");
+    });
+
     test("does not let a saved local protocol override cloud routing", () => {
         expect(resolveVideoRequestProtocol({ channelMode: "remote", protocol: "zerofall" }, "custom-video")).toBe("openai");
         expect(resolveVideoRequestProtocol({ channelMode: "remote", protocol: "fpbrowser2api" }, "omni-flash")).toBe("zerofall");

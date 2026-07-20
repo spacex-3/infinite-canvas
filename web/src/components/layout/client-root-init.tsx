@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { App } from "antd";
 
-import { canUseCustomChannel, useConfigStore } from "@/stores/use-config-store";
+import { canUseCustomChannel, ZPIKA_GROUP_IDS, useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
@@ -50,10 +50,20 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
             return;
         }
         updateConfig("channelMode", "local");
-        updateConfig(
-            "customChannels",
-            customChannels.map((channel, index) => (index === 0 ? { ...channel, ...(baseUrl ? { baseUrl } : {}), ...(apiKey ? { apiKey } : {}) } : channel)),
-        );
+        // Domains are locked to zpika; URL imports only inject the API key into the text group (and any still-empty groups as fallback).
+        if (apiKey) {
+            updateConfig(
+                "customChannels",
+                customChannels.map((channel) => {
+                    if (channel.id === ZPIKA_GROUP_IDS.text) return { ...channel, apiKey };
+                    if (!channel.apiKey.trim()) return { ...channel, apiKey };
+                    return channel;
+                }),
+            );
+        }
+        if (baseUrl) {
+            message.info("已锁定 Zpika 域名，忽略 URL 中的 Base URL，仅导入 API Key");
+        }
         openConfigDialog(false);
     }, [customChannels, isUserReady, message, openConfigDialog, publicSettings, updateConfig, user?.role]);
 

@@ -162,9 +162,10 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
 }
 
 export function resolveVideoRequestProtocol(config: Pick<AiConfig, "channelMode" | "protocol">, model: string): "openai" | "fpbrowser2api" | "zerofall" {
-    if (config.channelMode === "local" && (config.protocol === "zerofall" || config.protocol === "fpbrowser2api")) return config.protocol;
+    // Model name wins so the locked zpika video group can host both veo-omni-flash and omni-flash.
     if (isOmniFlashVideoModel(model)) return "zerofall";
     if (isVeoOmniVideoModel(model)) return "fpbrowser2api";
+    if (config.channelMode === "local" && (config.protocol === "zerofall" || config.protocol === "fpbrowser2api")) return config.protocol;
     return "openai";
 }
 

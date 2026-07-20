@@ -1,14 +1,25 @@
 "use client";
 
-import { App, Button, Form, Input, Modal, Segmented, Select, Tooltip } from "antd";
-import { Plus, RefreshCw, Trash2 } from "lucide-react";
-import { nanoid } from "nanoid";
-import { useState } from "react";
+import { App, Button, Form, Input, Modal, Segmented, Select, Tag } from "antd";
+import { RefreshCw } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { fetchImageModels } from "@/services/api/image";
-import { canUseCustomChannel, useConfigStore, useEffectiveConfig, type AiConfig, type CustomAiChannel, type CustomChannelProtocol, type ModelCapability } from "@/stores/use-config-store";
+import {
+    applyPreferredModelsToChannel,
+    canUseCustomChannel,
+    preferredDefaultForChannel,
+    useConfigStore,
+    useEffectiveConfig,
+    ZPIKA_BASE_URL,
+    ZPIKA_DIRECT_BASE_URL,
+    ZPIKA_GROUP_IDS,
+    type AiConfig,
+    type CustomAiChannel,
+    type ModelCapability,
+} from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 type ModelGroup = {
@@ -17,15 +28,28 @@ type ModelGroup = {
     modelsKey: "imageModels" | "videoModels" | "textModels" | "audioModels";
     channelKey: "imageChannelId" | "videoChannelId" | "textChannelId" | "audioChannelId";
     defaultLabel: string;
-    optionsLabel: string;
 };
 
 const modelGroups: ModelGroup[] = [
-    { capability: "image", modelKey: "imageModel", modelsKey: "imageModels", channelKey: "imageChannelId", defaultLabel: "默认生图渠道 / 模型", optionsLabel: "生图模型可选项" },
-    { capability: "video", modelKey: "videoModel", modelsKey: "videoModels", channelKey: "videoChannelId", defaultLabel: "默认视频渠道 / 模型", optionsLabel: "视频模型可选项" },
-    { capability: "text", modelKey: "textModel", modelsKey: "textModels", channelKey: "textChannelId", defaultLabel: "默认文本渠道 / 模型", optionsLabel: "文本模型可选项" },
-    { capability: "audio", modelKey: "audioModel", modelsKey: "audioModels", channelKey: "audioChannelId", defaultLabel: "默认音频渠道 / 模型", optionsLabel: "音频模型可选项" },
+    { capability: "image", modelKey: "imageModel", modelsKey: "imageModels", channelKey: "imageChannelId", defaultLabel: "默认生图渠道 / 模型" },
+    { capability: "video", modelKey: "videoModel", modelsKey: "videoModels", channelKey: "videoChannelId", defaultLabel: "默认视频渠道 / 模型" },
+    { capability: "text", modelKey: "textModel", modelsKey: "textModels", channelKey: "textChannelId", defaultLabel: "默认文本渠道 / 模型" },
+    { capability: "audio", modelKey: "audioModel", modelsKey: "audioModels", channelKey: "audioChannelId", defaultLabel: "默认音频渠道 / 模型" },
 ];
+
+const protocolLabel: Record<CustomAiChannel["protocol"], string> = {
+    openai: "OpenAI 兼容",
+    gemini: "Gemini 原生图片",
+    fpbrowser2api: "zpika-veo-omni-flash",
+    zerofall: "zpika-omni-flash",
+};
+
+const groupCapabilityLabel: Record<string, string> = {
+    [ZPIKA_GROUP_IDS.text]: "文字 / 音频",
+    [ZPIKA_GROUP_IDS.openaiImage]: "OpenAI 画图",
+    [ZPIKA_GROUP_IDS.geminiImage]: "Gemini 画图",
+    [ZPIKA_GROUP_IDS.video]: "Gemini 视频",
+};
 
 export function AppConfigModal() {
     const { message } = App.useApp();
@@ -46,14 +70,14 @@ export function AppConfigModal() {
     const effectiveMode = canUseLocalChannel ? config.channelMode : "remote";
     const activeChannelId = config.customChannels.some((channel) => channel.id === selectedChannelId) ? selectedChannelId : config.customChannels[0]?.id || "";
     const selectedChannel = config.customChannels.find((channel) => channel.id === activeChannelId);
-    const visibleModelGroups = selectedChannel?.protocol === "gemini" ? modelGroups.filter((group) => group.capability === "image") : modelGroups;
-    const configuredChannels = config.customChannels.filter((channel) => channel.baseUrl.trim() && channel.apiKey.trim() && channel.models.length);
+    const configuredChannels = config.customChannels.filter((channel) => channel.apiKey.trim() && channel.models.length);
     const channelModelOptions = uniqueModels([...(selectedChannel?.models || []), ...(fetchedModels[activeChannelId] || [])]).map((model) => ({ label: model, value: model }));
-    const selectedModelOptions = (selectedChannel?.models || []).map((model) => ({ label: model, value: model }));
+    const hostHint = selectedChannel?.hostMode === "direct" ? ZPIKA_DIRECT_BASE_URL : ZPIKA_BASE_URL;
+    const preferredHints = selectedChannel?.preferredModels || [];
 
     const finishConfig = () => {
         if (effectiveMode === "local" && !configuredChannels.length) {
-            message.error("请至少完整配置一个自定义渠道和模型");
+            message.error("请至少完整配置一个分组：填写 API Key 并选择模型");
             return;
         }
         if (effectiveMode === "remote" && (!effectiveConfig.imageModel.trim() || !effectiveConfig.videoModel.trim() || !effectiveConfig.textModel.trim())) return;
@@ -70,29 +94,30 @@ export function AppConfigModal() {
         );
     };
 
-    const updateChannelProtocol = (protocol: CustomChannelProtocol) => {
-        if (!selectedChannel) return;
-        updateCustomChannel(protocol === "gemini" ? { protocol, videoModels: [], textModels: [], audioModels: [] } : { protocol });
-        if (protocol !== "gemini") return;
-        for (const group of modelGroups.filter((item) => item.capability !== "image")) {
-            if (config[group.channelKey] !== selectedChannel.id) continue;
-            updateConfig(group.channelKey, "");
-            updateConfig(group.modelKey, "");
-        }
-    };
-
     const refreshModels = async () => {
         if (!selectedChannel) return;
-        if (!selectedChannel.baseUrl.trim() || !selectedChannel.apiKey.trim()) {
-            message.error("请先填写 Base URL 和 API Key");
+        if (!selectedChannel.apiKey.trim()) {
+            message.error("请先填写该分组的 API Key");
             return;
         }
         setLoadingChannelId(selectedChannel.id);
         try {
-            const requestConfig = { ...effectiveConfig, channelMode: "local" as const, protocol: selectedChannel.protocol, baseUrl: selectedChannel.baseUrl, apiKey: selectedChannel.apiKey, model: selectedChannel.models[0] || "" };
+            // Model list fetch always goes through vip to avoid Cloudflare timeouts on long generation hosts.
+            const requestConfig = {
+                ...effectiveConfig,
+                channelMode: "local" as const,
+                protocol: selectedChannel.protocol,
+                baseUrl: ZPIKA_BASE_URL,
+                apiKey: selectedChannel.apiKey,
+                model: selectedChannel.models[0] || preferredDefaultForChannel(selectedChannel),
+            };
             const models = uniqueModels(await fetchImageModels(requestConfig));
             setFetchedModels((current) => ({ ...current, [selectedChannel.id]: models }));
-            message.success(`已获取 ${models.length} 个模型，请手动选择`);
+            const patched = applyPreferredModelsToChannel(selectedChannel, models);
+            updateCustomChannel(patched);
+            applyDefaultBindingAfterFetch(selectedChannel.id, patched);
+            const preferredHit = (selectedChannel.preferredModels || []).filter((model) => models.includes(model));
+            message.success(preferredHit.length ? `已获取 ${models.length} 个模型，并自动选中推荐 ${preferredHit.length} 个` : `已获取 ${models.length} 个模型，请手动选择`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "读取模型失败");
         } finally {
@@ -100,50 +125,87 @@ export function AppConfigModal() {
         }
     };
 
-    const updateCapabilityModels = (group: ModelGroup, models: string[]) => {
-        if (!selectedChannel) return;
-        const next = uniqueModels(models);
-        updateCustomChannel({ [group.modelsKey]: next });
-        if (config[group.channelKey] === selectedChannel.id && !next.includes(config[group.modelKey])) updateConfig(group.modelKey, next[0] || "");
+    const applyDefaultBindingAfterFetch = (channelId: string, channel: CustomAiChannel) => {
+        const preferred = preferredDefaultForChannel(channel);
+        if (channel.id === ZPIKA_GROUP_IDS.geminiImage || channel.id === ZPIKA_GROUP_IDS.openaiImage) {
+            if (!channel.imageModels.length) return;
+            if (config.imageChannelId && config.imageChannelId !== channelId && config.imageModel) return;
+            const model = channel.imageModels.includes(preferred) ? preferred : channel.imageModels[0];
+            updateConfig("imageChannelId", channelId);
+            updateConfig("imageModel", model);
+            return;
+        }
+        if (channel.id === ZPIKA_GROUP_IDS.video) {
+            if (!channel.videoModels.length) return;
+            if (config.videoChannelId && config.videoChannelId !== channelId && config.videoModel) return;
+            const model = channel.videoModels.includes(preferred) ? preferred : channel.videoModels[0];
+            updateConfig("videoChannelId", channelId);
+            updateConfig("videoModel", model);
+            return;
+        }
+        if (channel.id === ZPIKA_GROUP_IDS.text) {
+            if (channel.textModels.length && (!config.textChannelId || config.textChannelId === channelId || !config.textModel)) {
+                const model = channel.textModels.includes(preferred) ? preferred : channel.textModels[0];
+                updateConfig("textChannelId", channelId);
+                updateConfig("textModel", model);
+            }
+            if (channel.audioModels.length && (!config.audioChannelId || config.audioChannelId === channelId || !config.audioModel)) {
+                updateConfig("audioChannelId", channelId);
+                updateConfig("audioModel", channel.audioModels[0]);
+            }
+        }
     };
 
     const updateChannelModels = (models: string[]) => {
         if (!selectedChannel) return;
         const next = uniqueModels(models);
-        const patch: Partial<CustomAiChannel> = { models: next };
-        for (const group of modelGroups) patch[group.modelsKey] = selectedChannel[group.modelsKey].filter((model) => next.includes(model));
+        const patch = applyPreferredModelsToChannel({ ...selectedChannel, models: next }, next);
+        // Keep exact user selection when editing tags manually.
+        if (selectedChannel.id === ZPIKA_GROUP_IDS.geminiImage || selectedChannel.id === ZPIKA_GROUP_IDS.openaiImage) {
+            patch.models = next;
+            patch.imageModels = next;
+            patch.videoModels = [];
+            patch.textModels = [];
+            patch.audioModels = [];
+        } else if (selectedChannel.id === ZPIKA_GROUP_IDS.video) {
+            patch.models = next;
+            patch.videoModels = next;
+            patch.imageModels = [];
+            patch.textModels = [];
+            patch.audioModels = [];
+        } else {
+            patch.models = next;
+            patch.textModels = next.filter((model) => !isLikelyAudioModel(model));
+            patch.audioModels = next.filter((model) => isLikelyAudioModel(model));
+            patch.imageModels = [];
+            patch.videoModels = [];
+        }
         updateCustomChannel(patch);
+        syncBindingsAfterModelChange(selectedChannel.id, patch);
+    };
+
+    const syncBindingsAfterModelChange = (channelId: string, channel: CustomAiChannel) => {
         for (const group of modelGroups) {
-            if (config[group.channelKey] === selectedChannel.id && !patch[group.modelsKey]?.includes(config[group.modelKey])) updateConfig(group.modelKey, patch[group.modelsKey]?.[0] || "");
+            if (config[group.channelKey] !== channelId) continue;
+            if (!channel[group.modelsKey].includes(config[group.modelKey])) {
+                updateConfig(group.modelKey, channel[group.modelsKey][0] || "");
+            }
         }
     };
 
-    const addChannel = () => {
-        const channel = createCustomChannel(config.customChannels.length + 1);
-        updateConfig("customChannels", [...config.customChannels, channel]);
-        setSelectedChannelId(channel.id);
-    };
-
-    const deleteChannel = () => {
-        if (!selectedChannel || config.customChannels.length === 1) return;
-        const channels = config.customChannels.filter((channel) => channel.id !== selectedChannel.id);
-        updateConfig("customChannels", channels);
-        setSelectedChannelId(channels[0]?.id || "");
-        for (const group of modelGroups) {
-            if (config[group.channelKey] !== selectedChannel.id) continue;
-            const fallback = channels.find((channel) => channel[group.modelsKey].length);
-            updateConfig(group.channelKey, fallback?.id || "");
-            updateConfig(group.modelKey, fallback?.[group.modelsKey][0] || "");
-        }
-    };
-
-    const bindingOptions = (group: ModelGroup) =>
-        config.customChannels.flatMap((channel) =>
-            channel[group.modelsKey].map((model) => ({
-                label: `${channel.name} / ${model}`,
-                value: encodeBinding(channel.id, model),
+    const bindingOptions = useMemo(
+        () =>
+            modelGroups.map((group) => ({
+                group,
+                options: config.customChannels.flatMap((channel) =>
+                    channel[group.modelsKey].map((model) => ({
+                        label: `${channel.name} / ${model}`,
+                        value: encodeBinding(channel.id, model),
+                    })),
+                ),
             })),
-        );
+        [config.customChannels],
+    );
 
     const updateBinding = (group: ModelGroup, value?: string) => {
         if (!value) {
@@ -161,7 +223,7 @@ export function AppConfigModal() {
             title={
                 <div>
                     <div className="text-lg font-semibold">配置与用户偏好</div>
-                    <div className="mt-1 text-xs font-normal text-muted-foreground">模型、渠道和画布默认行为</div>
+                    <div className="mt-1 text-xs font-normal text-muted-foreground">Zpika 双域名预设分组：文字走 vip，图片/视频走 aivideo</div>
                 </div>
             }
             open={isConfigOpen}
@@ -194,41 +256,43 @@ export function AppConfigModal() {
 
                     {effectiveMode === "local" && selectedChannel ? (
                         <>
-                            <div className="mb-4 flex items-center gap-2">
-                                <Select className="min-w-0 flex-1" value={selectedChannel.id} options={config.customChannels.map((channel) => ({ label: channel.name, value: channel.id }))} onChange={setSelectedChannelId} />
-                                <Button icon={<Plus className="size-4" />} onClick={addChannel}>
-                                    新增渠道
-                                </Button>
-                                <Tooltip title="删除渠道">
-                                    <Button aria-label="删除渠道" danger disabled={config.customChannels.length === 1} icon={<Trash2 className="size-4" />} onClick={deleteChannel} />
-                                </Tooltip>
+                            <div className="mb-3 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                                <div>
+                                    拉取模型域名（固定）：<span className="font-medium text-foreground">{ZPIKA_BASE_URL}</span>
+                                </div>
+                                <div className="mt-1">
+                                    图片/视频生成域名（固定）：<span className="font-medium text-foreground">{ZPIKA_DIRECT_BASE_URL}</span>
+                                </div>
+                                <div className="mt-1">当前分组请求域名：{hostHint}</div>
                             </div>
 
-                            <div className="grid gap-x-4 md:grid-cols-2">
-                                <Form.Item label="渠道名称" className="mb-4">
-                                    <Input value={selectedChannel.name} onChange={(event) => updateCustomChannel({ name: event.target.value })} />
-                                </Form.Item>
-                                <Form.Item label="协议" className="mb-4">
-                                    <Select
-                                        value={selectedChannel.protocol}
-                                        options={[
-                                            { label: "OpenAI 兼容", value: "openai" },
-                                            { label: "Gemini 原生图片", value: "gemini" },
-                                            { label: "zpika-veo-omni-flash", value: "fpbrowser2api" },
-                                            { label: "zpika-omni-flash", value: "zerofall" },
-                                        ]}
-                                        onChange={(value) => updateChannelProtocol(value as CustomChannelProtocol)}
-                                    />
-                                </Form.Item>
-                                <Form.Item label="Base URL" className="mb-4">
-                                    <Input value={selectedChannel.baseUrl} onChange={(event) => updateCustomChannel({ baseUrl: event.target.value })} />
-                                </Form.Item>
-                                <Form.Item label="API Key" className="mb-4">
-                                    <Input.Password value={selectedChannel.apiKey} onChange={(event) => updateCustomChannel({ apiKey: event.target.value })} />
-                                </Form.Item>
+                            <div className="mb-4">
+                                <Select
+                                    className="w-full"
+                                    value={selectedChannel.id}
+                                    options={config.customChannels.map((channel) => ({
+                                        label: `${channel.name}${channel.apiKey.trim() ? "" : "（未配置 Key）"}`,
+                                        value: channel.id,
+                                    }))}
+                                    onChange={setSelectedChannelId}
+                                />
                             </div>
 
-                            <Form.Item label="渠道模型" className="mb-5">
+                            <div className="mb-4 flex flex-wrap items-center gap-2">
+                                <Tag color="blue">{groupCapabilityLabel[selectedChannel.id] || selectedChannel.name}</Tag>
+                                <Tag>{protocolLabel[selectedChannel.protocol]}</Tag>
+                                <Tag color={selectedChannel.hostMode === "direct" ? "purple" : "green"}>{selectedChannel.hostMode === "direct" ? "生成走 aivideo" : "文字/拉取走 vip"}</Tag>
+                            </div>
+
+                            <Form.Item label="API Key" className="mb-4" extra="每个分组通常对应中转站不同套餐 Key，请分别填写。">
+                                <Input.Password value={selectedChannel.apiKey} onChange={(event) => updateCustomChannel({ apiKey: event.target.value })} placeholder="sk-..." />
+                            </Form.Item>
+
+                            <Form.Item
+                                label="分组模型"
+                                className="mb-5"
+                                extra={preferredHints.length ? `推荐优先：${preferredHints.join("、")}（拉取后若上游有则自动勾选）` : "可手动输入模型名，或先拉取上游完整列表"}
+                            >
                                 <div className="flex items-start gap-2">
                                     <Select
                                         mode="tags"
@@ -247,23 +311,6 @@ export function AppConfigModal() {
                                     </Button>
                                 </div>
                             </Form.Item>
-
-                            <div className="mb-5 grid gap-4 md:grid-cols-2">
-                                {visibleModelGroups.map((group) => (
-                                    <Form.Item key={group.modelsKey} label={group.optionsLabel} className="mb-0">
-                                        <Select
-                                            mode="multiple"
-                                            showSearch
-                                            allowClear
-                                            maxTagCount="responsive"
-                                            placeholder={selectedChannel.models.length ? `请选择${group.optionsLabel}` : "请先在上方选择渠道模型"}
-                                            value={selectedChannel[group.modelsKey]}
-                                            options={selectedModelOptions}
-                                            onChange={(models) => updateCapabilityModels(group, models)}
-                                        />
-                                    </Form.Item>
-                                ))}
-                            </div>
                         </>
                     ) : effectiveMode === "remote" ? (
                         <div className="mb-5 text-sm text-muted-foreground">
@@ -272,7 +319,7 @@ export function AppConfigModal() {
                     ) : null}
 
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        {modelGroups.map((group) => (
+                        {bindingOptions.map(({ group, options }) => (
                             <Form.Item key={group.modelKey} label={group.defaultLabel} className="mb-4">
                                 {effectiveMode === "local" ? (
                                     <Select
@@ -280,7 +327,7 @@ export function AppConfigModal() {
                                         allowClear
                                         placeholder="选择渠道和模型"
                                         value={config[group.channelKey] && config[group.modelKey] ? encodeBinding(config[group.channelKey], config[group.modelKey]) : undefined}
-                                        options={bindingOptions(group)}
+                                        options={options}
                                         onChange={(value) => updateBinding(group, value)}
                                     />
                                 ) : (
@@ -333,21 +380,6 @@ export function AppConfigModal() {
     );
 }
 
-function createCustomChannel(index: number): CustomAiChannel {
-    return {
-        id: nanoid(),
-        name: `渠道 ${index}`,
-        protocol: "openai",
-        baseUrl: "",
-        apiKey: "",
-        models: [],
-        imageModels: [],
-        videoModels: [],
-        textModels: [],
-        audioModels: [],
-    };
-}
-
 function encodeBinding(channelId: string, model: string) {
     return `${channelId}::${model}`;
 }
@@ -363,4 +395,9 @@ function normalizeImageCount(value: string) {
 
 function uniqueModels(models: string[]) {
     return Array.from(new Set(models.map((model) => model.trim()).filter(Boolean)));
+}
+
+function isLikelyAudioModel(model: string) {
+    const value = model.toLowerCase();
+    return value.includes("audio") || value.includes("tts") || value.includes("speech") || value.includes("voice") || value.includes("music") || value.includes("sound");
 }

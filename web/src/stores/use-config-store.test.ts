@@ -2,7 +2,24 @@ import { describe, expect, test } from "bun:test";
 
 import * as configStore from "./use-config-store";
 
-const { assertChannelSupportsCapability, canUseCustomChannel, defaultConfig, filterModelsByCapability, isModelAvailableForCapability, isModelSelectedForChannel, normalizeCustomChannelProtocol, resolveEffectiveConfig } = configStore;
+const {
+    applyPreferredModelsToChannel,
+    assertChannelSupportsCapability,
+    canUseCustomChannel,
+    defaultConfig,
+    filterModelsByCapability,
+    isModelAvailableForCapability,
+    isModelSelectedForChannel,
+    migrateConfigToZpikaPreset,
+    normalizeCustomChannelProtocol,
+    resolveChannelBaseUrl,
+    resolveCustomChannelConfig,
+    resolveEffectiveConfig,
+    ZPIKA_BASE_URL,
+    ZPIKA_DEFAULT_MODELS,
+    ZPIKA_DIRECT_BASE_URL,
+    ZPIKA_GROUP_IDS,
+} = configStore;
 
 describe("custom channel access", () => {
     test("allows administrators regardless of the public switch", () => {
@@ -32,6 +49,23 @@ describe("custom channel access", () => {
         expect(defaultConfig.size).toBe("1:1");
     });
 
+    test("locks zpika dual hosts and preferred defaults", () => {
+        expect(defaultConfig.baseUrl).toBe(ZPIKA_BASE_URL);
+        expect(defaultConfig.directBaseUrl).toBe(ZPIKA_DIRECT_BASE_URL);
+        expect(defaultConfig.imageModel).toBe(ZPIKA_DEFAULT_MODELS.geminiImage);
+        expect(defaultConfig.videoModel).toBe(ZPIKA_DEFAULT_MODELS.video);
+        expect(defaultConfig.textModel).toBe(ZPIKA_DEFAULT_MODELS.text);
+        expect(defaultConfig.customChannels.map((channel) => channel.id)).toEqual([
+            ZPIKA_GROUP_IDS.text,
+            ZPIKA_GROUP_IDS.openaiImage,
+            ZPIKA_GROUP_IDS.geminiImage,
+            ZPIKA_GROUP_IDS.video,
+        ]);
+        expect(defaultConfig.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.text)?.hostMode).toBe("base");
+        expect(defaultConfig.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.geminiImage)?.hostMode).toBe("direct");
+        expect(defaultConfig.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.video)?.hostMode).toBe("direct");
+    });
+
     test("upgrades the previous untouched image defaults once", () => {
         expect(typeof configStore.migrateImageDefaults).toBe("function");
         expect(configStore.migrateImageDefaults!({ quality: "auto", size: "1:1" }, 0)).toMatchObject({ quality: "high", size: "1:1" });
@@ -39,44 +73,148 @@ describe("custom channel access", () => {
         expect(configStore.migrateImageDefaults!({ quality: "auto", size: "1:1" }, 2)).toMatchObject({ quality: "auto", size: "1:1" });
     });
 
-    test("resolves image and video models through different custom channels", () => {
-        expect(typeof configStore.resolveCustomChannelConfig).toBe("function");
-        const resolveCustomChannelConfig = configStore.resolveCustomChannelConfig!;
-        const config = {
-            ...defaultConfig,
-            channelMode: "local" as const,
-            imageChannelId: "image-channel",
-            videoChannelId: "video-channel",
+    test("migrates legacy multi-channel keys and models into locked zpika groups", () => {
+        const migrated = migrateConfigToZpikaPreset({
+            channelMode: "local",
+            imageChannelId: "old-gemini",
+            videoChannelId: "old-video",
+            textChannelId: "old-text",
+            imageModel: "gemini-3-pro-image-preview",
+            videoModel: "veo-omni-flash",
+            textModel: "gpt-5.6-terra",
             customChannels: [
                 {
-                    id: "image-channel",
+                    id: "old-text",
+                    name: "文字分组",
+                    protocol: "openai",
+                    baseUrl: "https://vip.example.com",
+                    apiKey: "text-key",
+                    models: ["gpt-5.6-terra", "gpt-5.6-sol"],
+                    imageModels: [],
+                    videoModels: [],
+                    textModels: ["gpt-5.6-terra", "gpt-5.6-sol"],
+                    audioModels: [],
+                },
+                {
+                    id: "old-gemini",
                     name: "Gemini 图片",
-                    protocol: "gemini" as const,
-                    baseUrl: "https://image.example.com",
-                    apiKey: "image-key",
-                    models: ["gemini-image"],
-                    imageModels: ["gemini-image"],
+                    protocol: "gemini",
+                    baseUrl: "https://img.example.com",
+                    apiKey: "gemini-key",
+                    models: ["gemini-3-pro-image-preview"],
+                    imageModels: ["gemini-3-pro-image-preview"],
                     videoModels: [],
                     textModels: [],
                     audioModels: [],
                 },
                 {
-                    id: "video-channel",
-                    name: "zpika 视频",
-                    protocol: "zerofall" as const,
+                    id: "old-openai-image",
+                    name: "OpenAI 画图",
+                    protocol: "openai",
+                    baseUrl: "https://img2.example.com",
+                    apiKey: "openai-image-key",
+                    models: ["gpt-image-2"],
+                    imageModels: ["gpt-image-2"],
+                    videoModels: [],
+                    textModels: [],
+                    audioModels: [],
+                },
+                {
+                    id: "old-video",
+                    name: "视频",
+                    protocol: "fpbrowser2api",
                     baseUrl: "https://video.example.com",
                     apiKey: "video-key",
-                    models: ["omni-flash"],
+                    models: ["veo-omni-flash", "veo-omni-flash-video-edit"],
                     imageModels: [],
-                    videoModels: ["omni-flash"],
+                    videoModels: ["veo-omni-flash", "veo-omni-flash-video-edit"],
                     textModels: [],
                     audioModels: [],
                 },
             ],
+        });
+
+        expect(migrated.customChannels).toHaveLength(4);
+        expect(migrated.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.text)).toMatchObject({
+            apiKey: "text-key",
+            textModels: ["gpt-5.6-terra", "gpt-5.6-sol"],
+            hostMode: "base",
+            locked: true,
+        });
+        expect(migrated.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.geminiImage)).toMatchObject({
+            apiKey: "gemini-key",
+            imageModels: ["gemini-3-pro-image-preview"],
+            hostMode: "direct",
+            protocol: "gemini",
+        });
+        expect(migrated.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.openaiImage)).toMatchObject({
+            apiKey: "openai-image-key",
+            imageModels: ["gpt-image-2"],
+            hostMode: "direct",
+            protocol: "openai",
+        });
+        expect(migrated.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.video)).toMatchObject({
+            apiKey: "video-key",
+            videoModels: ["veo-omni-flash", "veo-omni-flash-video-edit"],
+            hostMode: "direct",
+            protocol: "fpbrowser2api",
+        });
+        expect(migrated.imageChannelId).toBe(ZPIKA_GROUP_IDS.geminiImage);
+        expect(migrated.videoChannelId).toBe(ZPIKA_GROUP_IDS.video);
+        expect(migrated.textChannelId).toBe(ZPIKA_GROUP_IDS.text);
+        expect(migrated.imageModel).toBe("gemini-3-pro-image-preview");
+        expect(migrated.videoModel).toBe("veo-omni-flash");
+        expect(migrated.textModel).toBe("gpt-5.6-terra");
+    });
+
+    test("routes image and video through the direct host and text through vip", () => {
+        const config = {
+            ...defaultConfig,
+            channelMode: "local" as const,
+            imageChannelId: ZPIKA_GROUP_IDS.geminiImage,
+            videoChannelId: ZPIKA_GROUP_IDS.video,
+            textChannelId: ZPIKA_GROUP_IDS.text,
+            customChannels: defaultConfig.customChannels.map((channel) => {
+                if (channel.id === ZPIKA_GROUP_IDS.geminiImage) {
+                    return { ...channel, apiKey: "image-key", models: ["gemini-3-pro-image-preview"], imageModels: ["gemini-3-pro-image-preview"] };
+                }
+                if (channel.id === ZPIKA_GROUP_IDS.video) {
+                    return { ...channel, apiKey: "video-key", models: ["veo-omni-flash"], videoModels: ["veo-omni-flash"] };
+                }
+                if (channel.id === ZPIKA_GROUP_IDS.text) {
+                    return { ...channel, apiKey: "text-key", models: ["gpt-5.6-terra"], textModels: ["gpt-5.6-terra"] };
+                }
+                return channel;
+            }),
         };
 
-        expect(resolveCustomChannelConfig(config, "image", "gemini-image")).toMatchObject({ protocol: "gemini", baseUrl: "https://image.example.com", apiKey: "image-key", model: "gemini-image" });
-        expect(resolveCustomChannelConfig(config, "video", "omni-flash")).toMatchObject({ protocol: "zerofall", baseUrl: "https://video.example.com", apiKey: "video-key", model: "omni-flash" });
+        expect(resolveCustomChannelConfig(config, "image", "gemini-3-pro-image-preview")).toMatchObject({
+            protocol: "gemini",
+            baseUrl: ZPIKA_DIRECT_BASE_URL,
+            apiKey: "image-key",
+            model: "gemini-3-pro-image-preview",
+        });
+        expect(resolveCustomChannelConfig(config, "video", "veo-omni-flash")).toMatchObject({
+            protocol: "fpbrowser2api",
+            baseUrl: ZPIKA_DIRECT_BASE_URL,
+            apiKey: "video-key",
+            model: "veo-omni-flash",
+        });
+        expect(resolveCustomChannelConfig(config, "text", "gpt-5.6-terra")).toMatchObject({
+            protocol: "openai",
+            baseUrl: ZPIKA_BASE_URL,
+            apiKey: "text-key",
+            model: "gpt-5.6-terra",
+        });
+        expect(resolveChannelBaseUrl(config, { hostMode: "direct", baseUrl: "https://ignored.example.com" })).toBe(ZPIKA_DIRECT_BASE_URL);
+        expect(resolveChannelBaseUrl(config, { hostMode: "base", baseUrl: "https://ignored.example.com" })).toBe(ZPIKA_BASE_URL);
+    });
+
+    test("auto-selects preferred models that exist in the fetched list", () => {
+        const channel = defaultConfig.customChannels.find((item) => item.id === ZPIKA_GROUP_IDS.geminiImage)!;
+        const patched = applyPreferredModelsToChannel(channel, ["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "other-image"]);
+        expect(patched.models).toEqual(["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"]);
+        expect(patched.imageModels).toEqual(["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"]);
     });
 
     test("limits Gemini custom channels to image capability", () => {
@@ -84,46 +222,62 @@ describe("custom channel access", () => {
             ...defaultConfig,
             channelMode: "local" as const,
             protocol: "gemini" as const,
-            customChannels: [
-                {
-                    id: "gemini-channel",
-                    name: "Gemini",
-                    protocol: "gemini" as const,
-                    baseUrl: "https://gemini.example.com",
-                    apiKey: "gemini-key",
-                    models: ["gemini-image", "gemini-text"],
-                    imageModels: ["gemini-image"],
-                    videoModels: ["gemini-text"],
-                    textModels: ["gemini-text"],
-                    audioModels: ["gemini-text"],
-                },
-            ],
+            customChannels: defaultConfig.customChannels.map((channel) =>
+                channel.id === ZPIKA_GROUP_IDS.geminiImage
+                    ? {
+                          ...channel,
+                          apiKey: "gemini-key",
+                          models: ["gemini-3-pro-image-preview"],
+                          imageModels: ["gemini-3-pro-image-preview"],
+                      }
+                    : channel,
+            ),
         };
         const effective = resolveEffectiveConfig(config, null, true);
-
-        expect(effective.customChannels[0]).toMatchObject({ videoModels: [], textModels: [], audioModels: [] });
+        const gemini = effective.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.geminiImage);
+        expect(gemini).toMatchObject({ videoModels: [], textModels: [], audioModels: [], imageModels: ["gemini-3-pro-image-preview"] });
         expect(() => assertChannelSupportsCapability(config, "video")).toThrow("Gemini 原生图片协议仅支持图片生成和参考图编辑");
         expect(() => assertChannelSupportsCapability({ ...config, channelMode: "remote" }, "video")).not.toThrow();
     });
 
     test("falls back to the channel that contains a node-selected model", () => {
-        expect(typeof configStore.resolveCustomChannelConfig).toBe("function");
-        const resolveCustomChannelConfig = configStore.resolveCustomChannelConfig!;
         const config = {
             ...defaultConfig,
             channelMode: "local" as const,
-            imageChannelId: "default-image",
-            customChannels: [
-                { id: "default-image", name: "默认图片", protocol: "openai" as const, baseUrl: "https://one.example.com", apiKey: "one", models: ["image-one"], imageModels: ["image-one"], videoModels: [], textModels: [], audioModels: [] },
-                { id: "alternate-image", name: "备用图片", protocol: "gemini" as const, baseUrl: "https://two.example.com", apiKey: "two", models: ["image-two"], imageModels: ["image-two"], videoModels: [], textModels: [], audioModels: [] },
-            ],
+            imageChannelId: ZPIKA_GROUP_IDS.openaiImage,
+            customChannels: defaultConfig.customChannels.map((channel) => {
+                if (channel.id === ZPIKA_GROUP_IDS.openaiImage) {
+                    return { ...channel, apiKey: "one", models: ["gpt-image-2"], imageModels: ["gpt-image-2"] };
+                }
+                if (channel.id === ZPIKA_GROUP_IDS.geminiImage) {
+                    return { ...channel, apiKey: "two", models: ["gemini-3-pro-image-preview"], imageModels: ["gemini-3-pro-image-preview"] };
+                }
+                return channel;
+            }),
         };
 
-        expect(resolveCustomChannelConfig(config, "image", "image-two")).toMatchObject({ baseUrl: "https://two.example.com", model: "image-two" });
+        expect(resolveCustomChannelConfig(config, "image", "gemini-3-pro-image-preview")).toMatchObject({
+            baseUrl: ZPIKA_DIRECT_BASE_URL,
+            apiKey: "two",
+            model: "gemini-3-pro-image-preview",
+            protocol: "gemini",
+        });
     });
 
     test("falls back to cloud mode without deleting a saved local channel", () => {
-        const config = { ...defaultConfig, channelMode: "local" as const, protocol: "zerofall" as const, baseUrl: "https://custom.example.com", apiKey: "local-key", models: ["omni-flash"] };
+        const config = {
+            ...defaultConfig,
+            channelMode: "local" as const,
+            protocol: "fpbrowser2api" as const,
+            baseUrl: ZPIKA_BASE_URL,
+            apiKey: "local-key",
+            models: ["veo-omni-flash"],
+            customChannels: defaultConfig.customChannels.map((channel) =>
+                channel.id === ZPIKA_GROUP_IDS.video
+                    ? { ...channel, apiKey: "local-key", models: ["veo-omni-flash"], videoModels: ["veo-omni-flash"] }
+                    : channel,
+            ),
+        };
         const cloudChannel = {
             availableModels: ["gpt-5.5", "veo-omni-flash"],
             modelCosts: [],
@@ -140,9 +294,8 @@ describe("custom channel access", () => {
         expect(disabled.models).toEqual(cloudChannel.availableModels);
         expect(disabled.videoModel).toBe("veo-omni-flash");
         expect(disabled.baseUrl).toBe(config.baseUrl);
-        expect(disabled.apiKey).toBe(config.apiKey);
         expect(config.channelMode).toBe("local");
-        expect(config.models).toEqual(["omni-flash"]);
+        expect(config.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.video)?.apiKey).toBe("local-key");
 
         expect(resolveEffectiveConfig(config, cloudChannel, true).channelMode).toBe("local");
     });
