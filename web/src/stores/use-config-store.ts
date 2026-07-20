@@ -67,7 +67,7 @@ export type AiConfig = {
 };
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
-export const CONFIG_STORE_VERSION = 3;
+export const CONFIG_STORE_VERSION = 4;
 
 export const ZPIKA_BASE_URL = "https://vip.zpika.com";
 export const ZPIKA_DIRECT_BASE_URL = "https://aivideo.zpika.com";
@@ -183,7 +183,7 @@ export const defaultConfig: AiConfig = {
     textModels: [],
     audioModels: [],
     quality: "high",
-    size: "1:1",
+    size: "9:16",
     count: "1",
     canvasImageCount: "1",
     customChannels: defaultCustomChannels,
@@ -246,10 +246,54 @@ export function normalizeCustomChannelProtocol(value: unknown): CustomChannelPro
     return value === "gemini" || value === "zerofall" || value === "fpbrowser2api" ? value : "openai";
 }
 
-export function migrateImageDefaults<T extends { quality?: string; size?: string }>(config: T, persistedVersion: number): T {
-    if (persistedVersion >= 2 || config.quality !== "auto" || config.size !== "1:1") return config;
-    return { ...config, quality: "high" };
+/** One-shot upgrades for generation defaults that used to ship as official product defaults. */
+export function migrateGenerationDefaults<
+    T extends {
+        quality?: string;
+        size?: string;
+        count?: string;
+        canvasImageCount?: string;
+        videoSeconds?: string;
+        vquality?: string;
+        videoSize?: string;
+    },
+>(config: T, persistedVersion: number): T {
+    let next = { ...config };
+
+    // v2: previous image default was auto quality + 1:1 → 4K
+    if (persistedVersion < 2 && next.quality === "auto" && (next.size === "1:1" || !next.size)) {
+        next = { ...next, quality: "high" };
+    }
+
+    // v4: second-dev product defaults — portrait 4K image, 1 canvas image, 1080p/10s video
+    if (persistedVersion < 4) {
+        if (!next.size || next.size === "1:1") {
+            next = { ...next, size: "9:16" };
+        }
+        if (next.quality === "auto" && next.size === "9:16") {
+            next = { ...next, quality: "high" };
+        }
+        // Official canvas default used to be 3 images; product default is 1.
+        if (String(next.canvasImageCount || "") === "3") {
+            next = { ...next, canvasImageCount: "1" };
+        }
+        if (!next.videoSeconds || next.videoSeconds === "6") {
+            next = { ...next, videoSeconds: "10" };
+        }
+        const vquality = String(next.vquality || "").toLowerCase();
+        if (!vquality || vquality === "720" || vquality === "720p") {
+            next = { ...next, vquality: "1080p" };
+        }
+        if (!next.videoSize) {
+            next = { ...next, videoSize: "9:16" };
+        }
+    }
+
+    return next;
 }
+
+/** @deprecated Prefer migrateGenerationDefaults — kept for existing imports/tests. */
+export const migrateImageDefaults = migrateGenerationDefaults;
 
 export function assertChannelSupportsCapability(config: Pick<AiConfig, "channelMode" | "protocol">, capability: ModelCapability) {
     if (config.channelMode === "local" && config.protocol === "gemini" && capability !== "image") {
@@ -373,7 +417,7 @@ export const useConfigStore = create<ConfigStore>()(
             version: CONFIG_STORE_VERSION,
             migrate: (persisted, version) => {
                 const state = persisted as Partial<ConfigStore>;
-                const config = migrateImageDefaults(state.config || {}, version);
+                const config = migrateGenerationDefaults(state.config || {}, version);
                 return { ...state, config: migrateConfigToZpikaPreset(config, version) };
             },
             partialize: (state) => ({ config: state.config }),

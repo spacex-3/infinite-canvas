@@ -84,7 +84,10 @@ describe("Veo Omni video payload", () => {
         expect(payload.aspect_ratio).toBe("9:16");
         expect(payload.width).toBe(1080);
         expect(payload.height).toBe(1920);
-        expect(defaultConfig.size).toBe("1:1");
+        expect(defaultConfig.size).toBe("9:16");
+        expect(defaultConfig.videoSize).toBe("9:16");
+        expect(defaultConfig.vquality).toBe("1080p");
+        expect(defaultConfig.videoSeconds).toBe("10");
     });
 
     test("uses videoSize instead of the image size", () => {

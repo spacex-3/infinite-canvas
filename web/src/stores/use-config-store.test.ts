@@ -46,7 +46,9 @@ describe("custom channel access", () => {
         expect(defaultConfig.videoSeconds).toBe("10");
         expect(defaultConfig.vquality).toBe("1080p");
         expect(defaultConfig.quality).toBe("high");
-        expect(defaultConfig.size).toBe("1:1");
+        expect(defaultConfig.size).toBe("9:16");
+        expect(defaultConfig.count).toBe("1");
+        expect(defaultConfig.canvasImageCount).toBe("1");
     });
 
     test("locks zpika dual hosts and preferred defaults", () => {
@@ -66,11 +68,34 @@ describe("custom channel access", () => {
         expect(defaultConfig.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.video)?.hostMode).toBe("direct");
     });
 
-    test("upgrades the previous untouched image defaults once", () => {
-        expect(typeof configStore.migrateImageDefaults).toBe("function");
-        expect(configStore.migrateImageDefaults!({ quality: "auto", size: "1:1" }, 0)).toMatchObject({ quality: "high", size: "1:1" });
-        expect(configStore.migrateImageDefaults!({ quality: "auto", size: "16:9" }, 0)).toMatchObject({ quality: "auto", size: "16:9" });
-        expect(configStore.migrateImageDefaults!({ quality: "auto", size: "1:1" }, 2)).toMatchObject({ quality: "auto", size: "1:1" });
+    test("upgrades generation defaults once for second-dev product settings", () => {
+        expect(typeof configStore.migrateGenerationDefaults).toBe("function");
+        expect(configStore.migrateGenerationDefaults!({ quality: "auto", size: "1:1" }, 0)).toMatchObject({ quality: "high", size: "9:16" });
+        expect(configStore.migrateGenerationDefaults!({ quality: "auto", size: "16:9" }, 0)).toMatchObject({ quality: "auto", size: "16:9" });
+        expect(configStore.migrateGenerationDefaults!({ quality: "auto", size: "1:1", canvasImageCount: "3", videoSeconds: "6", vquality: "720" }, 2)).toMatchObject({
+            quality: "high",
+            size: "9:16",
+            canvasImageCount: "1",
+            videoSeconds: "10",
+            vquality: "1080p",
+        });
+        expect(configStore.migrateGenerationDefaults!({ quality: "high", size: "1:1", canvasImageCount: "3", videoSeconds: "6", vquality: "720p" }, 3)).toMatchObject({
+            quality: "high",
+            size: "9:16",
+            canvasImageCount: "1",
+            videoSeconds: "10",
+            vquality: "1080p",
+        });
+        // already on v4 — leave intentional user choices alone
+        expect(configStore.migrateGenerationDefaults!({ quality: "medium", size: "1:1", canvasImageCount: "3", videoSeconds: "6", vquality: "720" }, 4)).toMatchObject({
+            quality: "medium",
+            size: "1:1",
+            canvasImageCount: "3",
+            videoSeconds: "6",
+            vquality: "720",
+        });
+        // migrateImageDefaults remains as a compatible alias
+        expect(configStore.migrateImageDefaults!({ quality: "auto", size: "1:1" }, 0)).toMatchObject({ quality: "high", size: "9:16" });
     });
 
     test("migrates legacy multi-channel keys and models into locked zpika groups", () => {
