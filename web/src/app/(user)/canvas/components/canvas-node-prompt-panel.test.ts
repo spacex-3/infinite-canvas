@@ -16,9 +16,14 @@ describe("CanvasNodePromptPanel", () => {
         expect(source).toContain('return node.metadata?.prompt || (isEditingExistingContent ? "" : "");');
     });
 
-    test("allows the prompt box to be resized vertically", () => {
-        expect(source).toContain("min-h-24");
-        expect(source).toContain("resize-y");
-        expect(source).not.toContain("resize-none");
+    test("allows the prompt panel to be resized both horizontally and vertically", () => {
+        expect(source).toContain("DEFAULT_PANEL_WIDTH = 500");
+        expect(source).toContain("MAX_PANEL_WIDTH = 960");
+        expect(source).toContain("MAX_TEXTAREA_HEIGHT = 640");
+        expect(source).toContain('aria-label="调整输入框大小"');
+        expect(source).toContain("cursor-nwse-resize");
+        expect(source).toContain("setPanelWidth");
+        expect(source).toContain("setTextareaHeight");
+        expect(source).toContain("resize-none");
     });
 });

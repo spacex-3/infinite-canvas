@@ -25,9 +25,11 @@ describe("canvas prompt keyboard behavior", () => {
         expect(textareaSource).not.toContain('rgba(0,0,0,0.01)');
     });
 
-    test("prompt and assistant textareas allow vertical resizing", () => {
-        expect(promptPanelSource).toContain("resize-y");
-        expect(promptPanelSource).not.toContain("resize-none");
+    test("prompt panel uses free resize handle and assistant keeps vertical resizing", () => {
+        expect(promptPanelSource).toContain('aria-label="调整输入框大小"');
+        expect(promptPanelSource).toContain("setPanelWidth");
+        expect(promptPanelSource).toContain("setTextareaHeight");
+        expect(promptPanelSource).toContain("MAX_PANEL_WIDTH");
         expect(assistantSource).toContain("resize-y");
         expect(assistantSource).not.toMatch(/className="thin-scrollbar[^"]*resize-none/);
     });

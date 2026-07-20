@@ -20,4 +20,9 @@ describe("CanvasNode text actions", () => {
         expect(textContentSource).toContain("cursor-text select-text");
         expect(textContentSource).toContain("onMouseDown={(event) => event.stopPropagation()}");
     });
+
+    test("does not force a fixed width on the generation prompt panel shell", () => {
+        expect(source).toContain('{showPanel && renderPanel ? <div className="absolute left-1/2 top-full z-[70] -translate-x-1/2 pt-4">{renderPanel(data)}</div> : null}');
+        expect(source).not.toContain('w-[500px] -translate-x-1/2 pt-4">{renderPanel(data)}');
+    });
 });

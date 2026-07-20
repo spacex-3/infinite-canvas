@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUp, LoaderCircle } from "lucide-react";
 import { Button } from "antd";
 
@@ -18,6 +18,13 @@ import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
+
+const DEFAULT_PANEL_WIDTH = 500;
+const MIN_PANEL_WIDTH = 360;
+const MAX_PANEL_WIDTH = 960;
+const DEFAULT_TEXTAREA_HEIGHT = 112;
+const MIN_TEXTAREA_HEIGHT = 96;
+const MAX_TEXTAREA_HEIGHT = 640;
 
 type CanvasNodePromptPanelProps = {
     node: CanvasNodeData;
@@ -40,11 +47,44 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
     const [prompt, setPrompt] = useState(initialPromptValue(node, isEditingExistingContent));
+    const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
+    const [textareaHeight, setTextareaHeight] = useState(DEFAULT_TEXTAREA_HEIGHT);
+    const resizeRef = useRef({
+        active: false,
+        startX: 0,
+        startY: 0,
+        startWidth: DEFAULT_PANEL_WIDTH,
+        startHeight: DEFAULT_TEXTAREA_HEIGHT,
+    });
     const credits = requestCreditCost({ channelMode: config.channelMode, modelCosts, model: config.model, count: mode === "image" ? config.count : 1 });
 
     useEffect(() => {
         setPrompt(initialPromptValue(node, isEditingExistingContent));
     }, [isEditingExistingContent, node.id]);
+
+    useEffect(() => {
+        const onMove = (event: MouseEvent) => {
+            if (!resizeRef.current.active) return;
+            const dx = event.clientX - resizeRef.current.startX;
+            const dy = event.clientY - resizeRef.current.startY;
+            // Panel is centered under the node, so horizontal growth is symmetric:
+            // dragging the right edge by dx should change width by ~2*dx.
+            setPanelWidth(clamp(resizeRef.current.startWidth + dx * 2, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH));
+            setTextareaHeight(clamp(resizeRef.current.startHeight + dy, MIN_TEXTAREA_HEIGHT, MAX_TEXTAREA_HEIGHT));
+        };
+        const onUp = () => {
+            if (!resizeRef.current.active) return;
+            resizeRef.current.active = false;
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+        };
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+        return () => {
+            document.removeEventListener("mousemove", onMove);
+            document.removeEventListener("mouseup", onUp);
+        };
+    }, []);
 
     const updatePrompt = (value: string) => {
         setPrompt(value);
@@ -57,10 +97,24 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
         onGenerate(node.id, mode, text);
     };
 
+    const startResize = (event: React.MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        resizeRef.current = {
+            active: true,
+            startX: event.clientX,
+            startY: event.clientY,
+            startWidth: panelWidth,
+            startHeight: textareaHeight,
+        };
+        document.body.style.cursor = "nwse-resize";
+        document.body.style.userSelect = "none";
+    };
+
     return (
         <div
-            className="rounded-2xl border p-3 shadow-2xl backdrop-blur"
-            style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
+            className="relative rounded-2xl border p-3 shadow-2xl backdrop-blur"
+            style={{ width: panelWidth, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
@@ -69,8 +123,8 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                 value={prompt}
                 references={mentionReferences}
                 onChange={updatePrompt}
-                className="thin-scrollbar min-h-24 max-h-80 w-full resize-y rounded-xl border px-3 py-2 text-sm leading-5 outline-none"
-                style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}
+                className="thin-scrollbar w-full resize-none overflow-y-auto rounded-xl border px-3 py-2 text-sm leading-5 outline-none"
+                style={{ height: textareaHeight, minHeight: MIN_TEXTAREA_HEIGHT, background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}
                 placeholder={promptPlaceholder(mode, hasImageContent, hasTextContent)}
             />
 
@@ -121,8 +175,22 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     </span>
                 </Button>
             </div>
+
+            <button
+                type="button"
+                aria-label="调整输入框大小"
+                className="absolute bottom-1 right-1 h-4 w-4 cursor-nwse-resize rounded-sm opacity-70 hover:opacity-100"
+                style={{
+                    background: `linear-gradient(135deg, transparent 0 46%, ${theme.node.stroke} 46% 54%, transparent 54% 62%, ${theme.node.stroke} 62% 70%, transparent 70%)`,
+                }}
+                onMouseDown={startResize}
+            />
         </div>
     );
+}
+
+function clamp(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
 }
 
 function defaultMode(type: CanvasNodeData["type"]): CanvasNodeGenerationMode {
