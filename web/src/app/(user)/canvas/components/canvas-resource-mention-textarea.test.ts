@@ -18,4 +18,17 @@ describe("canvas prompt keyboard behavior", () => {
         expect(textareaSource).toContain("shouldResetCanvasReferenceSelection(mention, nextMention)");
         expect(composerSource).toContain("shouldResetCanvasReferenceSelection(mention, nextMention)");
     });
+
+    test("uses the native textarea as the only visible text layer", () => {
+        expect(textareaSource).not.toContain("overlayRef");
+        expect(textareaSource).not.toContain("MentionHighlightText");
+        expect(textareaSource).not.toContain('rgba(0,0,0,0.01)');
+    });
+
+    test("prompt and assistant textareas allow vertical resizing", () => {
+        expect(promptPanelSource).toContain("resize-y");
+        expect(promptPanelSource).not.toContain("resize-none");
+        expect(assistantSource).toContain("resize-y");
+        expect(assistantSource).not.toMatch(/className="thin-scrollbar[^"]*resize-none/);
+    });
 });

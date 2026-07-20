@@ -415,7 +415,7 @@ function AssistantComposer({
                         event.preventDefault();
                         onPasteImage(file);
                     }}
-                    className="thin-scrollbar h-20 w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-5 outline-none placeholder:text-stone-400"
+                    className="thin-scrollbar min-h-20 max-h-72 w-full resize-y border-0 bg-transparent px-1 py-1 text-sm leading-5 outline-none placeholder:text-stone-400"
                     style={{ color: theme.node.text }}
                     placeholder={mode === "image" ? "描述你想生成或修改的图片" : "输入你想问的问题"}
                 />

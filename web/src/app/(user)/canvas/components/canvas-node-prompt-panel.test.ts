@@ -15,4 +15,10 @@ describe("CanvasNodePromptPanel", () => {
         expect(source).toContain("function initialPromptValue(node: CanvasNodeData, isEditingExistingContent: boolean)");
         expect(source).toContain('return node.metadata?.prompt || (isEditingExistingContent ? "" : "");');
     });
+
+    test("allows the prompt box to be resized vertically", () => {
+        expect(source).toContain("min-h-24");
+        expect(source).toContain("resize-y");
+        expect(source).not.toContain("resize-none");
+    });
 });

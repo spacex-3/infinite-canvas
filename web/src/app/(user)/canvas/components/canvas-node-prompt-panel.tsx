@@ -69,7 +69,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                 value={prompt}
                 references={mentionReferences}
                 onChange={updatePrompt}
-                className="thin-scrollbar h-24 w-full resize-none rounded-xl border px-3 py-2 text-sm leading-5 outline-none"
+                className="thin-scrollbar min-h-24 max-h-80 w-full resize-y rounded-xl border px-3 py-2 text-sm leading-5 outline-none"
                 style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}
                 placeholder={promptPlaceholder(mode, hasImageContent, hasTextContent)}
             />
