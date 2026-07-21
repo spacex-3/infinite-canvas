@@ -3,7 +3,7 @@
 import localforage from "localforage";
 
 import { nanoid } from "nanoid";
-import { readImageMeta } from "@/lib/image-utils";
+import { dataUrlToBlob, readImageMeta } from "@/lib/image-utils";
 
 export type UploadedImage = {
     url: string;
@@ -17,14 +17,39 @@ export type UploadedImage = {
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });
 const objectUrls = new Map<string, string>();
 
+async function toImageBlob(input: string | Blob) {
+    if (typeof input !== "string") return input;
+    if (input.startsWith("data:")) return dataUrlToBlob(input);
+    try {
+        return await (await fetch(input)).blob();
+    } catch {
+        throw new Error("图片数据读取失败，请重试");
+    }
+}
+
 export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
-    const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
-    const storageKey = `image:${nanoid()}`;
-    await store.setItem(storageKey, blob);
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    const meta = await readImageMeta(url);
-    return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType };
+    try {
+        const blob = await toImageBlob(input);
+        if (!blob.size) throw new Error("图片数据为空");
+        const storageKey = `image:${nanoid()}`;
+        await store.setItem(storageKey, blob);
+        const url = URL.createObjectURL(blob);
+        objectUrls.set(storageKey, url);
+        const meta = await readImageMeta(url);
+        return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType };
+    } catch (error) {
+        const name = error && typeof error === "object" && "name" in error ? String((error as { name?: string }).name || "") : "";
+        const message = error instanceof Error ? error.message : "";
+        if (name === "QuotaExceededError" || /quota|storage|空间不足/i.test(message)) {
+            throw new Error("浏览器本地图片存储空间不足，请清理画布素材后重试");
+        }
+        throw error instanceof Error ? error : new Error("图片保存失败");
+    }
+}
+
+export async function storeGeneratedImage(image?: { dataUrl?: string } | null): Promise<UploadedImage> {
+    if (!image?.dataUrl) throw new Error("接口没有返回图片");
+    return uploadImage(image.dataUrl);
 }
 
 export async function resolveImageUrl(storageKey?: string, fallback = "") {

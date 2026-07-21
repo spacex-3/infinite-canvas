@@ -50,13 +50,36 @@ export function readImageMeta(dataUrl: string) {
     });
 }
 
-export function dataUrlToFile(image: ReferenceImage) {
-    const [header, content] = image.dataUrl.split(",", 2);
-    const mimeType = header.match(/data:(.*?);base64/)?.[1] || image.type || "image/png";
-    const binary = atob(content || "");
+export function dataUrlToBlob(dataUrl: string, fallbackMimeType = "image/png") {
+    const [header, content = ""] = dataUrl.split(",", 2);
+    const mimeType = header.match(/data:(.*?);base64/)?.[1] || fallbackMimeType;
+    if (!content) return new Blob([], { type: mimeType });
+    const binary = atob(content);
     const bytes = new Uint8Array(binary.length);
     for (let index = 0; index < binary.length; index += 1) {
         bytes[index] = binary.charCodeAt(index);
     }
-    return new File([bytes], image.name || "reference.png", { type: mimeType });
+    return new Blob([bytes], { type: mimeType });
+}
+
+export function dataUrlToFile(image: ReferenceImage) {
+    const blob = dataUrlToBlob(image.dataUrl, image.type || "image/png");
+    return new File([blob], image.name || "reference.png", { type: blob.type || image.type || "image/png" });
+}
+
+export async function mapWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>) {
+    const concurrency = Math.max(1, Math.min(items.length || 1, Math.floor(limit) || 1));
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+
+    const run = async () => {
+        while (nextIndex < items.length) {
+            const index = nextIndex;
+            nextIndex += 1;
+            results[index] = await worker(items[index], index);
+        }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(concurrency, items.length || 1) }, () => run()));
+    return results;
 }

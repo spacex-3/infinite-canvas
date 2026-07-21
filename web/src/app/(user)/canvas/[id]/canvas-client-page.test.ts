@@ -14,6 +14,13 @@ describe("CanvasClientPage image batches", () => {
         expect(source).toContain("const batchCount = getImageBatchDisplayCount(node);");
         expect(source).toContain("return Math.max(node.metadata.count || 0, childCount + 1);");
     });
+
+    test("stores each batch result with a null-safe helper and limited concurrency", () => {
+        expect(source).toContain("IMAGE_BATCH_CONCURRENCY");
+        expect(source).toContain("mapWithConcurrency(targetIds, IMAGE_BATCH_CONCURRENCY");
+        expect(source).toContain("storeGeneratedImage(image)");
+        expect(source).toContain("await storeGeneratedImage(image)");
+    });
 });
 
 describe("CanvasClientPage connected text generation", () => {
