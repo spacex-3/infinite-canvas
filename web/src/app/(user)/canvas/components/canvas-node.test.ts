@@ -12,8 +12,11 @@ describe("CanvasNode text actions", () => {
     });
 
     test("shows loading progress when generation reports a percentage", () => {
-        expect(source).toContain("formatGenerationProgress(node.metadata?.progress)");
+        expect(source).toContain("formatGenerationProgress(node.metadata?.progress, node.metadata?.progressStage)");
         expect(source).toContain('return `生成中 ${clamped}%`;');
+        expect(source).toContain('return `服务器下载 ${Math.max(0, Math.min(100, Math.round(progress)))}%`;');
+        expect(source).toContain('return `正在下载 ${Math.max(0, Math.min(100, Math.round(progress)))}%`;');
+        expect(source).toContain('if (stage === "saving") return "正在保存视频";');
     });
 
     test("lets users select generated text without starting a node drag", () => {

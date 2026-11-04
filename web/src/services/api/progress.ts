@@ -1,4 +1,5 @@
-export type GenerationProgressCallback = (progress: number) => void;
+export type GenerationProgressStage = "generating" | "caching" | "downloading" | "saving";
+export type GenerationProgressCallback = (progress: number, stage?: GenerationProgressStage) => void;
 
 export function normalizeGenerationProgress(value: unknown) {
     const raw = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
@@ -27,5 +28,5 @@ export function readGenerationProgress(value: unknown) {
 export function notifyGenerationProgress(onProgress: GenerationProgressCallback | undefined, value: unknown) {
     const progress = readGenerationProgress(value);
     if (progress === undefined) return;
-    onProgress?.(progress);
+    onProgress?.(progress, "generating");
 }

@@ -77,8 +77,13 @@ type PaymentMethod struct {
 type PrivateSetting struct {
 	Channels   []ModelChannel        `json:"channels"`
 	PromptSync PromptSyncSetting     `json:"promptSync"`
+	Storage    PrivateStorageSetting `json:"storage"`
 	Auth       PrivateAuthSetting    `json:"auth"`
 	Payment    PrivatePaymentSetting `json:"payment"`
+}
+
+type PrivateStorageSetting struct {
+	MediaRetentionDays int `json:"mediaRetentionDays"`
 }
 
 // PromptSyncSetting 提示词定时同步配置。

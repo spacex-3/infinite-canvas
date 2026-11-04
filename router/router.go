@@ -29,6 +29,12 @@ func New() *gin.Engine {
 	api.HEAD("/media/references/:id", func(c *gin.Context) {
 		handler.ReferenceMedia(c.Writer, c.Request, c.Param("id"))
 	})
+	api.GET("/media/cache/:id", func(c *gin.Context) {
+		handler.CachedMedia(c.Writer, c.Request, c.Param("id"))
+	})
+	api.HEAD("/media/cache/:id", func(c *gin.Context) {
+		handler.CachedMedia(c.Writer, c.Request, c.Param("id"))
+	})
 	v1 := api.Group("/v1", middleware.UserAuth)
 	v1.POST("/images/generations", gin.WrapF(handler.AIImagesGenerations))
 	v1.POST("/images/edits", gin.WrapF(handler.AIImagesEdits))
@@ -41,6 +47,10 @@ func New() *gin.Engine {
 	v1.POST("/audio/speech", gin.WrapF(handler.AIAudioSpeech))
 	v1.POST("/videos", gin.WrapF(handler.AIVideos))
 	v1.POST("/media/references", gin.WrapF(handler.UploadReferenceMedia))
+	v1.POST("/media/cache/videos", gin.WrapF(handler.CreateRemoteVideoCache))
+	v1.GET("/media/cache/videos/:id", func(c *gin.Context) {
+		handler.RemoteVideoCache(c.Writer, c.Request, c.Param("id"))
+	})
 	v1.GET("/videos/:id", func(c *gin.Context) {
 		handler.AIVideo(c.Writer, c.Request, c.Param("id"))
 	})

@@ -38,9 +38,9 @@ describe("CanvasClientPage retry config", () => {
 
 describe("CanvasClientPage generation progress", () => {
     test("passes progress callbacks to canvas image and video generation requests", () => {
-        expect(source).toContain("const updateGenerationProgress = (targetId: string, progress: number)");
-        expect(source).toContain("(progress) => updateGenerationProgress(videoId, progress)");
+        expect(source).toContain('const updateGenerationProgress = (targetId: string, progress: number, progressStage?: "generating" | "caching" | "downloading" | "saving")');
+        expect(source).toContain("(progress, stage) => updateGenerationProgress(videoId, progress, stage)");
         expect(source).toContain("(progress) => updateGenerationProgress(targetId, progress)");
-        expect(source).toContain("const updateRetryProgress = (progress: number)");
+        expect(source).toContain('const updateRetryProgress = (progress: number, progressStage?: "generating" | "caching" | "downloading" | "saving")');
     });
 });

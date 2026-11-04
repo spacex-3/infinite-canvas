@@ -27,6 +27,7 @@ export type CanvasNodeMetadata = {
     prompt?: string;
     status?: CanvasNodeStatus;
     progress?: number;
+    progressStage?: "generating" | "caching" | "downloading" | "saving";
     errorDetails?: string;
     fontSize?: number;
     generationMode?: CanvasGenerationMode;

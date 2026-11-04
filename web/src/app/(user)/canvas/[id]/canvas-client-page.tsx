@@ -1793,8 +1793,8 @@ function InfiniteCanvasPage() {
                 return;
             }
             let pendingChildIds: string[] = [];
-            const updateGenerationProgress = (targetId: string, progress: number) => {
-                setNodes((prev) => prev.map((node) => (node.id === targetId && node.metadata?.status === NODE_STATUS_LOADING ? { ...node, metadata: { ...node.metadata, progress } } : node)));
+            const updateGenerationProgress = (targetId: string, progress: number, progressStage?: "generating" | "caching" | "downloading" | "saving") => {
+                setNodes((prev) => prev.map((node) => (node.id === targetId && node.metadata?.status === NODE_STATUS_LOADING ? { ...node, metadata: { ...node.metadata, progress, progressStage: progressStage || "generating" } } : node)));
             };
             if (markSourceStatus) setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, prompt: statusPrompt, status: NODE_STATUS_LOADING, progress: undefined, errorDetails: undefined } } : node)));
 
@@ -1955,7 +1955,10 @@ function InfiniteCanvasPage() {
                     pendingChildIds = [videoId];
                     setNodes((prev) => (isEmptyVideoNode ? prev.map((node) => (node.id === nodeId ? { ...node, ...videoNode } : node)) : [...prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS, progress: undefined } } : node)), videoNode]));
                     if (!isEmptyVideoNode) setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: videoId }]);
-                    const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, effectivePrompt, generationContext.referenceImages, generationContext.referenceVideos, generationContext.referenceAudios, (progress) => updateGenerationProgress(videoId, progress)));
+                    const video = await storeGeneratedVideo(
+                        await requestVideoGeneration(generationConfig, effectivePrompt, generationContext.referenceImages, generationContext.referenceVideos, generationContext.referenceAudios, (progress, stage) => updateGenerationProgress(videoId, progress, stage)),
+                        (stage) => updateGenerationProgress(videoId, 100, stage),
+                    );
                     const videoSize = fitNodeSize(video.width || spec.width, video.height || spec.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
                     setNodes((prev) => prev.map((node) => (node.id === videoId ? { ...node, width: videoSize.width, height: videoSize.height, position: { x: node.position.x + node.width / 2 - videoSize.width / 2, y: node.position.y + node.height / 2 - videoSize.height / 2 }, metadata: { ...node.metadata, ...videoMetadata(video), progress: undefined, prompt: effectivePrompt, model: generationConfig.model, size: generationConfig.videoSize, videoSize: generationConfig.videoSize, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark, references: generationReferenceUrls(generationContext) } } : node)));
                     return;
@@ -2081,12 +2084,12 @@ function InfiniteCanvasPage() {
                 return;
             }
             const retryImages = retryReferenceImages || [];
-            const updateRetryProgress = (progress: number) => {
-                setNodes((prev) => prev.map((item) => (item.id === node.id && item.metadata?.status === NODE_STATUS_LOADING ? { ...item, metadata: { ...item.metadata, progress } } : item)));
+            const updateRetryProgress = (progress: number, progressStage?: "generating" | "caching" | "downloading" | "saving") => {
+                setNodes((prev) => prev.map((item) => (item.id === node.id && item.metadata?.status === NODE_STATUS_LOADING ? { ...item, metadata: { ...item.metadata, progress, progressStage: progressStage || "generating" } } : item)));
             };
 
             setRunningNodeId(node.id);
-            setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, progress: undefined, errorDetails: undefined } } : item)));
+            setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, progress: undefined, progressStage: undefined, errorDetails: undefined } } : item)));
 
             try {
                 if (node.type === CanvasNodeType.Text) {
@@ -2100,7 +2103,7 @@ function InfiniteCanvasPage() {
                     return;
                 }
                 if (node.type === CanvasNodeType.Video) {
-                    const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, prompt, retryImages, context?.referenceVideos || [], context?.referenceAudios || [], updateRetryProgress));
+                    const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, prompt, retryImages, context?.referenceVideos || [], context?.referenceAudios || [], updateRetryProgress), (stage) => updateRetryProgress(100, stage));
                     const videoSize = fitNodeSize(video.width || node.width, video.height || node.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
                     setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, width: videoSize.width, height: videoSize.height, position: { x: item.position.x + item.width / 2 - videoSize.width / 2, y: item.position.y + item.height / 2 - videoSize.height / 2 }, metadata: { ...item.metadata, ...videoMetadata(video), progress: undefined, prompt, model: generationConfig.model, size: generationConfig.videoSize, videoSize: generationConfig.videoSize, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark } } : item)));
                     return;
@@ -2781,7 +2784,7 @@ function imageMetadata(image: UploadedImage): CanvasNodeMetadata {
 }
 
 function videoMetadata(video: UploadedFile): CanvasNodeMetadata {
-    return { content: video.url, storageKey: video.storageKey, status: "success", naturalWidth: video.width, naturalHeight: video.height, bytes: video.bytes, mimeType: video.mimeType || "video/mp4", durationMs: video.durationMs };
+    return { content: video.url, storageKey: video.storageKey, status: "success", progressStage: undefined, naturalWidth: video.width, naturalHeight: video.height, bytes: video.bytes, mimeType: video.mimeType || "video/mp4", durationMs: video.durationMs };
 }
 
 function audioMetadata(audio: UploadedFile): CanvasNodeMetadata {

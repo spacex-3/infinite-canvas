@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/basketikun/infinite-canvas/config"
+	"github.com/basketikun/infinite-canvas/service"
 )
 
 func TestNormalizeReferenceMediaTypeSupportsAudio(t *testing.T) {
@@ -50,7 +51,7 @@ func TestReferenceMediaDirUsesAbsoluteSQLiteDataDir(t *testing.T) {
 	root := t.TempDir()
 	config.Cfg = config.Config{StorageDriver: "sqlite", DatabaseDSN: filepath.Join(root, "infinite-canvas.db")}
 
-	if got := referenceMediaDir(); got != filepath.Join(root, "reference-media") {
+	if got := service.ReferenceMediaDir(); got != filepath.Join(root, "reference-media") {
 		t.Fatalf("referenceMediaDir = %q", got)
 	}
 }

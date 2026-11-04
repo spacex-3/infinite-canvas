@@ -18,7 +18,7 @@ import { assertChannelSupportsCapability, buildApiUrl, resolveCustomChannelConfi
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
-import { notifyGenerationProgress, type GenerationProgressCallback } from "./progress";
+import { notifyGenerationProgress, type GenerationProgressCallback, type GenerationProgressStage } from "./progress";
 
 type VideoResponse = { id: string; status?: string; progress?: number; error?: { message?: string } };
 type ApiVideoResponse = VideoResponse | { code?: number; data?: VideoResponse | null; msg?: string };
@@ -86,6 +86,7 @@ type VeoOmniTask = {
 };
 type ApiEnvelope<T> = T | { code?: number; data?: T | null; msg?: string };
 type ReferenceMediaUploadResponse = { id: string; url: string; mimeType: string; bytes: number };
+type RemoteVideoCacheTask = { id: string; status: "queued" | "downloading" | "completed" | "failed"; progress?: number; url?: string; error?: string };
 type VeoOmniPayload = {
     model: string;
     prompt: string;
@@ -187,8 +188,11 @@ export function resolveVideoRequestProtocol(config: Pick<AiConfig, "channelMode"
     return "openai";
 }
 
-export async function storeGeneratedVideo(result: VideoGenerationResult): Promise<UploadedFile> {
-    if (result.blob) return uploadMediaFile(result.blob, "video");
+export async function storeGeneratedVideo(result: VideoGenerationResult, onStage?: (stage: GenerationProgressStage) => void): Promise<UploadedFile> {
+    if (result.blob) {
+        onStage?.("saving");
+        return uploadMediaFile(result.blob, "video");
+    }
     if (result.url) return { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4" };
     throw new Error("视频接口没有返回可播放的视频");
 }
@@ -306,7 +310,7 @@ async function requestSeedanceGeneration(config: AiConfig, model: string, prompt
                 const url = task.content?.video_url;
                 if (!url) throw new Error("Seedance 任务成功但没有返回视频 URL");
                 refreshRemoteUser(config);
-                return videoResultFromUrl(url);
+                return videoResultFromUrl(url, onProgress);
             }
             if (task.status === "failed" || task.status === "cancelled" || task.status === "expired") throw new Error(task.error?.message || `Seedance 视频生成${task.status === "expired" ? "超时" : "失败"}`);
             if (attempt === 119) throw new Error("Seedance 视频生成超时，请稍后重试");
@@ -356,7 +360,7 @@ async function requestSeedanceV1Generation(config: AiConfig, payload: SeedanceV1
             if (status === "completed" || status === "succeeded" || status === "success") {
                 if (task.content?.video_url) {
                     refreshRemoteUser(config);
-                    return videoResultFromUrl(task.content.video_url);
+                    return videoResultFromUrl(task.content.video_url, onProgress);
                 }
                 const content = await axios.get<Blob>(aiApiUrl(config, `/videos/${encodeURIComponent(taskId)}/content`), {
                     headers: aiHeaders(config),
@@ -425,7 +429,7 @@ async function requestOmniFlashGeneration(config: AiConfig, model: string, promp
         const immediateUrl = omniFlashTaskUrl(created);
         if (isOmniFlashCompleted(created) && immediateUrl) {
             refreshRemoteUser(config);
-            return videoResultFromUrl(immediateUrl);
+            return videoResultFromUrl(immediateUrl, onProgress);
         }
         for (let attempt = 0; attempt < 120; attempt += 1) {
             const task = unwrapOmniFlashTask(
@@ -444,7 +448,7 @@ async function requestOmniFlashGeneration(config: AiConfig, model: string, promp
                 const url = omniFlashTaskUrl(task);
                 if (!url) throw new Error("omni-flash 任务成功但没有返回视频 URL（请尽快下载，链接会过期）");
                 refreshRemoteUser(config);
-                return videoResultFromUrl(url);
+                return videoResultFromUrl(url, onProgress);
             }
             if (isOmniFlashFailed(task)) throw new Error(omniFlashTaskError(task) || "omni-flash 视频生成失败");
             if (attempt === 119) throw new Error("omni-flash 视频生成超时，请稍后重试");
@@ -574,7 +578,7 @@ async function requestVeoOmniGeneration(config: AiConfig, model: string, prompt:
         const createdUrl = veoOmniTaskUrl(created);
         if (isVeoOmniCompleted(created) && createdUrl) {
             refreshRemoteUser(config);
-            return videoResultFromUrl(createdUrl);
+            return videoResultFromUrl(createdUrl, onProgress);
         }
         for (let attempt = 0; attempt < 120; attempt += 1) {
             const task = unwrapVeoOmniTask((await axios.get<ApiEnvelope<VeoOmniTask>>(aiApiUrl(config, `/videos/${taskId}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: payload.model } : undefined })).data);
@@ -583,7 +587,7 @@ async function requestVeoOmniGeneration(config: AiConfig, model: string, prompt:
                 const url = veoOmniTaskUrl(task);
                 if (!url) throw new Error("Veo Omni 任务成功但没有返回视频 URL");
                 refreshRemoteUser(config);
-                return videoResultFromUrl(url);
+                return videoResultFromUrl(url, onProgress);
             }
             if (isVeoOmniFailed(task)) throw new Error(veoOmniTaskError(task) || "Veo Omni 视频生成失败");
             if (attempt === 119) throw new Error("Veo Omni 视频生成超时，请稍后重试");
@@ -753,14 +757,45 @@ async function uploadReferenceMedia(file: File) {
     return payload.url;
 }
 
-async function videoResultFromUrl(url: string): Promise<VideoGenerationResult> {
+async function videoResultFromUrl(url: string, onProgress?: GenerationProgressCallback): Promise<VideoGenerationResult> {
+    let downloadUrl = url;
     try {
-        const response = await axios.get<Blob>(url, { responseType: "blob" });
+        downloadUrl = await cacheRemoteVideo(url, onProgress);
+        onProgress?.(0, "downloading");
+        const response = await axios.get<Blob>(downloadUrl, {
+            responseType: "blob",
+            timeout: 15 * 60 * 1000,
+            onDownloadProgress: (event) => {
+                if (event.total && event.total > 0) onProgress?.((event.loaded / event.total) * 100, "downloading");
+            },
+        });
         await assertVideoBlob(response.data);
+        onProgress?.(100, "downloading");
         return { blob: response.data };
     } catch {
-        return { url, mimeType: "video/mp4" };
+        return { url: downloadUrl, mimeType: "video/mp4" };
     }
+}
+
+async function cacheRemoteVideo(url: string, onProgress?: GenerationProgressCallback) {
+    if (url.startsWith("/api/media/cache/")) return url;
+    const token = useUserStore.getState().token;
+    if (!token) return url;
+    const headers = { Authorization: `Bearer ${token}` };
+    const created = unwrapEnvelope((await axios.post<ApiEnvelope<RemoteVideoCacheTask>>("/api/v1/media/cache/videos", { url }, { headers })).data, "服务器视频缓存任务创建失败");
+    if (!created.id) throw new Error("服务器视频缓存任务没有返回 ID");
+    onProgress?.(0, "caching");
+    for (let attempt = 0; attempt < 900; attempt += 1) {
+        const task = unwrapEnvelope((await axios.get<ApiEnvelope<RemoteVideoCacheTask>>(`/api/v1/media/cache/videos/${encodeURIComponent(created.id)}`, { headers })).data, "服务器视频缓存任务查询失败");
+        onProgress?.(Number(task.progress) || 0, "caching");
+        if (task.status === "completed") {
+            if (!task.url) throw new Error("服务器视频缓存任务没有返回文件地址");
+            return task.url;
+        }
+        if (task.status === "failed") throw new Error(task.error || "服务器下载视频失败");
+        await delay(2000);
+    }
+    throw new Error("服务器下载视频超时");
 }
 
 function assertVideoConfig(config: AiConfig, model: string) {

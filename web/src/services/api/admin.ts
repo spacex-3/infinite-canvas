@@ -207,6 +207,9 @@ export type AdminPrivateSettings = {
         enabled: boolean;
         cron: string;
     };
+    storage: {
+        mediaRetentionDays: number;
+    };
     auth: {
         smtp: {
             host: string;

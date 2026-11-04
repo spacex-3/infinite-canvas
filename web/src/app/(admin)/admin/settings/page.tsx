@@ -43,6 +43,7 @@ const emptySettings: AdminSettings = {
     private: {
         channels: [],
         promptSync: { enabled: true, cron: "*/5 * * * *" },
+        storage: { mediaRetentionDays: 7 },
         auth: { smtp: { host: "", port: 465, username: "", password: "", from: "", fromName: "朋克", useSsl: true } },
         payment: { epay: { enabled: false, payUrl: "", partnerId: "", key: "", callbackOrigin: "", methods: [], minCredits: 1, pricePerCredit: 0 } },
     },
@@ -579,6 +580,22 @@ export default function AdminSettingsPage() {
                     ) : activeMode === "visual" ? (
                         <Form form={form} layout="vertical" initialValues={emptySettings} requiredMark={false}>
                             <Flex vertical gap={12}>
+                                <Card size="small" title="服务器媒体清理">
+                                    <Row gutter={16}>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item
+                                                name={["private", "storage", "mediaRetentionDays"]}
+                                                label="服务器保存时间"
+                                                extra="超过该时间的参考素材和视频成品缓存会自动清理；服务启动时及之后每天检查，成品缓存总量上限为 5GB。"
+                                            >
+                                                <Space.Compact style={{ width: "100%" }}>
+                                                    <InputNumber min={1} max={3650} precision={0} className="!w-full" />
+                                                    <Button className="!pointer-events-none !px-3">天</Button>
+                                                </Space.Compact>
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+                                </Card>
                                 <Card size="small" title="提示词定时同步">
                                     <Row gutter={16} align="middle">
                                         <Col xs={24} md={8}>
@@ -987,6 +1004,9 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
         promptSync: {
             enabled: setting.promptSync?.enabled !== false,
             cron: setting.promptSync?.cron || "*/5 * * * *",
+        },
+        storage: {
+            mediaRetentionDays: Math.min(3650, Math.max(1, Number(setting.storage?.mediaRetentionDays) || 7)),
         },
         auth: {
             smtp: {

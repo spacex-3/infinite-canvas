@@ -86,6 +86,14 @@ describe("Seedance new-api compatibility", () => {
             },
         });
     });
+
+    test("shows a download stage after a completed task returns a video URL", () => {
+        expect(videoSource).toContain("downloadUrl = await cacheRemoteVideo(url, onProgress)");
+        expect(videoSource).toContain('onProgress?.(0, "caching")');
+        expect(videoSource).toContain('onProgress?.(0, "downloading")');
+        expect(videoSource).toContain('onProgress?.((event.loaded / event.total) * 100, "downloading")');
+        expect(videoSource).toContain("timeout: 15 * 60 * 1000");
+    });
 });
 
 describe("buildVeoOmniFlashEditPayload", () => {

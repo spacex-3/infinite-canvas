@@ -264,6 +264,9 @@ func TestNormalizeSettingsDefaultsCustomChannelToDisabled(t *testing.T) {
 	if settings.Public.ModelChannel.AllowCustomChannel == nil || *settings.Public.ModelChannel.AllowCustomChannel {
 		t.Fatalf("allowCustomChannel = %#v, want false", settings.Public.ModelChannel.AllowCustomChannel)
 	}
+	if settings.Private.Storage.MediaRetentionDays != 7 {
+		t.Fatalf("media retention days = %d, want 7", settings.Private.Storage.MediaRetentionDays)
+	}
 }
 
 func TestImageQualityChannelsPreferMatchingResolutionRules(t *testing.T) {

@@ -356,12 +356,21 @@ function LoadingContent({ node, theme }: Pick<NodeContentRendererProps, "node" |
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.activeStroke }}>
             <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />
-            <span className="text-[10px] tracking-[0.2em]">{formatGenerationProgress(node.metadata?.progress)}</span>
+            <span className="text-[10px] tracking-[0.2em]">{formatGenerationProgress(node.metadata?.progress, node.metadata?.progressStage)}</span>
         </div>
     );
 }
 
-function formatGenerationProgress(progress: unknown) {
+function formatGenerationProgress(progress: unknown, stage?: string) {
+    if (stage === "caching") {
+        if (typeof progress !== "number" || !Number.isFinite(progress)) return "服务器下载视频";
+        return `服务器下载 ${Math.max(0, Math.min(100, Math.round(progress)))}%`;
+    }
+    if (stage === "downloading") {
+        if (typeof progress !== "number" || !Number.isFinite(progress)) return "正在下载视频";
+        return `正在下载 ${Math.max(0, Math.min(100, Math.round(progress)))}%`;
+    }
+    if (stage === "saving") return "正在保存视频";
     if (typeof progress !== "number" || !Number.isFinite(progress)) return "生成中";
     const clamped = Math.max(0, Math.min(100, Math.round(progress)));
     return `生成中 ${clamped}%`;

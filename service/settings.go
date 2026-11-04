@@ -196,6 +196,11 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 		setting.Channels = []model.ModelChannel{}
 	}
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
+	if setting.Storage.MediaRetentionDays <= 0 {
+		setting.Storage.MediaRetentionDays = 7
+	} else if setting.Storage.MediaRetentionDays > 3650 {
+		setting.Storage.MediaRetentionDays = 3650
+	}
 	for i := range setting.Channels {
 		setting.Channels[i] = normalizeModelChannel(setting.Channels[i])
 	}
