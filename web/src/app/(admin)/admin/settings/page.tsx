@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
 import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminModelChannel, type AdminModelCost, type AdminSettings } from "@/services/api/admin";
+import { filterModelsByCapability, ZPIKA_BUILTIN_MODELS } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
@@ -91,6 +92,9 @@ export default function AdminSettingsPage() {
     const [modelCosts, setModelCosts] = useState<AdminModelCost[]>([]);
     const [knownModels, setKnownModels] = useState<string[]>([]);
     const publicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
+    const publicTextModels = useMemo(() => filterModelsByCapability(publicModels, "text"), [publicModels]);
+    const publicImageModels = useMemo(() => filterModelsByCapability(publicModels, "image"), [publicModels]);
+    const publicVideoModels = useMemo(() => filterModelsByCapability(publicModels, "video"), [publicModels]);
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
     const channelTableData = useMemo(() => channels.map((channel, index) => ({ ...channel, _index: index, _rowKey: `${index}-${channel.name}-${channel.baseUrl}` })), [channels]);
     const activeMode = activeTab === "auth" ? "visual" : editorMode[activeTab];
@@ -228,8 +232,10 @@ export default function AdminSettingsPage() {
         }
         setIsFetchingChannelModels(true);
         try {
-            const channelModels = await fetchChannelModels(token, { index: editingChannelIndex ?? undefined, channel: normalizeChannel(channel) });
+            const normalizedChannel = normalizeChannel(channel);
+            const channelModels = channelModelCandidates(normalizedChannel, await fetchChannelModels(token, { index: editingChannelIndex ?? undefined, channel: normalizedChannel }));
             const current = isModelSelectorOpen ? uniqueModels(modelSelectSelected) : uniqueModels(channelForm.getFieldValue("models") || []);
+            const selected = isZpikaUnifiedChannel(normalizedChannel) ? uniqueModels([...current, ...ZPIKA_BUILTIN_MODELS]) : current;
             rememberModels(channelModels);
             if (!channelModels.length) {
                 message.warning("上游未返回模型列表，请手动输入模型名称");
@@ -237,7 +243,7 @@ export default function AdminSettingsPage() {
             }
             setModelSelectExisting(current);
             setModelSelectSource(uniqueModels(channelModels));
-            setModelSelectSelected(current);
+            setModelSelectSelected(selected);
             setModelSelectKeyword("");
             setModelSelectNewModel("");
             setModelSelectTab("new");
@@ -451,22 +457,22 @@ export default function AdminSettingsPage() {
                                     </Col>
                                     <Col xs={24} md={6}>
                                         <Form.Item name={["public", "modelChannel", "defaultModel"]} label="默认模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            <Select showSearch allowClear options={publicTextModels.map((item) => ({ label: item, value: item }))} />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} md={6}>
                                         <Form.Item name={["public", "modelChannel", "defaultImageModel"]} label="默认图片模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            <Select showSearch allowClear options={publicImageModels.map((item) => ({ label: item, value: item }))} />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} md={6}>
                                         <Form.Item name={["public", "modelChannel", "defaultVideoModel"]} label="默认视频模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            <Select showSearch allowClear options={publicVideoModels.map((item) => ({ label: item, value: item }))} />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} md={6}>
                                         <Form.Item name={["public", "modelChannel", "defaultTextModel"]} label="默认文本模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            <Select showSearch allowClear options={publicTextModels.map((item) => ({ label: item, value: item }))} />
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
@@ -1106,7 +1112,20 @@ function collectChannelModels(channels: AdminModelChannel[]) {
 }
 
 function collectKnownModels(settings: AdminSettings) {
-    return uniqueModels([...(settings.public.modelChannel.availableModels || []), ...(settings.public.modelChannel.modelCosts || []).map((item) => item.model), ...settings.private.channels.flatMap((channel) => channel.models || [])]);
+    return uniqueModels([
+        ...ZPIKA_BUILTIN_MODELS,
+        ...(settings.public.modelChannel.availableModels || []),
+        ...(settings.public.modelChannel.modelCosts || []).map((item) => item.model),
+        ...settings.private.channels.flatMap((channel) => channel.models || []),
+    ]);
+}
+
+function channelModelCandidates(channel: AdminModelChannel, models: string[]) {
+    return uniqueModels([...(isZpikaUnifiedChannel(channel) ? ZPIKA_BUILTIN_MODELS : []), ...models]);
+}
+
+function isZpikaUnifiedChannel(channel: AdminModelChannel) {
+    return channel.protocol === "fpbrowser2api" || channel.baseUrl.toLowerCase().includes("aivideo.zpika.com");
 }
 
 function buildModelSelectGroups(sourceModels: string[], existingModels: string[]): Record<ModelSelectTabKey, string[]> {

@@ -87,6 +87,42 @@ func TestResolveAIProxyPathOmniFlash(t *testing.T) {
 	}
 }
 
+func TestResolveAIProxyPathSeedanceByChannel(t *testing.T) {
+	modelName := "doubao-seedance-2-5-260628"
+	newAPI := model.ModelChannel{BaseURL: "https://vip.zpika.com/v1", Protocol: "openai"}
+	if got := resolveAIProxyPath(newAPI, modelName, "/videos"); got != "/videos" {
+		t.Fatalf("new-api Seedance path = %q", got)
+	}
+
+	ark := model.ModelChannel{BaseURL: "https://ark.cn-beijing.volces.com/api/plan/v3", Protocol: "openai"}
+	if got := resolveAIProxyPath(ark, modelName, "/videos"); got != "/contents/generations/tasks" {
+		t.Fatalf("Ark Seedance create path = %q", got)
+	}
+	if got := resolveAIProxyPath(ark, modelName, "/videos/task-1"); got != "/contents/generations/tasks/task-1" {
+		t.Fatalf("Ark Seedance poll path = %q", got)
+	}
+}
+
+func TestNewAIProxyPostRequestNormalizesArkSeedancePayload(t *testing.T) {
+	channel := model.ModelChannel{BaseURL: "https://ark.cn-beijing.volces.com/api/plan/v3", APIKey: "ark-key"}
+	body := []byte(`{"model":"doubao-seedance-2-0-260128","prompt":"生成视频","seconds":"10","content":[{"type":"text","text":"生成视频"}],"duration":10,"resolution":"1080p","metadata":{"resolution":"1080p"}}`)
+	request, err := newAIProxyPostRequest(context.Background(), channel, "/contents/generations/tasks", body, "application/json")
+	if err != nil {
+		t.Fatalf("newAIProxyPostRequest returned error: %v", err)
+	}
+	data, _ := io.ReadAll(request.Body)
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("payload is invalid JSON: %v", err)
+	}
+	if payload["prompt"] != nil || payload["seconds"] != nil || payload["metadata"] != nil {
+		t.Fatalf("OpenAI compatibility fields leaked to Ark payload: %#v", payload)
+	}
+	if payload["content"] == nil || payload["resolution"] != "1080p" {
+		t.Fatalf("native Ark fields missing: %#v", payload)
+	}
+}
+
 func TestIsOmniFlashVideo(t *testing.T) {
 	if !isOmniFlashVideo("omni-flash") || !isOmniFlashVideo("omni-flash-vref") {
 		t.Fatalf("expected omni-flash models to match")

@@ -75,8 +75,10 @@ description: 当前版本已实现但仍需人工验证的变更项
 - 视频创作台生成前会把模型、尺寸、秒数、清晰度归一化为视频接口支持的参数，并展示后端返回的错误信息，避免页面侧残留的生图参数影响视频请求。
 - 火山方舟 Agent Plan / Seedance 2.0 视频生成需要在真实账号下验证：`/contents/generations/tasks` 创建任务、轮询状态、`content.video_url` 回填画布，以及 401/403/429/超时错误提示。
 - 管理后台保存私有渠道后，需要验证所有已启用渠道里的模型会自动出现在公开 `availableModels`，并且 `defaultVideoModel`、`defaultImageModel`、`defaultTextModel` 在为空或失效时会自动修复，前台不再显示旧的 `grok` 默认值。
-- `/video` 和画布视频设置已按 Seedance 2.0 增加分辨率、比例、4-15 秒/智能时长、生成声音和水印参数；需要在真实浏览器里验证参数回填、生成记录和画布节点配置都能保持一致。
-- `/video` 支持最多 9 张参考图、3 个参考视频、3 个参考音频；需要验证格式、大小、音频时长提示和生成请求中的 `reference_image`、`reference_video`、`reference_audio` 组装。
+- 普通用户“配置与用户偏好”弹窗中的图片/视频生成地址、当前直连分组地址和直连标签已统一显示为“直连域名”，悬停会提示该域名已配置并可直接使用；需要验证页面不再直接暴露实际直连地址，文字/模型拉取地址和真实请求路由不受影响。
+- `/video` 和画布视频生成已适配 Zpika New API 的 `doubao-seedance-2-0-260128`、`doubao-seedance-2-0-fast-260128`、`doubao-seedance-2-0-mini-260615`、`doubao-seedance-2-5-260628`：后台 Zpika 渠道和普通用户本地分组会内置这些 Seedance 插件模型，不依赖 `/models` 返回；默认视频模型为 `doubao-seedance-2-0-mini-260615`，Veo 仍保留为备选。Zpika `/v1/videos` 创建请求按 New API Doubao 插件实际协议发送顶层 `model`、`prompt`、`duration`、`seconds` 与 `metadata`；参考图片、视频和音频按原生角色写入 `metadata.content`，不再误发为插件不读取的顶层 `content`。已用 `doubao-seedance-2-0-mini-260615` 实际验证公网图片 + 5 秒参考视频能进入队列、返回进度并完成；还需在配置 `PUBLIC_BASE_URL` 的部署环境验证画布本地素材上传和结果落板，另需确认原火山 Agent Plan 渠道仍走 `/contents/generations/tasks`。
+- Zpika 统一渠道中的四个 Gemini 图片模型会在云端请求时临时切换为 Gemini 原生 `generateContent` 协议；本地配置中同一模型存在于多个分组时优先使用已填写 Key 的分组。需要验证管理员云端画布生图不再出现 `only imagen models are supported`，失败节点点击重试也不再因空的同名分组误弹配置。
+- 火山 Agent Plan 直连与 Zpika Seedance `/v1/videos` 均支持最多 9 张参考图、3 个参考视频、3 个参考音频；Zpika 素材通过 `metadata.content` 提交，音频参考不能单独使用。本地素材仍由画布后端上传并生成基于 `PUBLIC_BASE_URL` 的 HTTPS 地址，不依赖临时 Tunnel。
 - 画布新增音频节点，支持上传、拖入、播放、移动、缩放、删除，并可作为上游参考音频参与 Seedance 视频生成；需要验证刷新后本地音频 URL 能恢复。
 - `PUBLIC_BASE_URL` 已配置公网域名时，需要验证本地上传参考视频和参考音频能被火山拉取；未配置或配置为内网地址时，需要验证前端能给出明确提示。
 - Seedance 返回远程视频 URL 但浏览器无法下载为 Blob 时，需要验证视频节点刷新后仍保留远程 URL，并确认上游 URL 有效期限制。

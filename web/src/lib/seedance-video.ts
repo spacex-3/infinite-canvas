@@ -15,6 +15,7 @@ export const seedanceResolutionOptions = [
     { value: "480p", label: "480p" },
     { value: "720p", label: "720p" },
     { value: "1080p", label: "1080p" },
+    { value: "4k", label: "4K" },
 ] as const;
 
 export const seedanceRatioOptions = [
@@ -27,7 +28,9 @@ export const seedanceRatioOptions = [
     { value: "adaptive", label: "自适应" },
 ] as const;
 
-export const seedanceDurationOptions = [-1, 4, 5, 6, 8, 10, 12, 15] as const;
+const seedanceStandardDurationOptions = [4, 5, 6, 8, 10, 12, 15] as const;
+const seedanceExtendedDurationOptions = [...seedanceStandardDurationOptions, 20, 25, 30] as const;
+const seedanceDatedModels = new Set(["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-0-mini-260615", "doubao-seedance-2-5-260628"]);
 
 const seedancePixels = {
     "480p": {
@@ -54,6 +57,14 @@ const seedancePixels = {
         "9:16": "1080x1920",
         "21:9": "2206x946",
     },
+    "4k": {
+        "16:9": "3840x2160",
+        "4:3": "3328x2496",
+        "1:1": "2880x2880",
+        "3:4": "2496x3328",
+        "9:16": "2160x3840",
+        "21:9": "4412x1892",
+    },
 } as const;
 
 export function isSeedanceVideoConfig(config: Pick<AiConfig, "model" | "videoModel" | "baseUrl">) {
@@ -70,27 +81,61 @@ export function isSeedanceFastModel(model: string) {
     return isSeedanceVideoModel(value) && value.includes("fast");
 }
 
+export function isSeedanceMiniModel(model: string) {
+    const value = model.toLowerCase();
+    return isSeedanceVideoModel(value) && value.includes("mini");
+}
+
+export function isSeedance25Model(model: string) {
+    const value = model.toLowerCase();
+    return isSeedanceVideoModel(value) && (value.includes("seedance-2-5") || value.includes("seedance-2.5"));
+}
+
+export function isSeedance20FullModel(model: string) {
+    const value = model.toLowerCase();
+    return isSeedanceVideoModel(value) && !isSeedanceFastModel(value) && !isSeedanceMiniModel(value) && (value.includes("seedance-2-0") || value.includes("seedance-2.0"));
+}
+
 export function isArkPlanBaseUrl(baseUrl: string) {
     return baseUrl.toLowerCase().includes("ark.cn-beijing.volces.com/api/plan/v3") || baseUrl.toLowerCase().includes("/api/plan/v3");
 }
 
 export function normalizeSeedanceResolution(value: string, model = "") {
     const normalized = normalizeResolutionToken(value);
-    if (isSeedanceFastModel(model) && normalized === "1080p") return "720p";
-    return seedanceResolutionOptions.some((item) => item.value === normalized) ? normalized : isSeedanceFastModel(model) ? "720p" : "1080p";
+    const options = seedanceResolutionOptionsForModel(model);
+    if (options.some((item) => item.value === normalized)) return normalized;
+    return isSeedanceFastModel(model) || isSeedanceMiniModel(model) ? "720p" : "1080p";
 }
 
 export function normalizeResolutionToken(value: string) {
     if (value === "low") return "480p";
     if (value === "auto" || value === "high" || value === "medium") return "720p";
+    if (/^4k$/i.test(String(value || ""))) return "4k";
     const resolution = String(value || "").replace(/p$/i, "") || "1080";
     return `${resolution}p`;
 }
 
-export function normalizeSeedanceDuration(value: string) {
-    if (String(value).trim() === "-1") return -1;
+export function seedanceResolutionOptionsForModel(model: string) {
+    if (isSeedanceFastModel(model) || isSeedanceMiniModel(model)) return seedanceResolutionOptions.filter((item) => item.value === "480p" || item.value === "720p");
+    if (isSeedance25Model(model)) return seedanceResolutionOptions.filter((item) => item.value !== "4k");
+    if (isSeedance20FullModel(model)) return seedanceResolutionOptions;
+    return seedanceResolutionOptions.filter((item) => item.value !== "4k");
+}
+
+export function seedanceDurationOptionsForModel(model: string) {
+    if (isSeedance25Model(model)) return seedanceExtendedDurationOptions;
+    if (seedanceDatedModels.has(model.toLowerCase())) return seedanceStandardDurationOptions;
+    return [-1, ...seedanceStandardDurationOptions] as const;
+}
+
+export function seedanceMaxDuration(model: string) {
+    return isSeedance25Model(model) ? 30 : 15;
+}
+
+export function normalizeSeedanceDuration(value: string, model = "") {
+    if (String(value).trim() === "-1" && !isSeedance25Model(model) && !seedanceDatedModels.has(model.toLowerCase())) return -1;
     const seconds = Math.floor(Number(value) || 10);
-    return Math.max(4, Math.min(15, seconds));
+    return Math.max(4, Math.min(seedanceMaxDuration(model), seconds));
 }
 
 export function normalizeSeedanceRatio(value: string) {
@@ -114,8 +159,8 @@ export function normalizeSeedanceRatio(value: string) {
     return options.reduce((best, item) => (Math.abs(item[1] - ratio) < Math.abs(best[1] - ratio) ? item : best), options[0])[0];
 }
 
-export function seedancePixelLabel(resolution: string, ratio: string) {
-    const normalizedResolution = normalizeSeedanceResolution(resolution) as keyof typeof seedancePixels;
+export function seedancePixelLabel(resolution: string, ratio: string, model = "") {
+    const normalizedResolution = normalizeSeedanceResolution(resolution, model) as keyof typeof seedancePixels;
     const normalizedRatio = normalizeSeedanceRatio(ratio) as keyof (typeof seedancePixels)[typeof normalizedResolution] | "adaptive";
     if (normalizedRatio === "adaptive") return "自动匹配";
     return seedancePixels[normalizedResolution][normalizedRatio] || "";

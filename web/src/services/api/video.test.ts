@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { describe, expect, test } from "bun:test";
 
-import { buildOmniFlashPayload, buildVeoOmniFlashEditPayload, buildVeoOmniPayload, isVeoOmniVideoModel, readVideoResultUrl, requestVideoGeneration, resolveVideoRequestProtocol } from "./video";
+import { buildOmniFlashPayload, buildSeedanceV1Payload, buildVeoOmniFlashEditPayload, buildVeoOmniPayload, isVeoOmniVideoModel, readVideoResultUrl, requestVideoGeneration, resolveVideoRequestProtocol, usesSeedanceNativeApi } from "./video";
 import { defaultConfig } from "@/stores/use-config-store";
 
 describe("custom channel video protocol routing", () => {
@@ -20,11 +20,61 @@ describe("custom channel video protocol routing", () => {
         expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "fpbrowser2api" }, "omni-flash")).toBe("zerofall");
         expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "zerofall" }, "veo-omni-flash")).toBe("fpbrowser2api");
         expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "fpbrowser2api" }, "veo-omni-flash-video-edit")).toBe("fpbrowser2api");
+        expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "fpbrowser2api" }, "doubao-seedance-2-5-260628")).toBe("openai");
     });
 
     test("does not let a saved local protocol override cloud routing", () => {
         expect(resolveVideoRequestProtocol({ channelMode: "remote", protocol: "zerofall" }, "custom-video")).toBe("openai");
         expect(resolveVideoRequestProtocol({ channelMode: "remote", protocol: "fpbrowser2api" }, "omni-flash")).toBe("zerofall");
+    });
+});
+
+describe("Seedance new-api compatibility", () => {
+    test("uses native transport only for a direct Ark Plan channel", () => {
+        expect(usesSeedanceNativeApi({ channelMode: "local", baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3" })).toBe(true);
+        expect(usesSeedanceNativeApi({ channelMode: "local", baseUrl: "https://vip.zpika.com/v1" })).toBe(false);
+        expect(usesSeedanceNativeApi({ channelMode: "remote", baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3" })).toBe(false);
+    });
+
+    test("puts Seedance references in the metadata content read by the Doubao plugin", () => {
+        const content = [
+            { type: "text", text: "参考图片1和视频1生成视频" },
+            { type: "image_url", image_url: { url: "https://example.com/ref.png" }, role: "reference_image" },
+            { type: "video_url", video_url: { url: "https://example.com/ref.mp4" }, role: "reference_video" },
+        ];
+        const payload = buildSeedanceV1Payload({ videoSize: "16:9", vquality: "720p", videoSeconds: "4", videoGenerateAudio: "false", videoWatermark: "false" }, "doubao-seedance-2-0-mini-260615", "参考图片1和视频1生成视频", content);
+
+        expect(payload).toEqual({
+            model: "doubao-seedance-2-0-mini-260615",
+            prompt: "参考图片1和视频1生成视频",
+            duration: 4,
+            seconds: "4",
+            metadata: {
+                content: [
+                    { type: "image_url", image_url: { url: "https://example.com/ref.png" }, role: "reference_image" },
+                    { type: "video_url", video_url: { url: "https://example.com/ref.mp4" }, role: "reference_video" },
+                ],
+                resolution: "720p",
+                ratio: "16:9",
+                generate_audio: false,
+            },
+        });
+    });
+
+    test("omits metadata content for text-to-video requests", () => {
+        const payload = buildSeedanceV1Payload({ videoSize: "9:16", vquality: "480p", videoSeconds: "5", videoGenerateAudio: "false", videoWatermark: "false" }, "doubao-seedance-2-0-mini-260615", "竖屏视频", [{ type: "text", text: "竖屏视频" }]);
+
+        expect(payload).toEqual({
+            model: "doubao-seedance-2-0-mini-260615",
+            prompt: "竖屏视频",
+            duration: 5,
+            seconds: "5",
+            metadata: {
+                resolution: "480p",
+                ratio: "9:16",
+                generate_audio: false,
+            },
+        });
     });
 });
 

@@ -1,13 +1,22 @@
-# 构建 Next.js 前端产物。
-FROM oven/bun:1.3.13 AS web-build
+# 按 Bun 锁文件安装前端依赖。
+FROM oven/bun:1.3.13 AS web-deps
 
 WORKDIR /app/web
 COPY web/package.json web/bun.lock ./
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile --cache-dir=/root/.bun/install/cache
+
+# ARM64 上 Bun 执行 Next.js 构建不稳定，使用 Node 运行构建命令。
+FROM node:22-bookworm-slim AS web-build
+
+WORKDIR /app/web
+COPY --from=web-deps /app/web/node_modules ./node_modules
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY web ./
-RUN bun run build
+RUN node node_modules/next/dist/bin/next build \
+    && rm -rf .next/standalone/.next/static .next/standalone/public \
+    && cp -R .next/static .next/standalone/.next/static \
+    && cp -R public .next/standalone/public
 
 # 构建 Go 后端入口。
 FROM golang:1.25-alpine AS api-build

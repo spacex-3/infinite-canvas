@@ -1,6 +1,6 @@
 "use client";
 
-import { App, Button, Form, Input, Modal, Segmented, Select, Tag } from "antd";
+import { App, Button, Form, Input, Modal, Segmented, Select, Tag, Tooltip } from "antd";
 import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -14,7 +14,6 @@ import {
     useConfigStore,
     useEffectiveConfig,
     ZPIKA_BASE_URL,
-    ZPIKA_DIRECT_BASE_URL,
     ZPIKA_GROUP_IDS,
     type AiConfig,
     type CustomAiChannel,
@@ -48,8 +47,10 @@ const groupCapabilityLabel: Record<string, string> = {
     [ZPIKA_GROUP_IDS.text]: "文字 / 音频",
     [ZPIKA_GROUP_IDS.openaiImage]: "OpenAI 画图",
     [ZPIKA_GROUP_IDS.geminiImage]: "Gemini 画图",
-    [ZPIKA_GROUP_IDS.video]: "Gemini 视频",
+    [ZPIKA_GROUP_IDS.video]: "视频",
 };
+
+const directHostTooltip = "当前画布已配置直连域名，可直接使用。如有需要请单独联系站长获取";
 
 export function AppConfigModal() {
     const { message } = App.useApp();
@@ -72,7 +73,7 @@ export function AppConfigModal() {
     const selectedChannel = config.customChannels.find((channel) => channel.id === activeChannelId);
     const configuredChannels = config.customChannels.filter((channel) => channel.apiKey.trim() && channel.models.length);
     const channelModelOptions = uniqueModels([...(selectedChannel?.models || []), ...(fetchedModels[activeChannelId] || [])]).map((model) => ({ label: model, value: model }));
-    const hostHint = selectedChannel?.hostMode === "direct" ? ZPIKA_DIRECT_BASE_URL : ZPIKA_BASE_URL;
+    const usesDirectHost = selectedChannel?.hostMode === "direct";
     const preferredHints = selectedChannel?.preferredModels || [];
 
     const finishConfig = () => {
@@ -223,7 +224,12 @@ export function AppConfigModal() {
             title={
                 <div>
                     <div className="text-lg font-semibold">配置与用户偏好</div>
-                    <div className="mt-1 text-xs font-normal text-muted-foreground">Zpika 双域名预设分组：文字走 vip，图片/视频走 aivideo</div>
+                    <div className="mt-1 text-xs font-normal text-muted-foreground">
+                        Zpika 双域名预设分组：文字走 vip，图片/视频走
+                        <Tooltip title={directHostTooltip}>
+                            <span className="cursor-help border-b border-dotted border-current">直连域名</span>
+                        </Tooltip>
+                    </div>
                 </div>
             }
             open={isConfigOpen}
@@ -261,9 +267,21 @@ export function AppConfigModal() {
                                     拉取模型域名（固定）：<span className="font-medium text-foreground">{ZPIKA_BASE_URL}</span>
                                 </div>
                                 <div className="mt-1">
-                                    图片/视频生成域名（固定）：<span className="font-medium text-foreground">{ZPIKA_DIRECT_BASE_URL}</span>
+                                    图片/视频生成域名（固定）：
+                                    <Tooltip title={directHostTooltip}>
+                                        <span className="cursor-help border-b border-dotted border-current font-medium text-foreground">直连域名</span>
+                                    </Tooltip>
                                 </div>
-                                <div className="mt-1">当前分组请求域名：{hostHint}</div>
+                                <div className="mt-1">
+                                    当前分组请求域名：
+                                    {usesDirectHost ? (
+                                        <Tooltip title={directHostTooltip}>
+                                            <span className="cursor-help border-b border-dotted border-current">直连域名</span>
+                                        </Tooltip>
+                                    ) : (
+                                        ZPIKA_BASE_URL
+                                    )}
+                                </div>
                             </div>
 
                             <div className="mb-4">
@@ -281,7 +299,15 @@ export function AppConfigModal() {
                             <div className="mb-4 flex flex-wrap items-center gap-2">
                                 <Tag color="blue">{groupCapabilityLabel[selectedChannel.id] || selectedChannel.name}</Tag>
                                 <Tag>{protocolLabel[selectedChannel.protocol]}</Tag>
-                                <Tag color={selectedChannel.hostMode === "direct" ? "purple" : "green"}>{selectedChannel.hostMode === "direct" ? "生成走 aivideo" : "文字/拉取走 vip"}</Tag>
+                                <Tag color={usesDirectHost ? "purple" : "green"}>
+                                    {usesDirectHost ? (
+                                        <Tooltip title={directHostTooltip}>
+                                            <span className="cursor-help">直连域名</span>
+                                        </Tooltip>
+                                    ) : (
+                                        "文字/拉取走 vip"
+                                    )}
+                                </Tag>
                             </div>
 
                             <Form.Item label="API Key" className="mb-4" extra="每个分组通常对应中转站不同套餐 Key，请分别填写。">

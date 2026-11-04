@@ -289,7 +289,7 @@ func resolveAIProxyPath(channel model.ModelChannel, modelName string, path strin
 func isArkSeedanceVideo(baseURL string, modelName string) bool {
 	base := strings.ToLower(baseURL)
 	model := strings.ToLower(modelName)
-	return strings.Contains(model, "seedance") || strings.Contains(model, "doubao-seedance") || strings.Contains(base, "/api/plan/v3")
+	return (strings.Contains(model, "seedance") || strings.Contains(model, "doubao-seedance")) && strings.Contains(base, "/api/plan/v3")
 }
 
 func isOmniFlashVideo(modelName string) bool {

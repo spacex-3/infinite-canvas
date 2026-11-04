@@ -11,7 +11,7 @@ import {
     OMNI_FLASH_REFERENCE_LIMITS,
     resolveOmniFlashModel,
 } from "@/lib/omni-flash-video";
-import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { assertChannelSupportsCapability, buildApiUrl, resolveCustomChannelConfig, type AiConfig } from "@/stores/use-config-store";
@@ -48,6 +48,23 @@ type SeedanceTask = {
     status?: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "expired";
     error?: { code?: string; message?: string } | null;
     content?: { video_url?: string; last_frame_url?: string } | null;
+};
+type SeedanceV1Task = VideoResponse & {
+    task_id?: string;
+    content?: { video_url?: string; last_frame_url?: string } | null;
+    metadata?: { url?: string } | null;
+};
+type SeedanceV1Payload = {
+    model: string;
+    prompt: string;
+    duration: number;
+    seconds: string;
+    metadata: {
+        content?: Array<Record<string, unknown>>;
+        resolution: string;
+        ratio: string;
+        generate_audio: boolean;
+    };
 };
 type VeoOmniTask = {
     id?: string;
@@ -153,7 +170,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
         return requestVeoOmniGeneration(config, model, prompt, references, videoReferences, audioReferences, onProgress);
     }
     if (isSeedanceVideoConfig({ ...config, model })) {
-        return requestSeedanceGeneration(config, model, prompt, references, videoReferences, audioReferences);
+        return requestSeedanceGeneration(config, model, prompt, references, videoReferences, audioReferences, onProgress);
     }
     if (videoReferences.length || audioReferences.length) {
         throw new Error("当前视频接口不支持参考视频或参考音频，请切换到 omni-flash / Seedance / Veo Omni 模型，或移除参考素材");
@@ -165,6 +182,7 @@ export function resolveVideoRequestProtocol(config: Pick<AiConfig, "channelMode"
     // Model name wins so the locked zpika video group can host both veo-omni-flash and omni-flash.
     if (isOmniFlashVideoModel(model)) return "zerofall";
     if (isVeoOmniVideoModel(model)) return "fpbrowser2api";
+    if (isSeedanceVideoModel(model)) return "openai";
     if (config.channelMode === "local" && (config.protocol === "zerofall" || config.protocol === "fpbrowser2api")) return config.protocol;
     return "openai";
 }
@@ -257,20 +275,24 @@ async function requestOpenAIVideoGeneration(config: AiConfig, model: string, pro
     }
 }
 
-async function requestSeedanceGeneration(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
+async function requestSeedanceGeneration(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], onProgress?: GenerationProgressCallback) {
     if (audioReferences.length && !references.length && !videoReferences.length) {
         throw new Error("Seedance 参考音频不能单独使用，请同时添加参考图或参考视频");
     }
     assertSeedanceVideoReferences(videoReferences);
     assertSeedanceAudioReferences(audioReferences);
+    const usesNativeApi = usesSeedanceNativeApi(config);
     const content = await buildSeedanceContent(config, prompt, references, videoReferences, audioReferences);
     if (!content.length) throw new Error("请输入视频提示词，或连接参考图片/视频/音频");
+    if (!usesNativeApi) {
+        return requestSeedanceV1Generation(config, buildSeedanceV1Payload(config, model, buildSeedancePromptText(prompt, references, videoReferences, audioReferences), content), onProgress);
+    }
     const payload = {
         model,
         content,
         ratio: normalizeSeedanceRatio(config.videoSize),
         resolution: normalizeSeedanceResolution(config.vquality, model),
-        duration: normalizeSeedanceDuration(config.videoSeconds),
+        duration: normalizeSeedanceDuration(config.videoSeconds, model),
         generate_audio: boolConfig(config.videoGenerateAudio, true),
         watermark: boolConfig(config.videoWatermark, false),
     };
@@ -287,6 +309,65 @@ async function requestSeedanceGeneration(config: AiConfig, model: string, prompt
                 return videoResultFromUrl(url);
             }
             if (task.status === "failed" || task.status === "cancelled" || task.status === "expired") throw new Error(task.error?.message || `Seedance 视频生成${task.status === "expired" ? "超时" : "失败"}`);
+            if (attempt === 119) throw new Error("Seedance 视频生成超时，请稍后重试");
+            await delay(5000);
+        }
+        throw new Error("Seedance 视频生成超时，请稍后重试");
+    } catch (error) {
+        throw new Error(readAxiosError(error, "Seedance 视频生成失败"));
+    }
+}
+
+export function usesSeedanceNativeApi(config: Pick<AiConfig, "channelMode" | "baseUrl">) {
+    return config.channelMode === "local" && isArkPlanBaseUrl(config.baseUrl);
+}
+
+export function buildSeedanceV1Payload(config: Pick<AiConfig, "videoSize" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark">, model: string, prompt: string, content: Array<Record<string, unknown>>): SeedanceV1Payload {
+    const duration = normalizeSeedanceDuration(config.videoSeconds, model);
+    const references = content.filter((item) => item.type !== "text");
+    const payload: SeedanceV1Payload = {
+        model,
+        prompt: prompt.trim(),
+        duration,
+        seconds: String(duration),
+        metadata: {
+            resolution: normalizeSeedanceResolution(config.vquality, model),
+            ratio: normalizeSeedanceRatio(config.videoSize),
+            generate_audio: boolConfig(config.videoGenerateAudio, true),
+        },
+    };
+    if (references.length) payload.metadata.content = references;
+    return payload;
+}
+
+async function requestSeedanceV1Generation(config: AiConfig, payload: SeedanceV1Payload, onProgress?: GenerationProgressCallback) {
+    try {
+        const created = unwrapEnvelope((await axios.post<ApiEnvelope<SeedanceV1Task>>(aiApiUrl(config, "/videos"), payload, { headers: aiHeaders(config, "application/json") })).data, "Seedance 接口没有返回任务");
+        const taskId = String(created.id || created.task_id || "").trim();
+        if (!taskId) throw new Error("Seedance 接口没有返回任务 ID");
+        notifyGenerationProgress(onProgress, created);
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+            const task = unwrapEnvelope(
+                (await axios.get<ApiEnvelope<SeedanceV1Task>>(aiApiUrl(config, `/videos/${encodeURIComponent(taskId)}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: payload.model } : undefined })).data,
+                "Seedance 接口没有返回任务",
+            );
+            notifyGenerationProgress(onProgress, task);
+            const status = String(task.status || "").toLowerCase();
+            if (status === "completed" || status === "succeeded" || status === "success") {
+                if (task.content?.video_url) {
+                    refreshRemoteUser(config);
+                    return videoResultFromUrl(task.content.video_url);
+                }
+                const content = await axios.get<Blob>(aiApiUrl(config, `/videos/${encodeURIComponent(taskId)}/content`), {
+                    headers: aiHeaders(config),
+                    params: config.channelMode === "remote" ? { model: payload.model } : undefined,
+                    responseType: "blob",
+                });
+                await assertVideoBlob(content.data);
+                refreshRemoteUser(config);
+                return { blob: content.data };
+            }
+            if (status === "failed" || status === "cancelled" || status === "expired") throw new Error(task.error?.message || `Seedance 视频生成${status === "expired" ? "超时" : "失败"}`);
             if (attempt === 119) throw new Error("Seedance 视频生成超时，请稍后重试");
             await delay(5000);
         }

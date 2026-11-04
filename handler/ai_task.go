@@ -162,6 +162,7 @@ func newAIProxyPostRequest(ctx context.Context, channel model.ModelChannel, path
 		}
 		return nil, geminiImageRequestError{"Gemini 原生图片协议仅支持图片生成和参考图编辑"}
 	}
+	body = normalizeArkSeedanceRequest(channel, path, body, contentType)
 	body, err := normalizeOfficialOpenAIImageRequest(channel, path, body, contentType)
 	if err != nil {
 		return nil, err
@@ -175,6 +176,24 @@ func newAIProxyPostRequest(ctx context.Context, channel model.ModelChannel, path
 		request.Header.Set("Content-Type", contentType)
 	}
 	return request, nil
+}
+
+func normalizeArkSeedanceRequest(channel model.ModelChannel, path string, body []byte, contentType string) []byte {
+	if path != "/contents/generations/tasks" || !strings.Contains(strings.ToLower(contentType), "application/json") || !strings.Contains(strings.ToLower(channel.BaseURL), "/api/plan/v3") {
+		return body
+	}
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) != nil {
+		return body
+	}
+	delete(payload, "prompt")
+	delete(payload, "seconds")
+	delete(payload, "metadata")
+	normalized, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return normalized
 }
 
 func aiProxyRequestErrorMessage(err error) string {

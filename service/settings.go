@@ -18,6 +18,12 @@ import (
 
 var adminModelHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
+var preferredTextModels = []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
+var preferredImageModels = []string{"gemini-3.1-flash-image", "gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview", "gemini-3.0-pro-image"}
+var preferredSeedanceModels = []string{"doubao-seedance-2-0-mini-260615", "doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-5-260628"}
+var zpikaBuiltinModels = append(append(append([]string{}, preferredTextModels...), preferredImageModels...), preferredSeedanceModels...)
+var removedZpikaImageAliases = map[string]bool{"nana-banana-2": true, "nana-banana-pro": true}
+
 func PublicSettings() (model.PublicSetting, error) {
 	settings, err := repository.GetSettings()
 	return normalizeSettings(settings).Public, err
@@ -100,10 +106,10 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	} else {
 		setting.ModelChannel.AvailableModels = uniqueModelNames(setting.ModelChannel.AvailableModels)
 	}
-	setting.ModelChannel.DefaultTextModel = repairDefaultModel(setting.ModelChannel.DefaultTextModel, setting.ModelChannel.AvailableModels, isTextModelName)
-	setting.ModelChannel.DefaultImageModel = repairDefaultModel(setting.ModelChannel.DefaultImageModel, setting.ModelChannel.AvailableModels, isImageModelName)
-	setting.ModelChannel.DefaultVideoModel = repairDefaultModel(setting.ModelChannel.DefaultVideoModel, setting.ModelChannel.AvailableModels, isVideoModelName)
-	setting.ModelChannel.DefaultModel = repairDefaultModel(setting.ModelChannel.DefaultModel, setting.ModelChannel.AvailableModels, isTextModelName)
+	setting.ModelChannel.DefaultTextModel = repairDefaultModel(setting.ModelChannel.DefaultTextModel, setting.ModelChannel.AvailableModels, preferredTextModels, isTextModelName)
+	setting.ModelChannel.DefaultImageModel = repairDefaultModel(setting.ModelChannel.DefaultImageModel, setting.ModelChannel.AvailableModels, preferredImageModels, isImageModelName)
+	setting.ModelChannel.DefaultVideoModel = repairVideoDefaultModel(setting.ModelChannel.DefaultVideoModel, setting.ModelChannel.AvailableModels)
+	setting.ModelChannel.DefaultModel = repairDefaultModel(setting.ModelChannel.DefaultModel, setting.ModelChannel.AvailableModels, preferredTextModels, isTextModelName)
 	setting.Payment = publicPaymentSetting(payment)
 	return setting
 }
@@ -261,7 +267,14 @@ func SelectModelChannelForAIRequest(modelName string, path string, body []byte, 
 	if len(channels) == 0 {
 		return model.ModelChannel{}, errors.New("没有可用模型渠道")
 	}
-	return selectWeightedModelChannel(channels), nil
+	return routeModelChannelForRequest(selectWeightedModelChannel(channels), modelName, path), nil
+}
+
+func routeModelChannelForRequest(channel model.ModelChannel, modelName string, path string) model.ModelChannel {
+	if isImageRequestPath(path) && isZpikaVideoChannel(channel) && containsString(preferredImageModels, strings.TrimSpace(modelName)) {
+		channel.Protocol = "gemini"
+	}
+	return channel
 }
 
 func selectWeightedModelChannel(channels []model.ModelChannel) model.ModelChannel {
@@ -370,22 +383,45 @@ func uniqueModelNames(models []string) []string {
 	return result
 }
 
-func repairDefaultModel(current string, models []string, preferred func(string) bool) string {
+func repairDefaultModel(current string, models []string, preferredModels []string, matchesCapability func(string) bool) string {
 	current = strings.TrimSpace(current)
 	for _, item := range models {
-		if item == current && preferred(item) {
+		if item == current && matchesCapability(item) {
 			return current
 		}
 	}
+	for _, preferred := range preferredModels {
+		for _, item := range models {
+			if item == preferred {
+				return item
+			}
+		}
+	}
 	for _, item := range models {
-		if preferred(item) {
+		if matchesCapability(item) {
 			return item
 		}
 	}
-	if len(models) > 0 {
-		return models[0]
-	}
 	return ""
+}
+
+func repairVideoDefaultModel(current string, models []string) string {
+	current = strings.TrimSpace(current)
+	if current != "veo-omni-flash" && current != "veo-omni-flash-video-edit" {
+		for _, item := range models {
+			if item == current && isVideoModelName(item) {
+				return current
+			}
+		}
+	}
+	for _, preferred := range preferredSeedanceModels {
+		for _, item := range models {
+			if item == preferred {
+				return item
+			}
+		}
+	}
+	return repairDefaultModel(current, models, preferredSeedanceModels, isVideoModelName)
 }
 
 func isVideoModelName(modelName string) bool {
@@ -415,11 +451,24 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 	if channel.Models == nil {
 		channel.Models = []string{}
 	}
+	if isZpikaVideoChannel(channel) {
+		models := []string{}
+		for _, modelName := range channel.Models {
+			if !removedZpikaImageAliases[strings.TrimSpace(modelName)] {
+				models = append(models, modelName)
+			}
+		}
+		channel.Models = uniqueModelNames(append(append([]string{}, zpikaBuiltinModels...), models...))
+	}
 	channel.ImageQualities = normalizeImageQualities(channel.ImageQualities)
 	if channel.Weight <= 0 {
 		channel.Weight = 1
 	}
 	return channel
+}
+
+func isZpikaVideoChannel(channel model.ModelChannel) bool {
+	return channel.Protocol == "fpbrowser2api" || strings.Contains(strings.ToLower(channel.BaseURL), "aivideo.zpika.com")
 }
 
 func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelChannel, error) {

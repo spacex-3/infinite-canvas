@@ -8,9 +8,12 @@ const initSource = readFileSync(join(import.meta.dir, "client-root-init.tsx"), "
 describe("ordinary-user custom channel configuration", () => {
     test("uses locked zpika dual hosts and group keys without free-form channel CRUD", () => {
         expect(modalSource).toContain("ZPIKA_BASE_URL");
-        expect(modalSource).toContain("ZPIKA_DIRECT_BASE_URL");
         expect(modalSource).toContain("拉取模型域名（固定）");
         expect(modalSource).toContain("图片/视频生成域名（固定）");
+        expect(modalSource).toContain("直连域名");
+        expect(modalSource).toContain("当前画布已配置直连域名，可直接使用。如有需要请单独联系站长获取");
+        expect(modalSource).not.toContain("aivideo.zpika.com");
+        expect(modalSource).not.toContain("生成走 aivideo");
         expect(modalSource).toContain("每个分组通常对应中转站不同套餐 Key");
         expect(modalSource).toContain("applyPreferredModelsToChannel");
         expect(modalSource).toContain("mode=\"tags\"");

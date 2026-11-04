@@ -62,6 +62,17 @@ func TestBuildGeminiChannelURLNormalizesVersionPath(t *testing.T) {
 	}
 }
 
+func TestRouteZpikaGeminiImageModelUsesNativeProtocol(t *testing.T) {
+	channel := model.ModelChannel{Protocol: "fpbrowser2api", BaseURL: "https://aivideo.zpika.com"}
+	routed := routeModelChannelForRequest(channel, "gemini-3.1-flash-image", "/images/generations")
+	if routed.Protocol != "gemini" {
+		t.Fatalf("protocol = %q, want gemini", routed.Protocol)
+	}
+	if got := routeModelChannelForRequest(channel, "doubao-seedance-2-0-mini-260615", "/videos").Protocol; got != "fpbrowser2api" {
+		t.Fatalf("video protocol = %q, want fpbrowser2api", got)
+	}
+}
+
 func TestFetchAdminChannelModelsReportsArkPlanModelsUnsupported(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/plan/v3/models" {
@@ -145,6 +156,87 @@ func TestNormalizeSettingsRepairsImageDefaultAwayFromVideoModel(t *testing.T) {
 
 	if settings.Public.ModelChannel.DefaultImageModel != "nana-banana-2" {
 		t.Fatalf("default image model = %q, want nana-banana-2", settings.Public.ModelChannel.DefaultImageModel)
+	}
+}
+
+func TestNormalizeSettingsReplacesLegacyVeoDefaultWithSeedance(t *testing.T) {
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{
+			ModelChannel: model.PublicModelChannelSetting{DefaultVideoModel: "veo-omni-flash"},
+		},
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{
+				{Enabled: true, Models: []string{"veo-omni-flash", "doubao-seedance-2-5-260628", "doubao-seedance-2-0-260128"}},
+			},
+		},
+	})
+
+	if settings.Public.ModelChannel.DefaultVideoModel != "doubao-seedance-2-0-260128" {
+		t.Fatalf("default video model = %q, want seedance full model", settings.Public.ModelChannel.DefaultVideoModel)
+	}
+}
+
+func TestNormalizeSettingsAddsSeedanceToExistingZpikaVideoChannel(t *testing.T) {
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{
+			ModelChannel: model.PublicModelChannelSetting{DefaultVideoModel: "veo-omni-flash-video-edit"},
+		},
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{{
+				Protocol: "fpbrowser2api",
+				Enabled:  true,
+				Models:   []string{"nana-banana-2", "nana-banana-pro", "veo-omni-flash", "veo-omni-flash-video-edit"},
+			}},
+		},
+	})
+
+	wantModels := append(append([]string{}, zpikaBuiltinModels...), "veo-omni-flash", "veo-omni-flash-video-edit")
+	if !reflect.DeepEqual(settings.Private.Channels[0].Models, wantModels) {
+		t.Fatalf("channel models = %#v, want %#v", settings.Private.Channels[0].Models, wantModels)
+	}
+	if !reflect.DeepEqual(settings.Public.ModelChannel.AvailableModels, wantModels) {
+		t.Fatalf("available models = %#v, want %#v", settings.Public.ModelChannel.AvailableModels, wantModels)
+	}
+	if settings.Public.ModelChannel.DefaultVideoModel != preferredSeedanceModels[0] {
+		t.Fatalf("default video model = %q, want %q", settings.Public.ModelChannel.DefaultVideoModel, preferredSeedanceModels[0])
+	}
+}
+
+func TestNormalizeSettingsUsesCapabilitySpecificZpikaDefaults(t *testing.T) {
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{
+			DefaultModel:      "doubao-seedance-2-0-260128",
+			DefaultTextModel:  "doubao-seedance-2-0-260128",
+			DefaultImageModel: "doubao-seedance-2-0-260128",
+			DefaultVideoModel: "veo-omni-flash",
+		}},
+		Private: model.PrivateSetting{Channels: []model.ModelChannel{{
+			Protocol: "fpbrowser2api",
+			Enabled:  true,
+			Models:   []string{"veo-omni-flash"},
+		}}},
+	})
+
+	channel := settings.Public.ModelChannel
+	if channel.DefaultModel != preferredTextModels[0] || channel.DefaultTextModel != preferredTextModels[0] {
+		t.Fatalf("text defaults = %q/%q, want %q", channel.DefaultModel, channel.DefaultTextModel, preferredTextModels[0])
+	}
+	if channel.DefaultImageModel != preferredImageModels[0] {
+		t.Fatalf("image default = %q, want %q", channel.DefaultImageModel, preferredImageModels[0])
+	}
+	if channel.DefaultVideoModel != preferredSeedanceModels[0] {
+		t.Fatalf("video default = %q, want %q", channel.DefaultVideoModel, preferredSeedanceModels[0])
+	}
+}
+
+func TestNormalizeSettingsDoesNotUseVideoAsMissingTextOrImageDefault(t *testing.T) {
+	settings := normalizeSettings(model.Settings{
+		Private: model.PrivateSetting{Channels: []model.ModelChannel{{Enabled: true, Models: []string{"doubao-seedance-2-0-mini-260615"}}}},
+	})
+
+	channel := settings.Public.ModelChannel
+	if channel.DefaultModel != "" || channel.DefaultTextModel != "" || channel.DefaultImageModel != "" {
+		t.Fatalf("non-video defaults = %q/%q/%q, want empty", channel.DefaultModel, channel.DefaultTextModel, channel.DefaultImageModel)
 	}
 }
 

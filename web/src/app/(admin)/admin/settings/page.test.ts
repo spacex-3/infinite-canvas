@@ -30,12 +30,26 @@ describe("AdminSettingsPage", () => {
         expect(source).not.toContain('return "ZeroFall";');
     });
 
-    test("keeps upstream channel models unselected until the administrator chooses them", () => {
-        expect(source).toContain("setModelSelectSelected(current);");
+    test("keeps upstream channel models unselected except for zpika built-ins", () => {
+        expect(source).toContain("setModelSelectSelected(selected);");
         expect(source).not.toContain("setModelSelectSelected(uniqueModels([...current, ...channelModels]));");
     });
 
     test("offers the Gemini native image channel protocol", () => {
         expect(source).toContain('{ label: "Gemini 原生图片", value: "gemini" }');
+    });
+
+    test("offers built-in text, Gemini image, and Seedance models for zpika channels", () => {
+        expect(source).toContain("ZPIKA_BUILTIN_MODELS");
+        expect(source).toContain("channelModelCandidates");
+        expect(source).toContain("setModelSelectSelected(selected)");
+        expect(source).toContain("isZpikaUnifiedChannel(normalizedChannel)");
+        expect(source).toContain('channel.baseUrl.toLowerCase().includes("aivideo.zpika.com")');
+    });
+
+    test("filters each default selector by model capability", () => {
+        expect(source).toContain('filterModelsByCapability(publicModels, "text")');
+        expect(source).toContain('filterModelsByCapability(publicModels, "image")');
+        expect(source).toContain('filterModelsByCapability(publicModels, "video")');
     });
 });
