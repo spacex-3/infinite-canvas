@@ -685,7 +685,7 @@ async function buildSeedanceContent(config: AiConfig, prompt: string, references
     const text = buildSeedancePromptText(prompt, references, videoReferences, audioReferences);
     if (text) content.push({ type: "text", text });
     for (const image of references.slice(0, SEEDANCE_REFERENCE_LIMITS.images)) {
-        content.push({ type: "image_url", image_url: { url: await resolveSeedanceImageUrl(config, image) }, role: "reference_image" });
+        content.push({ type: "image_url", image_url: { url: await resolveSeedanceImageUrl(image) }, role: "reference_image" });
     }
     for (const video of videoReferences.slice(0, SEEDANCE_REFERENCE_LIMITS.videos)) {
         content.push({ type: "video_url", video_url: { url: await resolveSeedanceVideoUrl(video) }, role: "reference_video" });
@@ -696,15 +696,12 @@ async function buildSeedanceContent(config: AiConfig, prompt: string, references
     return content;
 }
 
-async function resolveSeedanceImageUrl(config: AiConfig, image: ReferenceImage) {
+async function resolveSeedanceImageUrl(image: ReferenceImage) {
     const directUrl = image.url || image.dataUrl;
     if (isPublicMediaUrl(directUrl) || directUrl.startsWith("asset://")) return directUrl;
     const dataUrl = await imageToDataUrl(image);
     if (!dataUrl) throw new Error("参考图读取失败，请换一张图片或重新上传");
-    if (config.channelMode === "remote") {
-        return uploadReferenceMedia(dataUrlToFile({ ...image, dataUrl }));
-    }
-    return dataUrl;
+    return uploadReferenceMedia(dataUrlToFile({ ...image, dataUrl }));
 }
 
 async function resolveSeedanceVideoUrl(video: ReferenceVideo) {

@@ -1,8 +1,11 @@
 // @ts-nocheck
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 
 import { buildOmniFlashPayload, buildSeedanceV1Payload, buildVeoOmniFlashEditPayload, buildVeoOmniPayload, isVeoOmniVideoModel, readVideoResultUrl, requestVideoGeneration, resolveVideoRequestProtocol, usesSeedanceNativeApi } from "./video";
 import { defaultConfig } from "@/stores/use-config-store";
+
+const videoSource = readFileSync(new URL("./video.ts", import.meta.url), "utf8");
 
 describe("custom channel video protocol routing", () => {
     test("rejects Gemini native image channels before sending a video request", async () => {
@@ -30,6 +33,13 @@ describe("custom channel video protocol routing", () => {
 });
 
 describe("Seedance new-api compatibility", () => {
+    test("uploads browser-local Seedance images before direct NewAPI submission", () => {
+        const resolver = videoSource.match(/async function resolveSeedanceImageUrl[\s\S]*?\n}\n\nasync function resolveSeedanceVideoUrl/)?.[0] || "";
+        expect(resolver).toContain("return uploadReferenceMedia(dataUrlToFile({ ...image, dataUrl }));");
+        expect(resolver).not.toContain('config.channelMode === "remote"');
+        expect(resolver).not.toContain("return dataUrl;");
+    });
+
     test("uses native transport only for a direct Ark Plan channel", () => {
         expect(usesSeedanceNativeApi({ channelMode: "local", baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3" })).toBe(true);
         expect(usesSeedanceNativeApi({ channelMode: "local", baseUrl: "https://vip.zpika.com/v1" })).toBe(false);
