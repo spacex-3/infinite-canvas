@@ -827,7 +827,32 @@ async function resolveSeedanceImageUrl(image: ReferenceImage) {
     if (isPublicMediaUrl(directUrl) || directUrl.startsWith("asset://")) return directUrl;
     const dataUrl = await imageToDataUrl(image);
     if (!dataUrl) throw new Error("参考图读取失败，请换一张图片或重新上传");
-    return uploadReferenceMedia(dataUrlToFile({ ...image, dataUrl }));
+    return uploadReferenceMedia(await optimizeSeedanceReferenceImage({ ...image, dataUrl }));
+}
+
+async function optimizeSeedanceReferenceImage(image: ReferenceImage) {
+    const original = dataUrlToFile(image);
+    if (original.size <= 512 * 1024) return original;
+
+    const bitmap = await createImageBitmap(original);
+    const scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+        bitmap.close();
+        return original;
+    }
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+    const compressed = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+    if (!compressed || compressed.size >= original.size) return original;
+    return new File([compressed], "seedance-reference.jpg", { type: "image/jpeg" });
 }
 
 async function resolveSeedanceVideoUrl(video: ReferenceVideo) {

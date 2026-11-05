@@ -35,7 +35,10 @@ describe("custom channel video protocol routing", () => {
 describe("Seedance new-api compatibility", () => {
     test("uploads browser-local Seedance images before direct NewAPI submission", () => {
         const resolver = videoSource.match(/async function resolveSeedanceImageUrl[\s\S]*?\n}\n\nasync function resolveSeedanceVideoUrl/)?.[0] || "";
-        expect(resolver).toContain("return uploadReferenceMedia(dataUrlToFile({ ...image, dataUrl }));");
+        expect(resolver).toContain("return uploadReferenceMedia(await optimizeSeedanceReferenceImage({ ...image, dataUrl }));");
+        expect(resolver).toContain("original.size <= 512 * 1024");
+        expect(resolver).toContain("1280 / Math.max(bitmap.width, bitmap.height)");
+        expect(resolver).toContain('canvas.toBlob(resolve, "image/jpeg", 0.82)');
         expect(resolver).not.toContain('config.channelMode === "remote"');
         expect(resolver).not.toContain("return dataUrl;");
     });
