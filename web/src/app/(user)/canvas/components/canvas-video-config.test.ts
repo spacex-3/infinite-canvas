@@ -26,9 +26,11 @@ describe("canvas video config", () => {
         expect(promptPanelSource).toContain("isModelAvailableForCapability(globalConfig, savedModel, mode)");
     });
 
-    test("normalizes unsupported Seedance resolutions in controls and summaries", () => {
+    test("normalizes unsupported Seedance resolutions while keeping the compact summary readable", () => {
         expect(configPanelSource).toContain("videoModelPatch(config, model)");
         expect(promptPanelSource).toContain("videoModelPatch(config, model)");
-        expect(settingsPopoverSource).toContain("normalizeSeedanceResolution(config.vquality, config.model || config.videoModel)");
+        expect(settingsPopoverSource).toContain("videoSizeLabel(config.videoSize)");
+        expect(settingsPopoverSource).toContain("videoSecondsLabel(config.videoSeconds)");
+        expect(settingsPopoverSource).not.toContain("videoResolutionLabel");
     });
 });

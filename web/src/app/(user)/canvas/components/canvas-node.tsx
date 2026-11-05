@@ -53,7 +53,7 @@ type NodeContentRendererProps = {
     node: CanvasNodeData;
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     isEditingContent: boolean;
-    textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+    textareaRef: React.RefObject<HTMLDivElement | null>;
     isBatchRoot: boolean;
     batchCount: number;
     batchExpanded: boolean;
@@ -113,7 +113,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const isBatchChild = data.type === CanvasNodeType.Image && Boolean(data.metadata?.batchRootId);
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
     const imageBorderColor = isActive ? selectionBlue : isRelated && !isBatchChild ? theme.node.muted : "transparent";
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const textareaRef = useRef<HTMLDivElement>(null);
     const resizeRef = useRef({
         isResizing: false,
         corner: "bottom-right" as ResizeCorner,
@@ -140,7 +140,7 @@ export const CanvasNode = React.memo(function CanvasNode({
         if (!isEditingContent) return;
         const textarea = textareaRef.current;
         textarea?.focus();
-        textarea?.setSelectionRange(textarea.value.length, textarea.value.length);
+        if (textarea) placeCaretAtEnd(textarea);
     }, [isEditingContent]);
 
     useEffect(() => {
@@ -449,6 +449,15 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
             )}
         </div>
     );
+}
+
+function placeCaretAtEnd(element: HTMLElement) {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
 }
 
 function ResourceLabelBadge({ reference }: { reference: CanvasResourceReference }) {

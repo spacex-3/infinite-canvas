@@ -19,10 +19,14 @@ describe("canvas prompt keyboard behavior", () => {
         expect(composerSource).toContain("shouldResetCanvasReferenceSelection(mention, nextMention)");
     });
 
-    test("uses the native textarea as the only visible text layer", () => {
+    test("renders stable references as editable @ chips without a duplicate overlay", () => {
         expect(textareaSource).not.toContain("overlayRef");
         expect(textareaSource).not.toContain("MentionHighlightText");
         expect(textareaSource).not.toContain('rgba(0,0,0,0.01)');
+        expect(textareaSource).toContain("contentEditable");
+        expect(textareaSource).toContain('chip.textContent = `@${reference.label}`');
+        expect(textareaSource).toContain("theme.toolbar.activeBg");
+        expect(textareaSource).toContain('result += `@[node:${nodeId}]`');
     });
 
     test("prompt panel uses free resize handle and assistant keeps vertical resizing", () => {
