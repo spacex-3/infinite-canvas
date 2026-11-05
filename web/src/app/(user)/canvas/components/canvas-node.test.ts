@@ -19,6 +19,11 @@ describe("CanvasNode text actions", () => {
         expect(source).toContain('if (stage === "saving") return "正在保存视频";');
     });
 
+    test("offers download recovery for failed video nodes with a saved task", () => {
+        expect(source).toContain("const canRecoverVideo = node.type === CanvasNodeType.Video && Boolean(node.metadata?.videoTaskId)");
+        expect(source).toContain('{canRecoverVideo ? "重新下载" : "重试"}');
+    });
+
     test("lets users select generated text without starting a node drag", () => {
         expect(textContentSource).toContain("cursor-text select-text");
         expect(textContentSource).toContain("onMouseDown={(event) => event.stopPropagation()}");

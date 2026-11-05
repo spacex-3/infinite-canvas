@@ -29,6 +29,11 @@ export type CanvasNodeMetadata = {
     progress?: number;
     progressStage?: "generating" | "caching" | "downloading" | "saving";
     errorDetails?: string;
+    videoTaskId?: string;
+    videoTaskModel?: string;
+    videoTaskProtocol?: "seedance-v1" | "seedance-native";
+    videoTaskStatus?: "submitted" | "completed";
+    videoResultUrl?: string;
     fontSize?: number;
     generationMode?: CanvasGenerationMode;
     generationType?: CanvasImageGenerationType;

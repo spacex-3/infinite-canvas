@@ -112,6 +112,7 @@ export function CanvasNodeHoverToolbar({
     const isConfig = node.type === CanvasNodeType.Config;
     const canGenerateTextImage = isText && Boolean((node.metadata?.content || node.metadata?.prompt)?.trim());
     const canRetry = node.metadata?.status === "error";
+    const canRecoverVideo = canRetry && isVideo && Boolean(node.metadata?.videoTaskId);
     const isPromptEditableImage = isImage && canRetry && Boolean(node.metadata?.prompt?.trim());
     const canOpenDialog = isText || hasImage || isVideo || isPromptEditableImage;
     const quickImageToolIdSet = new Set(quickImageToolIds);
@@ -137,7 +138,7 @@ export function CanvasNodeHoverToolbar({
         { id: "delete", title: "移除节点", label: "删除", icon: <Trash2 className="size-4" />, onClick: () => onDelete(node), danger: true },
     ];
     const nodeToolbarTools: ToolbarTool[] = [
-        ...(canRetry ? [{ id: "retry", title: "重新生成", label: "重试", icon: <RefreshCw className="size-4" />, onClick: () => onRetry(node) }] : []),
+        ...(canRetry ? [{ id: "retry", title: canRecoverVideo ? "取回已有视频，不会重新生成" : "重新生成", label: canRecoverVideo ? "重新下载" : "重试", icon: canRecoverVideo ? <Download className="size-4" /> : <RefreshCw className="size-4" />, onClick: () => onRetry(node) }] : []),
         ...(hasImage || hasVideo || isText ? [{ id: "saveAsset", title: "加入我的素材", label: "存素材", icon: <FolderPlus className="size-4" />, onClick: () => onSaveAsset(node) }] : []),
         ...(hasImage || hasVideo || hasAudio ? [{ id: "download", title: hasAudio ? "下载音频" : hasVideo ? "下载视频" : "下载图片", label: "下载", icon: <Download className="size-4" />, onClick: () => onDownload(node) }] : []),
         ...(canOpenDialog ? [{ id: "edit", title: "编辑", label: "编辑", icon: <MessageSquare className="size-4" />, onClick: () => onToggleDialog(node) }] : []),

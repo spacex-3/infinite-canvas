@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ChevronRight, Image as ImageIcon, Music2, RefreshCw, Star, Video } from "lucide-react";
+import { ChevronRight, Download, Image as ImageIcon, Music2, RefreshCw, Star, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes } from "@/lib/image-utils";
@@ -377,6 +377,7 @@ function formatGenerationProgress(progress: unknown, stage?: string) {
 }
 
 function ErrorContent({ node, theme, onRetry }: Pick<NodeContentRendererProps, "node" | "theme" | "onRetry">) {
+    const canRecoverVideo = node.type === CanvasNodeType.Video && Boolean(node.metadata?.videoTaskId);
     return (
         <div className="flex max-w-[260px] flex-col items-center gap-3 px-5 text-center">
             <div className="text-xs leading-5 text-red-300">{node.metadata?.errorDetails || "生成失败"}</div>
@@ -390,8 +391,8 @@ function ErrorContent({ node, theme, onRetry }: Pick<NodeContentRendererProps, "
                 }}
                 onMouseDown={(event) => event.stopPropagation()}
             >
-                <RefreshCw className="size-3.5" />
-                重试
+                {canRecoverVideo ? <Download className="size-3.5" /> : <RefreshCw className="size-3.5" />}
+                {canRecoverVideo ? "重新下载" : "重试"}
             </button>
         </div>
     );

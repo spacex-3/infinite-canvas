@@ -88,11 +88,18 @@ describe("Seedance new-api compatibility", () => {
     });
 
     test("shows a download stage after a completed task returns a video URL", () => {
-        expect(videoSource).toContain("downloadUrl = await cacheRemoteVideo(url, onProgress)");
         expect(videoSource).toContain('onProgress?.(0, "caching")');
+        expect(videoSource).toContain("downloadUrl = await cacheRemoteVideo(url, onProgress)");
         expect(videoSource).toContain('onProgress?.(0, "downloading")');
         expect(videoSource).toContain('onProgress?.((event.loaded / event.total) * 100, "downloading")');
         expect(videoSource).toContain("timeout: 15 * 60 * 1000");
+    });
+
+    test("persists Seedance task recovery before polling and retries transient poll failures", () => {
+        expect(videoSource).toContain('onTaskRecovery?.({ taskId, model: payload.model, protocol: "seedance-v1", status: "submitted" })');
+        expect(videoSource).toContain('status: "completed", resultUrl: task.content?.video_url');
+        expect(videoSource).toContain("isRetryableVideoPollError(error)");
+        expect(videoSource).toContain("export async function recoverVideoGeneration");
     });
 });
 

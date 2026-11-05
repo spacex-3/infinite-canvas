@@ -34,6 +34,13 @@ describe("CanvasClientPage retry config", () => {
         expect(source).toContain("isModelAvailableForCapability(config, savedModel, mode)");
         expect(source).toContain("generationModelForMode(config, node, mode)");
     });
+
+    test("recovers an existing Seedance task without submitting another paid generation", () => {
+        expect(source).toContain("const videoTaskRecovery = readVideoTaskRecovery(node)");
+        expect(source).toContain("? await recoverVideoGeneration(generationConfig, videoTaskRecovery, updateRetryProgress)");
+        expect(source).toContain("videoTaskId: recovery.taskId");
+        expect(source).toContain('readVideoTaskRecovery(node) ? "页面刷新中断了视频取回，请重新下载。"');
+    });
 });
 
 describe("CanvasClientPage generation progress", () => {

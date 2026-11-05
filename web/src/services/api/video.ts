@@ -132,6 +132,14 @@ type OmniFlashTask = {
 };
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
+export type VideoTaskRecovery = {
+    taskId: string;
+    model: string;
+    protocol: "seedance-v1" | "seedance-native";
+    status: "submitted" | "completed";
+    resultUrl?: string;
+};
+type VideoTaskRecoveryCallback = (recovery: VideoTaskRecovery) => void;
 
 function aiApiUrl(config: AiConfig, path: string) {
     return config.channelMode === "remote" ? `/api/v1${path}` : buildApiUrl(config.baseUrl, path);
@@ -154,7 +162,15 @@ function refreshRemoteUser(config: AiConfig) {
     if (config.channelMode === "remote") void useUserStore.getState().hydrateUser();
 }
 
-export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], onProgress?: GenerationProgressCallback): Promise<VideoGenerationResult> {
+export async function requestVideoGeneration(
+    config: AiConfig,
+    prompt: string,
+    references: ReferenceImage[] = [],
+    videoReferences: ReferenceVideo[] = [],
+    audioReferences: ReferenceAudio[] = [],
+    onProgress?: GenerationProgressCallback,
+    onTaskRecovery?: VideoTaskRecoveryCallback,
+): Promise<VideoGenerationResult> {
     const requestedModel = (config.model || config.videoModel).trim();
     config = resolveCustomChannelConfig(config, "video", requestedModel);
     assertChannelSupportsCapability(config, "video");
@@ -171,12 +187,25 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
         return requestVeoOmniGeneration(config, model, prompt, references, videoReferences, audioReferences, onProgress);
     }
     if (isSeedanceVideoConfig({ ...config, model })) {
-        return requestSeedanceGeneration(config, model, prompt, references, videoReferences, audioReferences, onProgress);
+        return requestSeedanceGeneration(config, model, prompt, references, videoReferences, audioReferences, onProgress, onTaskRecovery);
     }
     if (videoReferences.length || audioReferences.length) {
         throw new Error("当前视频接口不支持参考视频或参考音频，请切换到 omni-flash / Seedance / Veo Omni 模型，或移除参考素材");
     }
     return requestOpenAIVideoGeneration(config, model, prompt, references);
+}
+
+export async function recoverVideoGeneration(config: AiConfig, recovery: VideoTaskRecovery, onProgress?: GenerationProgressCallback): Promise<VideoGenerationResult> {
+    config = resolveCustomChannelConfig(config, "video", recovery.model);
+    assertChannelSupportsCapability(config, "video");
+    assertVideoConfig(config, recovery.model);
+    try {
+        if (recovery.status === "completed" && recovery.resultUrl) return await videoResultFromUrl(recovery.resultUrl, onProgress);
+        if (recovery.protocol === "seedance-native") return await recoverSeedanceNativeGeneration(config, recovery, onProgress);
+        return await recoverSeedanceV1Generation(config, recovery, onProgress);
+    } catch (error) {
+        throw new Error(readAxiosError(error, "Seedance 视频取回失败"));
+    }
 }
 
 export function resolveVideoRequestProtocol(config: Pick<AiConfig, "channelMode" | "protocol">, model: string): "openai" | "fpbrowser2api" | "zerofall" {
@@ -279,7 +308,16 @@ async function requestOpenAIVideoGeneration(config: AiConfig, model: string, pro
     }
 }
 
-async function requestSeedanceGeneration(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], onProgress?: GenerationProgressCallback) {
+async function requestSeedanceGeneration(
+    config: AiConfig,
+    model: string,
+    prompt: string,
+    references: ReferenceImage[],
+    videoReferences: ReferenceVideo[],
+    audioReferences: ReferenceAudio[],
+    onProgress?: GenerationProgressCallback,
+    onTaskRecovery?: VideoTaskRecoveryCallback,
+) {
     if (audioReferences.length && !references.length && !videoReferences.length) {
         throw new Error("Seedance 参考音频不能单独使用，请同时添加参考图或参考视频");
     }
@@ -289,7 +327,7 @@ async function requestSeedanceGeneration(config: AiConfig, model: string, prompt
     const content = await buildSeedanceContent(config, prompt, references, videoReferences, audioReferences);
     if (!content.length) throw new Error("请输入视频提示词，或连接参考图片/视频/音频");
     if (!usesNativeApi) {
-        return requestSeedanceV1Generation(config, buildSeedanceV1Payload(config, model, buildSeedancePromptText(prompt, references, videoReferences, audioReferences), content), onProgress);
+        return requestSeedanceV1Generation(config, buildSeedanceV1Payload(config, model, buildSeedancePromptText(prompt, references, videoReferences, audioReferences), content), onProgress, onTaskRecovery);
     }
     const payload = {
         model,
@@ -304,11 +342,22 @@ async function requestSeedanceGeneration(config: AiConfig, model: string, prompt
     try {
         const created = unwrapSeedanceTask((await axios.post<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config), payload, { headers: aiHeaders(config, "application/json") })).data);
         if (!created.id) throw new Error("Seedance 接口没有返回任务 ID");
+        onTaskRecovery?.({ taskId: created.id, model, protocol: "seedance-native", status: "submitted" });
         for (let attempt = 0; attempt < 120; attempt += 1) {
-            const task = unwrapSeedanceTask((await axios.get<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config, created.id), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model } : undefined })).data);
+            let task: SeedanceTask;
+            try {
+                task = unwrapSeedanceTask((await axios.get<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config, created.id), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model } : undefined })).data);
+            } catch (error) {
+                if (attempt < 119 && isRetryableVideoPollError(error)) {
+                    await delay(5000);
+                    continue;
+                }
+                throw error;
+            }
             if (task.status === "succeeded") {
                 const url = task.content?.video_url;
                 if (!url) throw new Error("Seedance 任务成功但没有返回视频 URL");
+                onTaskRecovery?.({ taskId: created.id, model, protocol: "seedance-native", status: "completed", resultUrl: url });
                 refreshRemoteUser(config);
                 return videoResultFromUrl(url, onProgress);
             }
@@ -344,20 +393,31 @@ export function buildSeedanceV1Payload(config: Pick<AiConfig, "videoSize" | "vqu
     return payload;
 }
 
-async function requestSeedanceV1Generation(config: AiConfig, payload: SeedanceV1Payload, onProgress?: GenerationProgressCallback) {
+async function requestSeedanceV1Generation(config: AiConfig, payload: SeedanceV1Payload, onProgress?: GenerationProgressCallback, onTaskRecovery?: VideoTaskRecoveryCallback) {
     try {
         const created = unwrapEnvelope((await axios.post<ApiEnvelope<SeedanceV1Task>>(aiApiUrl(config, "/videos"), payload, { headers: aiHeaders(config, "application/json") })).data, "Seedance 接口没有返回任务");
         const taskId = String(created.id || created.task_id || "").trim();
         if (!taskId) throw new Error("Seedance 接口没有返回任务 ID");
+        onTaskRecovery?.({ taskId, model: payload.model, protocol: "seedance-v1", status: "submitted" });
         notifyGenerationProgress(onProgress, created);
         for (let attempt = 0; attempt < 120; attempt += 1) {
-            const task = unwrapEnvelope(
-                (await axios.get<ApiEnvelope<SeedanceV1Task>>(aiApiUrl(config, `/videos/${encodeURIComponent(taskId)}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: payload.model } : undefined })).data,
-                "Seedance 接口没有返回任务",
-            );
+            let task: SeedanceV1Task;
+            try {
+                task = unwrapEnvelope(
+                    (await axios.get<ApiEnvelope<SeedanceV1Task>>(aiApiUrl(config, `/videos/${encodeURIComponent(taskId)}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: payload.model } : undefined })).data,
+                    "Seedance 接口没有返回任务",
+                );
+            } catch (error) {
+                if (attempt < 119 && isRetryableVideoPollError(error)) {
+                    await delay(5000);
+                    continue;
+                }
+                throw error;
+            }
             notifyGenerationProgress(onProgress, task);
             const status = String(task.status || "").toLowerCase();
             if (status === "completed" || status === "succeeded" || status === "success") {
+                onTaskRecovery?.({ taskId, model: payload.model, protocol: "seedance-v1", status: "completed", resultUrl: task.content?.video_url });
                 if (task.content?.video_url) {
                     refreshRemoteUser(config);
                     return videoResultFromUrl(task.content.video_url, onProgress);
@@ -379,6 +439,68 @@ async function requestSeedanceV1Generation(config: AiConfig, payload: SeedanceV1
     } catch (error) {
         throw new Error(readAxiosError(error, "Seedance 视频生成失败"));
     }
+}
+
+async function recoverSeedanceV1Generation(config: AiConfig, recovery: VideoTaskRecovery, onProgress?: GenerationProgressCallback) {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+        let task: SeedanceV1Task;
+        try {
+            task = unwrapEnvelope(
+                (await axios.get<ApiEnvelope<SeedanceV1Task>>(aiApiUrl(config, `/videos/${encodeURIComponent(recovery.taskId)}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: recovery.model } : undefined })).data,
+                "Seedance 接口没有返回任务",
+            );
+        } catch (error) {
+            if (attempt < 119 && isRetryableVideoPollError(error)) {
+                await delay(5000);
+                continue;
+            }
+            throw error;
+        }
+        notifyGenerationProgress(onProgress, task);
+        const status = String(task.status || "").toLowerCase();
+        if (status === "completed" || status === "succeeded" || status === "success") {
+            const resultUrl = task.content?.video_url || recovery.resultUrl;
+            refreshRemoteUser(config);
+            if (resultUrl) return videoResultFromUrl(resultUrl, onProgress);
+            const content = await axios.get<Blob>(aiApiUrl(config, `/videos/${encodeURIComponent(recovery.taskId)}/content`), {
+                headers: aiHeaders(config),
+                params: config.channelMode === "remote" ? { model: recovery.model } : undefined,
+                responseType: "blob",
+            });
+            await assertVideoBlob(content.data);
+            return { blob: content.data };
+        }
+        if (status === "failed" || status === "cancelled" || status === "expired") throw new Error(task.error?.message || `Seedance 视频生成${status === "expired" ? "超时" : "失败"}`);
+        if (attempt === 119) throw new Error("Seedance 视频生成超时，请稍后重新取回");
+        await delay(5000);
+    }
+    throw new Error("Seedance 视频生成超时，请稍后重新取回");
+}
+
+async function recoverSeedanceNativeGeneration(config: AiConfig, recovery: VideoTaskRecovery, onProgress?: GenerationProgressCallback) {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+        let task: SeedanceTask;
+        try {
+            task = unwrapSeedanceTask((await axios.get<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config, recovery.taskId), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: recovery.model } : undefined })).data);
+        } catch (error) {
+            if (attempt < 119 && isRetryableVideoPollError(error)) {
+                await delay(5000);
+                continue;
+            }
+            throw error;
+        }
+        notifyGenerationProgress(onProgress, task);
+        if (task.status === "succeeded") {
+            const resultUrl = task.content?.video_url || recovery.resultUrl;
+            if (!resultUrl) throw new Error("Seedance 任务成功但没有返回视频 URL");
+            refreshRemoteUser(config);
+            return videoResultFromUrl(resultUrl, onProgress);
+        }
+        if (task.status === "failed" || task.status === "cancelled" || task.status === "expired") throw new Error(task.error?.message || `Seedance 视频生成${task.status === "expired" ? "超时" : "失败"}`);
+        if (attempt === 119) throw new Error("Seedance 视频生成超时，请稍后重新取回");
+        await delay(5000);
+    }
+    throw new Error("Seedance 视频生成超时，请稍后重新取回");
 }
 
 /** ZeroFall omni-flash / omni-flash-vref via POST /v1/video/generations */
@@ -760,6 +882,7 @@ async function uploadReferenceMedia(file: File) {
 async function videoResultFromUrl(url: string, onProgress?: GenerationProgressCallback): Promise<VideoGenerationResult> {
     let downloadUrl = url;
     try {
+        onProgress?.(0, "caching");
         downloadUrl = await cacheRemoteVideo(url, onProgress);
         onProgress?.(0, "downloading");
         const response = await axios.get<Blob>(downloadUrl, {
@@ -796,6 +919,11 @@ async function cacheRemoteVideo(url: string, onProgress?: GenerationProgressCall
         await delay(2000);
     }
     throw new Error("服务器下载视频超时");
+}
+
+function isRetryableVideoPollError(error: unknown) {
+    if (!axios.isAxiosError(error)) return false;
+    return !error.response || Number(error.response.status) >= 500;
 }
 
 function assertVideoConfig(config: AiConfig, model: string) {
