@@ -235,27 +235,25 @@ function createReferenceChip(input: NodeGenerationInput, inputs: NodeGenerationI
     const wrapper = document.createElement("span");
     wrapper.contentEditable = "false";
     wrapper.dataset.referenceNodeId = input.nodeId;
-    wrapper.className = "mx-px inline-flex h-7 max-w-40 items-center justify-center overflow-hidden rounded-md border px-1 text-xs leading-none align-middle";
+    wrapper.className = "mx-px inline-flex h-7 max-w-40 items-center justify-center gap-1 overflow-hidden rounded-md border px-1.5 text-xs leading-none align-middle";
     Object.assign(wrapper.style, chipStyle(theme));
+    wrapper.title = input.text || input.title;
     if (input.type === "image" && input.image) {
         const image = document.createElement("img");
         image.src = input.image.dataUrl;
         image.alt = input.title;
-        image.className = "size-6 rounded object-cover";
-        wrapper.className = "mx-px inline-flex size-6 items-center justify-center overflow-hidden rounded align-middle";
+        image.className = "size-5 shrink-0 rounded object-cover";
         wrapper.appendChild(image);
         wrapper.addEventListener("click", (event) => {
             event.preventDefault();
             event.stopPropagation();
             onImagePreview(input.image?.dataUrl || "");
         });
-    } else {
-        wrapper.title = input.text || input.title;
-        const text = document.createElement("span");
-        text.className = "block truncate";
-        text.textContent = input.type === "text" ? input.text || input.title : input.title;
-        wrapper.appendChild(text);
     }
+    const text = document.createElement("span");
+    text.className = "block truncate font-medium";
+    text.textContent = `@${resourceLabel(input, inputs)}`;
+    wrapper.appendChild(text);
     return wrapper;
 }
 
@@ -368,5 +366,5 @@ function resourceLabel(input: NodeGenerationInput, inputs: NodeGenerationInput[]
 }
 
 function chipStyle(theme: (typeof canvasThemes)[keyof typeof canvasThemes]): CSSProperties {
-    return { background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.text };
+    return { background: theme.toolbar.activeBg, borderColor: theme.node.stroke, color: theme.toolbar.activeText };
 }

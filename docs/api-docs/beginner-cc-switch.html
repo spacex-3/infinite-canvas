@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ZPIKA 新手接入说明：通过 CC Switch 配置 ChatGPT 或 Claude Code">
+  <title>新手接入：ChatGPT / Claude Code - ZPIKA API Docs</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --pixel-dark: #1a1c2c;
+      --pixel-light: #f4f4f4;
+      --pixel-paper: #ffffff;
+      --pixel-muted: #5f574f;
+      --pixel-red: #ff004d;
+      --pixel-green: #00e436;
+      --pixel-blue: #29adff;
+      --pixel-yellow: #ffec27;
+      --pixel-orange: #ffa300;
+      --canvas: #ece9e0;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--pixel-dark);
+      background:
+        linear-gradient(90deg, rgba(26,28,44,.04) 1px, transparent 1px) 0 0 / 16px 16px,
+        linear-gradient(rgba(26,28,44,.04) 1px, transparent 1px) 0 0 / 16px 16px,
+        var(--canvas);
+      font-family: "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+      font-size: 15px;
+      line-height: 1.75;
+    }
+    a { color: inherit; }
+    code, pre, .mono { font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    .direct-domain { color: inherit; text-decoration: underline dotted currentColor; text-underline-offset: 3px; cursor: help; }
+
+    .topbar { background: var(--pixel-paper); border-bottom: 4px solid var(--pixel-dark); }
+    .topbar-inner {
+      width: min(1180px, calc(100% - 32px));
+      min-height: 64px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--pixel-dark);
+      text-decoration: none;
+      font: 900 13px/1 ui-monospace, Consolas, monospace;
+      letter-spacing: .08em;
+    }
+    .brand-mark {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--pixel-dark);
+      background:
+        linear-gradient(90deg, var(--pixel-red) 50%, var(--pixel-blue) 50%) 0 0 / 100% 50% no-repeat,
+        linear-gradient(90deg, var(--pixel-yellow) 50%, var(--pixel-green) 50%) 0 100% / 100% 50% no-repeat;
+      box-shadow: 2px 2px 0 var(--pixel-dark);
+    }
+    .doc-links { display: flex; gap: 17px; overflow-x: auto; font: 800 12px/1 ui-monospace, Consolas, monospace; white-space: nowrap; }
+    .doc-links a { color: var(--pixel-muted); text-decoration: none; }
+    .doc-links a:hover, .doc-links a[aria-current="page"] { color: var(--pixel-red); }
+    .home-link { color: var(--pixel-dark) !important; }
+
+    .hero { background: var(--pixel-blue); border-bottom: 4px solid var(--pixel-dark); }
+    .hero-inner { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 42px; }
+    .eyebrow {
+      display: inline-block;
+      margin: 0 0 14px;
+      padding: 6px 10px;
+      color: var(--pixel-yellow);
+      background: var(--pixel-dark);
+      box-shadow: 3px 3px 0 var(--pixel-red);
+      font: 800 11px/1.3 ui-monospace, Consolas, monospace;
+      letter-spacing: .12em;
+    }
+    h1 { margin: 0; max-width: 900px; font-size: clamp(34px, 6vw, 58px); line-height: 1.1; letter-spacing: 0; }
+    .hero-copy { max-width: 760px; margin: 18px 0 0; font-size: 17px; }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+    .chip { padding: 8px 10px; color: var(--pixel-dark); background: var(--pixel-paper); border: 2px solid var(--pixel-dark); box-shadow: 3px 3px 0 var(--pixel-dark); font: 800 11px/1.3 ui-monospace, Consolas, monospace; }
+
+    .layout { width: min(1180px, calc(100% - 32px)); margin: 0 auto; display: grid; grid-template-columns: 206px minmax(0, 820px); gap: 56px; padding: 42px 0 72px; }
+    .toc { position: sticky; top: 22px; align-self: start; padding: 15px; background: var(--pixel-paper); border: 3px solid var(--pixel-dark); box-shadow: 4px 4px 0 var(--pixel-dark); }
+    .toc strong { display: block; margin-bottom: 8px; font: 900 11px/1.4 ui-monospace, Consolas, monospace; letter-spacing: .1em; }
+    .toc a { display: block; padding: 6px 0; color: var(--pixel-muted); text-decoration: none; font-size: 13px; }
+    .toc a:hover { color: var(--pixel-red); }
+    article { min-width: 0; padding: 28px; background: var(--pixel-paper); border: 4px solid var(--pixel-dark); box-shadow: 6px 6px 0 var(--pixel-dark); }
+    section { padding-bottom: 32px; scroll-margin-top: 24px; }
+    section + section { padding-top: 32px; border-top: 2px dashed var(--pixel-dark); }
+    h2 { margin: 0 0 14px; font-size: 25px; line-height: 1.3; }
+    h3 { margin: 20px 0 8px; font-size: 18px; line-height: 1.4; }
+    p { margin: 0 0 14px; }
+    :not(pre) > code { padding: 2px 5px; color: var(--pixel-dark); background: var(--pixel-yellow); border: 1px solid var(--pixel-dark); font-size: .9em; }
+    pre { margin: 14px 0 0; padding: 16px; overflow: auto; color: var(--pixel-light); background: var(--pixel-dark); border: 3px solid var(--pixel-dark); box-shadow: 4px 4px 0 var(--pixel-red); font-size: 13px; line-height: 1.65; }
+    .notice { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; margin-bottom: 18px; padding: 15px; color: var(--pixel-dark); background: #fff8c7; border: 3px solid var(--pixel-dark); box-shadow: 4px 4px 0 var(--pixel-orange); }
+    .notice-mark { display: grid; place-items: center; width: 26px; height: 26px; color: var(--pixel-paper); background: var(--pixel-red); border: 2px solid var(--pixel-dark); font-weight: 900; }
+    .notice strong { display: block; margin-bottom: 3px; }
+    .steps { margin: 0; padding: 0; list-style: none; counter-reset: step; }
+    .steps.continue { counter-reset: step 2; }
+    .steps li { position: relative; min-height: 50px; margin: 14px 0; padding: 13px 14px 13px 58px; background: #f8f6ef; border: 2px solid var(--pixel-dark); }
+    .steps li::before { content: counter(step, decimal-leading-zero); counter-increment: step; position: absolute; top: 0; left: 0; bottom: 0; display: grid; width: 43px; place-items: center; color: var(--pixel-dark); background: var(--pixel-green); border-right: 2px solid var(--pixel-dark); font: 900 12px/1 ui-monospace, Consolas, monospace; }
+    .steps strong { display: block; margin-bottom: 3px; }
+    .card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .mini-card { padding: 15px; background: #f8f6ef; border: 2px solid var(--pixel-dark); box-shadow: 3px 3px 0 var(--pixel-dark); }
+    .mini-card h3 { margin-top: 0; }
+    .mini-card p { margin-bottom: 0; }
+    .cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+    .cta { display: inline-flex; align-items: center; min-height: 46px; padding: 10px 14px; color: var(--pixel-paper); background: var(--pixel-red); border: 3px solid var(--pixel-dark); box-shadow: 4px 4px 0 var(--pixel-dark); text-decoration: none; font-weight: 900; transition: transform .1s ease, box-shadow .1s ease; }
+    .cta:hover { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--pixel-dark); }
+    .cta.secondary { color: var(--pixel-dark); background: var(--pixel-yellow); }
+    .checklist { margin: 0; padding: 0; list-style: none; }
+    .checklist li { position: relative; margin: 8px 0; padding-left: 27px; }
+    .checklist li::before { content: "✓"; position: absolute; left: 0; top: 0; color: var(--pixel-red); font-weight: 900; }
+    .faq h3 { padding-top: 14px; border-top: 1px solid #c4bcae; }
+    .faq h3:first-child { padding-top: 0; border-top: 0; }
+    footer { padding: 24px 20px; color: var(--pixel-paper); background: var(--pixel-dark); text-align: center; font: 800 11px/1.4 ui-monospace, Consolas, monospace; letter-spacing: .08em; }
+
+    @media (max-width: 850px) {
+      .topbar-inner, .hero-inner, .layout { width: min(100% - 28px, 760px); }
+      .topbar-inner { align-items: flex-start; flex-direction: column; padding: 15px 0; gap: 12px; }
+      .doc-links { width: 100%; }
+      .layout { display: block; padding-top: 28px; }
+      .toc { display: none; }
+    }
+    @media (max-width: 580px) {
+      .hero-inner { padding: 38px 0 34px; }
+      h1 { font-size: 34px; }
+      article { padding: 18px; box-shadow: 4px 4px 0 var(--pixel-dark); }
+      section { padding-bottom: 26px; }
+      section + section { padding-top: 26px; }
+      .card-grid { grid-template-columns: 1fr; }
+      pre { padding: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="topbar" aria-label="文档导航">
+    <div class="topbar-inner">
+      <a class="brand" href="index.html">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>ZPIKA // API DOCS</span>
+      </a>
+      <div class="doc-links">
+        <a class="home-link" href="index.html">← 文档首页</a>
+        <a href="beginner-cc-switch.html" aria-current="page">新手接入</a>
+        <a href="canvas.html">无限画布</a>
+        <a href="gpt-image-2.html">图片接口</a>
+        <a href="seedance.html">Seedance</a>
+        <a href="veo-omni-flash.html">视频接口</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="hero-inner">
+      <p class="eyebrow">Beginner Guide // CC Switch</p>
+      <h1>把 ZPIKA 密钥接入 ChatGPT 或 Claude Code</h1>
+      <p class="hero-copy">不需要手动改配置文件。安装好常用的 AI 编程工具后，在本站创建密钥并用 CC Switch 导入配置，重启工具即可开始使用。</p>
+      <div class="chip-row" aria-label="适用工具">
+        <span class="chip">CHATGPT</span>
+        <span class="chip">CLAUDE CODE</span>
+        <span class="chip">CC SWITCH</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="toc" aria-label="本页目录">
+      <strong>本页目录</strong>
+      <a href="#before">开始前</a>
+      <a href="#tools">工具怎么用</a>
+      <a href="#install">下载安装</a>
+      <a href="#key">创建密钥</a>
+      <a href="#import">导入 CC Switch</a>
+      <a href="#verify">确认可用</a>
+      <a href="#image-in-chatgpt">ChatGPT App 生图</a>
+      <a href="#other-agents">其他 Agent</a>
+      <a href="#optional">可选：Codex++</a>
+      <a href="#faq">常见问题</a>
+    </aside>
+
+    <article>
+      <section id="before">
+        <h2>开始前，先理解这三样东西</h2>
+        <div class="notice">
+          <span class="notice-mark" aria-hidden="true">!</span>
+          <span><strong>API Key 等同于你的账户密码</strong><span>只在自己的电脑和受信任的软件中使用。不要把 Key 发到群聊、截图、工单或聊天窗口；怀疑泄露时，立即在本站控制台删除该 Key 并重新创建。</span></span>
+        </div>
+        <div class="card-grid">
+          <div class="mini-card"><h3>ChatGPT 或 Claude Code</h3><p>你真正用来写代码、问问题的 AI 工具。ChatGPT App 已包含编程能力；也可以使用 Claude Code，两个都装也可以。</p></div>
+          <div class="mini-card"><h3>CC Switch</h3><p>一个本地配置管理工具，负责把本站的连接信息写入 ChatGPT 或 Claude Code，省去手动修改文件。</p></div>
+        </div>
+        <div class="notice" style="margin-top:18px;">
+          <span class="notice-mark" aria-hidden="true">→</span>
+          <span><strong>已经配置好 CC Switch？请从第二步开始</strong><span>无需重复安装。直接创建 ZPIKA 密钥并选择 CCS 导入，重启工具后即可使用。连接 ZPIKA 本身无需魔法网络；但访问 GitHub 等本身受网络环境影响的站点或资源时，仍需自行准备相应网络环境。</span></span>
+        </div>
+      </section>
+
+      <section id="tools">
+        <h2>ChatGPT App 和 Claude Code 怎么用</h2>
+        <p>两者都是让 AI 帮你理解和修改代码的工具。先选一个熟悉即可，不需要同时学会两个。</p>
+        <div class="card-grid">
+          <div class="mini-card">
+            <h3>ChatGPT App</h3>
+            <p>ChatGPT 已整合编程能力。打开官方 ChatGPT 桌面应用，进入编程功能，选择要处理的本地项目文件夹，然后在对话框直接说清楚任务，例如“帮我修复登录按钮”或“解释这个报错”。它会读取项目并给出修改建议或代码变更，确认后再应用。</p>
+          </div>
+          <div class="mini-card">
+            <h3>Claude Code</h3>
+            <p>它主要在终端中使用。打开终端，先进入项目目录，再运行 <code>claude</code>。首次使用按提示登录；进入对话后直接描述要做的事。它执行文件修改或命令前会请求许可，新手先阅读提示并确认操作范围即可。</p>
+          </div>
+        </div>
+        <h3>Claude Code 最短使用流程</h3>
+        <pre><code>cd 你的项目文件夹
+claude
+
+&gt; 请先解释这个项目的目录结构，再告诉我入口文件在哪里</code></pre>
+        <p>启动后，直接在 <code>&gt;</code> 后输入自然语言任务即可。需要帮助时输入 <code>/help</code>；结束本次会话可输入 <code>/exit</code>，或直接关闭终端。</p>
+        <div class="notice" style="margin-top:18px;">
+          <span class="notice-mark" aria-hidden="true">✓</span>
+          <span><strong>第一次建议从小任务开始</strong><span>例如解释一个文件、改一段文案或修复单个报错。无论使用哪个工具，涉及删除文件、安装软件或提交代码时，都先看清它准备执行的操作。</span></span>
+        </div>
+      </section>
+
+      <section id="install">
+        <h2>第一步：下载并安装 ChatGPT、Claude Code 与 CC Switch</h2>
+        <ol class="steps">
+          <li><strong>下载 ChatGPT App 或 Linux 命令行版本</strong>macOS / Windows 桌面端请从 <a href="https://chatgpt.com/zh-Hans-CN/download/" target="_blank" rel="noopener noreferrer">ChatGPT 官方下载页</a> 获取；Linux 或命令行使用请看 <a href="https://developers.openai.com/codex/cli/" target="_blank" rel="noopener noreferrer">ChatGPT 官方 CLI 使用说明</a>。官方站点需要可访问官方网络环境。</li>
+          <li><strong>没有官方网络环境时</strong>可访问 <a href="https://codexapp.agentsmirror.com" target="_blank" rel="noopener noreferrer">codexapp.agentsmirror.com</a> 下载对应版本。安装完成后，至少成功打开一次 ChatGPT App 或命令行版本。</li>
+          <li><strong>Claude Code 也可单独使用</strong>如更习惯命令行，可按 <a href="https://code.claude.com/docs/en/overview" target="_blank" rel="noopener noreferrer">Claude Code 官方说明</a>安装并至少启动一次。</li>
+          <li><strong>安装 CC Switch</strong>前往 <a href="https://ccswitch.io/" target="_blank" rel="noopener noreferrer">CC Switch 官网</a> 或 <a href="https://github.com/farion1231/cc-switch/releases" target="_blank" rel="noopener noreferrer">GitHub Releases</a>，下载与你的 Windows、macOS 或 Linux 系统匹配的安装包。</li>
+          <li><strong>打开一次 CC Switch</strong>首次打开时，按界面提示允许它识别本机已安装的 ChatGPT 或 Claude Code。这里不需要填写本站 Key。</li>
+        </ol>
+      </section>
+
+      <section id="key">
+        <h2>第二步：在本站创建个人密钥</h2>
+        <ol class="steps">
+          <li><strong>登录 ZPIKA 控制台</strong>进入密钥管理页面，点击新建密钥。</li>
+          <li><strong>给密钥取一个容易识别的名字</strong>例如 <code>我的电脑-CCS</code>。一个设备或一种用途使用一把 Key，日后停用或排错会更方便。</li>
+          <li><strong>默认使用 ChatGPT 分组</strong>新建令牌默认分配到 ChatGPT 对应分组（控制台中仍可能显示原分组名称），用于 ChatGPT 或命令行版本接入时通常无需额外调整。</li>
+          <li><strong>需要其它模型时，先看模型广场</strong>打开模型广场查看每个可选分组包含哪些模型、对应什么用途以及调用倍率。确认需要的模型后，再把密钥调整到匹配的分组。</li>
+          <li><strong>在密钥选项中选择 CC Switch</strong>创建后，在该 Key 的选项里选择 <code>CCS</code> / <code>CC Switch</code>。页面会弹出或提供一键配置入口。</li>
+        </ol>
+        <p>不同分组的可用模型和调用倍率不同，先在模型广场确认再调整。不要把 Key 复制到公开位置；正常情况下，你只需要通过一键配置入口把它交给本机的 CC Switch。</p>
+      </section>
+
+      <section id="import">
+        <h2>第三步：导入到 CC Switch</h2>
+        <ol class="steps">
+          <li><strong>点击本站弹窗中的导入按钮</strong>浏览器可能会询问是否允许打开 CC Switch；请选择允许 / 打开。</li>
+          <li><strong>在 CC Switch 中确认保存</strong>它会带入本站的连接信息和你的 Key。确认目标工具是 ChatGPT 或 Claude Code，然后保存为当前配置。</li>
+          <li><strong>完全退出正在运行的工具</strong>关闭当前终端、ChatGPT 或 Claude Code 会话，再重新打开。多数命令行工具会在启动时读取新配置。</li>
+        </ol>
+        <pre><code>推荐顺序
+1. 先安装 ChatGPT 或 Claude Code
+2. 再安装并打开 CC Switch
+3. 在本站新建 Key，选择 CCS
+4. 允许浏览器唤起 CC Switch 并保存
+5. 重启 ChatGPT 或 Claude Code</code></pre>
+      </section>
+
+      <section id="verify">
+        <h2>第四步：确认已经连通</h2>
+        <p>重新打开你使用的工具，创建一个新会话，输入一个简单任务，例如“请用一句话说明这个项目的作用”。能正常收到回复，就表示配置已生效。</p>
+        <ul class="checklist">
+          <li>新终端或新会话里能正常发起请求。</li>
+          <li>CC Switch 中当前选中的配置是刚刚导入的 ZPIKA 配置。</li>
+          <li>没有把 API Key 粘贴到对话内容、代码仓库或截图中。</li>
+        </ul>
+      </section>
+
+      <section id="image-in-chatgpt">
+        <h2>可选：在 ChatGPT App 里调用外部生图</h2>
+        <div class="notice">
+          <span class="notice-mark" aria-hidden="true">!</span>
+          <span><strong>同一把 Key 暂不支持同时用于 ChatGPT 推理和生图模型</strong><span>需要在 ChatGPT App 内测试生图时，请另建或调整一把属于图片模型分组的 Key。不要拿当前 ChatGPT 推理 Key 直接调用 <code>gpt-image-2</code>。</span></span>
+        </div>
+        <p>下面是一种让 ChatGPT App 帮你在<strong>本机项目目录</strong>里测试生图的办法。它不是内建的图片按钮，而是由 ChatGPT 根据配置文件生成并运行一个调用图片接口的小工具。</p>
+        <ol class="steps">
+          <li><strong>准备图片模型 Key</strong>在模型广场确认 <code>gpt-image-2</code> 所属的图片分组与倍率，再创建或调整一把图片模型 Key。</li>
+          <li><strong>在项目根目录新建配置文件</strong>创建 <code>image-gen-env.txt</code>，仅保存在自己的电脑中，并将它加入 <code>.gitignore</code>，避免 Key 被提交到仓库。</li>
+        </ol>
+        <pre><code># image-gen-env.txt
+base_url=<abbr class="direct-domain" title="当前画布已配置直连域名，可直接使用。如有需要请单独联系站长获取">[直连域名]</abbr>
+api_key=sk-你的图片模型Key
+image_model=gpt-image-2
+out_path=/你的图片输出文件夹</code></pre>
+        <ol class="steps continue">
+          <li><strong>让 ChatGPT 写一个首次测试工具</strong>在 ChatGPT App 中告诉当前可用的推理模型（例如 <code>gpt-5.5</code>）：“读取 <code>image-gen-env.txt</code>，按 ZPIKA 的 <a href="gpt-image-2.html">gpt-image-2 图片接口文档</a>写一个生图测试工具。只读取文件中的 <code>api_key</code>，不要依赖 <code>OPENAI_API_KEY</code>，不要把 Key 写入日志；将生成结果下载到 <code>out_path</code>。”</li>
+          <li><strong>先完成一次小测试</strong>让它生成一张简单图片并保存到输出目录。首次运行可能需要安装项目依赖；确认它准备执行的命令和改动后再允许。</li>
+          <li><strong>成功后做成可复用 skill</strong>继续让 ChatGPT 在当前项目中创建名为 <code>imagegen-preview</code> 的 skill：以后读取同一份 <code>image-gen-env.txt</code>，接收提示词，调用图片接口，并输出或展示保存后的图片路径。</li>
+        </ol>
+        <div class="card-grid">
+          <div class="mini-card">
+            <h3>gpt-image-2</h3>
+            <p>适合先跑通上面的流程。接口是 OpenAI 兼容的图片生成格式，详情见 <a href="gpt-image-2.html">gpt-image-2 文档</a>。</p>
+          </div>
+          <div class="mini-card">
+            <h3>banana / Gemini 生图</h3>
+            <p>需要对应的图片分组 Key。把 <a href="gemini-image.html">Gemini 生图文档</a>链接交给 ChatGPT，让它按 Gemini 原生请求规则另建或调整 skill；不要只把 <code>gpt-image-2</code> 改成 banana 模型名。</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="other-agents">
+        <h2>其他国内 Agent 客户端：手动接入</h2>
+        <p>除 ChatGPT、Claude Code、Gemini 外，其他支持自定义兼容接口的 Agent 客户端同样可以使用本站。本站令牌页的 <code>CCS</code> 一键配置目前只覆盖 ChatGPT、Claude Code 与 Gemini；以下客户端请在各自的“自定义 Provider / 模型提供商 / API 设置”中手动填写。</p>
+        <div class="card-grid">
+          <div class="mini-card">
+            <h3>DeepSeek Harness（DSH）</h3>
+            <p>DeepSeek 的开源 Agent Harness，适合通过 Profile 和插件组合运行。参考 <a href="https://www.deepseek.com/en/harness/" target="_blank" rel="noopener noreferrer">DSH 官方页面</a>寻找自定义 Provider 配置入口。</p>
+          </div>
+          <div class="mini-card">
+            <h3>Kimi Code</h3>
+            <p>月之暗面的编程 Agent，覆盖桌面端、CLI 与 IDE 插件。参考 <a href="https://www.kimi.com/code" target="_blank" rel="noopener noreferrer">Kimi Code</a>中的模型提供商或 API 设置。</p>
+          </div>
+          <div class="mini-card">
+            <h3>智谱 GLM Coding</h3>
+            <p>智谱的 GLM Coding Plan / Agent 工具生态。若客户端提供自定义兼容接口配置，可参考 <a href="https://docs.z.ai/devpack/quick-start" target="_blank" rel="noopener noreferrer">Z.ai Coding 快速开始</a>的接入概念进行设置。</p>
+          </div>
+        </div>
+        <h3>手动填写这三项</h3>
+        <ol class="steps">
+          <li><strong>Base URL</strong>填写 <code><abbr class="direct-domain" title="当前画布已配置直连域名，可直接使用。如有需要请单独联系站长获取">[直连域名]</abbr></code>；若客户端要求将版本路径一并填写，则使用 <code><abbr class="direct-domain" title="当前画布已配置直连域名，可直接使用。如有需要请单独联系站长获取">[直连域名]</abbr>/v1</code>。</li>
+          <li><strong>API Key</strong>填写本站创建的 Key，并确保 Key 已调整到要使用模型对应的分组。</li>
+          <li><strong>模型</strong>在模型广场确认该分组可用模型后，按模型 ID 原样填写。例如文本模型可填当前 Key 所在分组展示的模型 ID。</li>
+        </ol>
+        <div class="notice">
+          <span class="notice-mark" aria-hidden="true">!</span>
+          <span><strong>先确认客户端支持自定义兼容接口</strong><span>不同客户端的设置名称和入口不同，但核心都是 Base URL、API Key、模型三项。若客户端没有自定义 Provider / OpenAI 兼容接口入口，则不能通过本站手动接入。</span></span>
+        </div>
+      </section>
+
+      <section id="optional">
+        <h2>可选增强：Codex++</h2>
+        <p>如果你使用的是<strong>官方 ChatGPT 桌面应用</strong>，并希望增加供应商管理、会话管理或界面增强等能力，可以在官方应用安装并能正常启动后，再考虑安装开源项目 <a href="https://github.com/BigPizzaV3/CodexPlusPlus" target="_blank" rel="noopener noreferrer">Codex++</a>。</p>
+        <div class="notice">
+          <span class="notice-mark" aria-hidden="true">+</span>
+          <span><strong>它是可选增强工具，不是接入本站的前提</strong><span>先用 CC Switch 跑通 ChatGPT 或 Claude Code，再安装 Codex++。安装后请从 Codex++ 的入口启动官方 ChatGPT，并按该项目的说明完成设置。</span></span>
+        </div>
+        <div class="cta-row">
+          <a class="cta" href="https://github.com/BigPizzaV3/CodexPlusPlus/releases" target="_blank" rel="noopener noreferrer">打开 Codex++ Releases →</a>
+          <a class="cta secondary" href="https://github.com/BigPizzaV3/CodexPlusPlus" target="_blank" rel="noopener noreferrer">查看项目说明</a>
+        </div>
+      </section>
+
+      <section id="faq" class="faq">
+        <h2>常见问题</h2>
+        <h3>点了 CCS 后没有弹出 CC Switch？</h3>
+        <p>先确认 CC Switch 已安装并至少打开过一次；然后在浏览器地址栏附近查看是否拦截了“打开外部应用”的请求，选择允许后再试。仍无效时，回到密钥选项重新生成一键配置入口。</p>
+        <h3>导入成功后，ChatGPT 或 Claude Code 还是走旧配置？</h3>
+        <p>请完全退出工具和终端后重新打开，并在 CC Switch 确认刚导入的配置处于当前启用状态。不要同时手动编辑同一份配置文件，以免被工具覆盖。</p>
+        <h3>中转站的号池变化会让我的历史会话消失吗？</h3>
+        <p>不会。会话记录保存在你的本地设备中，不会因为中转站某个上游账号不可用而消失。中转站使用多个上游账号；只要你的 Key 仍有效且有余额，就可以继续使用。即使之后切换为自己的 GPT 账号，原有本地会话数据仍会保留。</p>
+        <h3>我可以把同一把 Key 发给朋友吗？</h3>
+        <p>不建议。Key 会计入你的账户用量，也难以追踪问题。请让每位使用者在自己的账户中创建并管理自己的 Key。</p>
+        <h3>想恢复官方登录怎么办？</h3>
+        <p>在 CC Switch 中切换回官方配置，再按 ChatGPT 或 Claude Code 的官方登录流程登录即可。保留不同配置，日后可以随时切回 ZPIKA。</p>
+      </section>
+    </article>
+  </main>
+
+  <footer>ZPIKA // BEGINNER CONNECTION GUIDE</footer>
+</body>
+</html>

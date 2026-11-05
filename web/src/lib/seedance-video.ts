@@ -134,12 +134,12 @@ export function seedanceMaxDuration(model: string) {
 
 export function normalizeSeedanceDuration(value: string, model = "") {
     if (String(value).trim() === "-1" && !isSeedance25Model(model) && !seedanceDatedModels.has(model.toLowerCase())) return -1;
-    const seconds = Math.floor(Number(value) || 10);
+    const seconds = Math.floor(Number(value) || 5);
     return Math.max(4, Math.min(seedanceMaxDuration(model), seconds));
 }
 
 export function normalizeSeedanceRatio(value: string) {
-    if (!value) return "9:16";
+    if (!value) return "16:9";
     if (value === "auto" || value === "adaptive") return "adaptive";
     if (seedanceRatioOptions.some((item) => item.value === value)) return value;
     const match = value.match(/^(\d+)x(\d+)$/);

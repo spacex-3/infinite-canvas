@@ -67,7 +67,7 @@ export type AiConfig = {
 };
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
-export const CONFIG_STORE_VERSION = 7;
+export const CONFIG_STORE_VERSION = 8;
 
 export const ZPIKA_BASE_URL = "https://vip.zpika.com";
 export const ZPIKA_DIRECT_BASE_URL = "https://aivideo.zpika.com";
@@ -178,9 +178,9 @@ export const defaultConfig: AiConfig = {
     audioFormat: "mp3",
     audioSpeed: "1",
     audioInstructions: "",
-    videoSize: "9:16",
-    videoSeconds: "10",
-    vquality: "1080p",
+    videoSize: "16:9",
+    videoSeconds: "5",
+    vquality: "480p",
     videoGenerateAudio: "true",
     videoWatermark: "false",
     systemPrompt: "",
@@ -293,6 +293,20 @@ export function migrateGenerationDefaults<
         }
         if (!next.videoSize) {
             next = { ...next, videoSize: "9:16" };
+        }
+    }
+
+    // v8: Seedance Mini product defaults — landscape 480p, 5 seconds.
+    if (persistedVersion < 8) {
+        if (!next.videoSeconds || next.videoSeconds === "10") {
+            next = { ...next, videoSeconds: "5" };
+        }
+        const vquality = String(next.vquality || "").toLowerCase();
+        if (!vquality || vquality === "1080" || vquality === "1080p") {
+            next = { ...next, vquality: "480p" };
+        }
+        if (!next.videoSize || next.videoSize === "9:16") {
+            next = { ...next, videoSize: "16:9" };
         }
     }
 

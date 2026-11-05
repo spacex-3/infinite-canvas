@@ -45,10 +45,10 @@ describe("custom channel access", () => {
         expect(normalizeCustomChannelProtocol(undefined)).toBe("openai");
     });
 
-    test("uses independent vertical 1080p 10-second video defaults", () => {
-        expect(defaultConfig.videoSize).toBe("9:16");
-        expect(defaultConfig.videoSeconds).toBe("10");
-        expect(defaultConfig.vquality).toBe("1080p");
+    test("uses Seedance Mini landscape 480p 5-second video defaults", () => {
+        expect(defaultConfig.videoSize).toBe("16:9");
+        expect(defaultConfig.videoSeconds).toBe("5");
+        expect(defaultConfig.vquality).toBe("480p");
         expect(defaultConfig.quality).toBe("high");
         expect(defaultConfig.size).toBe("9:16");
         expect(defaultConfig.count).toBe("1");
@@ -81,15 +81,15 @@ describe("custom channel access", () => {
             quality: "high",
             size: "9:16",
             canvasImageCount: "1",
-            videoSeconds: "10",
-            vquality: "1080p",
+            videoSeconds: "5",
+            vquality: "480p",
         });
         expect(configStore.migrateGenerationDefaults!({ quality: "high", size: "1:1", canvasImageCount: "3", videoSeconds: "6", vquality: "720p" }, 3)).toMatchObject({
             quality: "high",
             size: "9:16",
             canvasImageCount: "1",
-            videoSeconds: "10",
-            vquality: "1080p",
+            videoSeconds: "5",
+            vquality: "480p",
         });
         // already on v4 — leave intentional user choices alone
         expect(configStore.migrateGenerationDefaults!({ quality: "medium", size: "1:1", canvasImageCount: "3", videoSeconds: "6", vquality: "720" }, 4)).toMatchObject({
@@ -98,6 +98,11 @@ describe("custom channel access", () => {
             canvasImageCount: "3",
             videoSeconds: "6",
             vquality: "720",
+        });
+        expect(configStore.migrateGenerationDefaults!({ videoSize: "9:16", videoSeconds: "10", vquality: "1080p" }, 7)).toMatchObject({
+            videoSize: "16:9",
+            videoSeconds: "5",
+            vquality: "480p",
         });
         // migrateImageDefaults remains as a compatible alias
         expect(configStore.migrateImageDefaults!({ quality: "auto", size: "1:1" }, 0)).toMatchObject({ quality: "high", size: "9:16" });

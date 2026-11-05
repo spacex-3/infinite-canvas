@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ZPIKA API 文档门户：视频接口与图片接口接入说明">
+  <title>ZPIKA // API DOCS</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --pixel-dark: #1a1c2c;
+      --pixel-light: #f4f4f4;
+      --pixel-paper: #ffffff;
+      --pixel-muted: #5f574f;
+      --pixel-red: #ff004d;
+      --pixel-green: #00e436;
+      --pixel-blue: #29adff;
+      --pixel-yellow: #ffec27;
+      --pixel-orange: #ffa300;
+      --pixel-pink: #ff77a8;
+      --ink: #1a1c2c;
+      --canvas: #ece9e0;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(26,28,44,.04) 1px, transparent 1px) 0 0 / 16px 16px,
+        linear-gradient(rgba(26,28,44,.04) 1px, transparent 1px) 0 0 / 16px 16px,
+        var(--canvas);
+      font-family: "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    a { color: inherit; }
+    code, .mono {
+      font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    .direct-domain { color: inherit; text-decoration: underline dotted currentColor; text-underline-offset: 3px; cursor: help; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: var(--pixel-paper);
+      border-bottom: 4px solid var(--pixel-dark);
+    }
+    .topbar-inner {
+      width: min(1080px, calc(100% - 32px));
+      min-height: 64px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--pixel-dark);
+      font-family: ui-monospace, Consolas, monospace;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      font-size: 13px;
+    }
+    .brand-mark {
+      width: 16px;
+      height: 16px;
+      background:
+        linear-gradient(90deg, var(--pixel-red) 50%, var(--pixel-blue) 50%) 0 0 / 100% 50% no-repeat,
+        linear-gradient(90deg, var(--pixel-yellow) 50%, var(--pixel-green) 50%) 0 100% / 100% 50% no-repeat;
+      border: 2px solid var(--pixel-dark);
+      box-shadow: 2px 2px 0 var(--pixel-dark);
+      image-rendering: pixelated;
+      flex: 0 0 auto;
+    }
+    .nav-links {
+      display: flex;
+      gap: 18px;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .nav-links a {
+      text-decoration: none;
+      color: var(--pixel-muted);
+    }
+    .nav-links a:hover { color: var(--pixel-dark); }
+
+    .hero {
+      border-bottom: 4px solid var(--pixel-dark);
+      background: var(--pixel-yellow);
+    }
+    .hero-inner {
+      width: min(1080px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 56px 0 56px;
+    }
+    .eyebrow {
+      display: inline-block;
+      margin: 0 0 14px;
+      padding: 6px 10px;
+      background: var(--pixel-dark);
+      color: var(--pixel-yellow);
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      box-shadow: 3px 3px 0 var(--pixel-red);
+    }
+    h1 {
+      margin: 0;
+      max-width: 14ch;
+      font-size: clamp(36px, 7vw, 64px);
+      line-height: 1.05;
+      letter-spacing: -.02em;
+      text-transform: uppercase;
+    }
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 28px;
+      margin-bottom: 8px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: var(--pixel-paper);
+      border: 3px solid var(--pixel-dark);
+      box-shadow: 3px 3px 0 var(--pixel-dark);
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.35;
+    }
+    .chip .dot {
+      width: 8px;
+      height: 8px;
+      background: var(--pixel-green);
+      border: 1px solid var(--pixel-dark);
+    }
+
+    main {
+      width: min(1080px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 56px 0 72px;
+      display: flex;
+      flex-direction: column;
+    }
+    #beginner { order: 1; }
+    #image { order: 2; }
+    #video { order: 3; }
+    #canvas { order: 4; }
+    #base { order: 5; }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 0 0 22px;
+    }
+    .section-head h2 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .section-head p {
+      margin: 0;
+      color: var(--pixel-muted);
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .group + .group { margin-top: 42px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+      padding: 18px;
+      background: var(--pixel-paper);
+      border: 4px solid var(--pixel-dark);
+      box-shadow: 6px 6px 0 var(--pixel-dark);
+      text-decoration: none;
+      color: inherit;
+      transition: transform .1s ease, box-shadow .1s ease;
+    }
+    a.card:hover {
+      transform: translate(2px, 2px);
+      box-shadow: 4px 4px 0 var(--pixel-dark);
+    }
+    a.card:active {
+      transform: translate(6px, 6px);
+      box-shadow: 0 0 0 var(--pixel-dark);
+    }
+    .card.disabled {
+      opacity: .88;
+      background: #f7f4ea;
+      box-shadow: 4px 4px 0 #8b8680;
+      border-color: #5f574f;
+    }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 5px 8px;
+      border: 2px solid var(--pixel-dark);
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .badge.video { background: var(--pixel-blue); color: var(--pixel-dark); }
+    .badge.guide { background: var(--pixel-orange); color: var(--pixel-dark); }
+    .badge.soon { background: var(--pixel-light); color: var(--pixel-muted); border-color: #8b8680; }
+    .badge.image { background: var(--pixel-pink); color: var(--pixel-dark); }
+    .badge.canvas { background: var(--pixel-green); color: var(--pixel-dark); }
+    .badge.start { background: var(--pixel-yellow); color: var(--pixel-dark); }
+
+    .method {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .06em;
+      color: var(--pixel-red);
+    }
+
+    .card h3 {
+      margin: 0 0 12px;
+      font-size: 20px;
+      line-height: 1.25;
+    }
+    .card p {
+      margin: 0 0 4px;
+      color: var(--pixel-muted);
+      font-size: 14px;
+      flex: 1;
+      line-height: 1.7;
+    }
+    .card p code {
+      display: inline-block;
+      padding: 3px 8px;
+      margin: 2px 2px 6px 0;
+      border: 2px solid var(--pixel-dark);
+      background: #e7f7ff;
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: nowrap;
+      max-width: 100%;
+      vertical-align: baseline;
+    }
+    .card-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 28px;
+      padding-top: 18px;
+      border-top: 3px solid var(--pixel-dark);
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      line-height: 1.3;
+    }
+    .card.disabled .card-foot {
+      border-top-color: #8b8680;
+      color: var(--pixel-muted);
+    }
+    .arrow {
+      display: inline-grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      background: var(--pixel-red);
+      color: #fff;
+      border: 2px solid var(--pixel-dark);
+      box-shadow: 2px 2px 0 var(--pixel-dark);
+    }
+    .card.disabled .arrow {
+      background: #cfc8bc;
+      color: var(--pixel-dark);
+      box-shadow: none;
+    }
+
+    .panel {
+      margin-top: 42px;
+      padding: 20px;
+      background: var(--pixel-dark);
+      color: var(--pixel-light);
+      border: 4px solid var(--pixel-dark);
+      box-shadow: 6px 6px 0 var(--pixel-red);
+    }
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--pixel-yellow);
+      font-family: ui-monospace, Consolas, monospace;
+    }
+    .panel p { margin: 0 0 12px; color: #d7d3c8; }
+    .panel code {
+      display: inline-block;
+      padding: 6px 10px;
+      background: #0f111a;
+      border: 2px solid #3a3d55;
+      color: var(--pixel-green);
+      font-size: 13px;
+    }
+    .panel ul {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      color: #d7d3c8;
+    }
+    .panel li { margin: 6px 0; }
+
+    footer {
+      border-top: 4px solid var(--pixel-dark);
+      background: var(--pixel-paper);
+      padding: 22px 16px;
+      text-align: center;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--pixel-muted);
+    }
+
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      .section-head { align-items: flex-start; flex-direction: column; }
+    }
+    @media (max-width: 640px) {
+      .topbar-inner {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 14px 0;
+        gap: 10px;
+      }
+      .nav-links {
+        width: 100%;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      .hero-inner { padding: 40px 0 44px; }
+      main { padding-top: 40px; }
+      h1 { max-width: none; font-size: 34px; }
+      .card { box-shadow: 4px 4px 0 var(--pixel-dark); }
+    }
+  </style>
+</head>
+<body>
+  <nav class="topbar" aria-label="文档导航">
+    <div class="topbar-inner">
+      <a class="brand" href="index.html" aria-current="page">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>ZPIKA // API DOCS</span>
+      </a>
+      <div class="nav-links">
+        <a href="#beginner">Start</a>
+        <a href="#image">Image</a>
+        <a href="#video">Video</a>
+        <a href="#canvas">Canvas</a>
+        <a href="#base">Base URL</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="hero-inner">
+      <p class="eyebrow">Customer Integration Portal</p>
+      <h1>ZPIKA API Docs</h1>
+      <div class="hero-meta" aria-label="文档状态">
+        <span class="chip"><span class="dot" aria-hidden="true"></span>VIDEO READY</span>
+        <span class="chip"><span class="dot" aria-hidden="true"></span>IMAGE READY</span>
+        <span class="chip mono"><abbr class="direct-domain" title="当前画布已配置直连域名，可直接使用。如有需要请单独联系站长获取">[直连域名]</abbr></span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="group" id="beginner" aria-labelledby="beginner-title">
+      <div class="section-head">
+        <h2 id="beginner-title">新手接入</h2>
+        <p>start here</p>
+      </div>
+      <div class="grid">
+        <a class="card" href="beginner-cc-switch.html">
+          <div class="card-top">
+            <span class="badge start">Start</span>
+            <span class="method">GUIDE</span>
+          </div>
+          <h3>ChatGPT / Claude Code 新手接入</h3>
+          <p>从安装工具、创建 ZPIKA 密钥，到用 CC Switch 一键导入配置并完成第一次调用。</p>
+          <div class="card-foot">
+            <span>打开新手说明</span>
+            <span class="arrow" aria-hidden="true">→</span>
+          </div>
+        </a>
+
+        <a class="card" href="https://ccswitch.io/" target="_blank" rel="noopener noreferrer">
+          <div class="card-top">
+            <span class="badge start">Tool</span>
+            <span class="method">OPEN</span>
+          </div>
+          <h3>CC Switch</h3>
+          <p>用图形界面管理 ChatGPT 与 Claude Code 的中转配置，无需手动编辑配置文件。</p>
+          <div class="card-foot">
+            <span>打开官网</span>
+            <span class="arrow" aria-hidden="true">↗</span>
+          </div>
+        </a>
+
+        <a class="card" href="https://github.com/BigPizzaV3/CodexPlusPlus" target="_blank" rel="noopener noreferrer">
+          <div class="card-top">
+            <span class="badge start">Optional</span>
+            <span class="method">OPEN</span>
+          </div>
+          <h3>Codex++</h3>
+          <p>安装官方 ChatGPT 桌面应用后可选的开源增强工具，提供供应商管理与更多桌面功能。</p>
+          <div class="card-foot">
+            <span>查看项目</span>
+            <span class="arrow" aria-hidden="true">↗</span>
+          </div>
+        </a>
+      </div>
+    </section>
+
+    <section class="group" id="canvas" aria-labelledby="canvas-title">
+      <div class="section-head">
+        <h2 id="canvas-title">无限画布</h2>
+        <p>product workspace</p>
+      </div>
+      <div class="grid">
+        <a class="card" href="canvas.html">
+          <div class="card-top">
+            <span class="badge canvas">Canvas</span>
+            <span class="method">GUIDE</span>
+          </div>
+          <h3>ZPIKA 无限画布</h3>
+          <p>注册 → 管理员审核 → 按 4 个锁定分组填 Key（文字 / OpenAI画图 / Gemini画图 / 视频）。</p>
+          <div class="card-foot">
+            <span>打开说明</span>
+            <span class="arrow" aria-hidden="true">→</span>
+          </div>
+        </a>
+
+        <a class="card" href="https://canvas.zpika.com/" target="_blank" rel="noopener noreferrer">
+          <div class="card-top">
+            <span class="badge canvas">Live</span>
+            <span class="method">OPEN</span>
+          </div>
+          <h3>canvas.zpika.com</h3>
+          <p>直接打开画布站点。新账号先注册并邮件 <code>snamio131@gmail.com</code> 审核，通过后在配置页按分组填 Key。</p>
+          <div class="card-foot">
+            <span>访问站点</span>
+            <span class="arrow" aria-hidden="true">↗</span>
+          </div>
+        </a>
+
+        <div class="card disabled" aria-disabled="true">
+          <div class="card-top">
+            <span class="badge soon">Tip</span>
+            <span class="method">HOSTS</span>
+          </div>
+          <h3>直连域名预设</h3>
+          <p>当前画布已配置 <code><abbr class="direct-domain" title="当前画布已配置直连域名，可直接使用。如有需要请单独联系站长获取">[直连域名]</abbr></code>，可用于模型拉取与生成请求。推荐模型拉取后会自动勾选。</p>
+          <div class="card-foot">
+            <span>见说明页</span>
+            <span class="arrow" aria-hidden="true">···</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="group" id="video" aria-labelledby="video-title">
+      <div class="section-head">
+        <h2 id="video-title">视频接口</h2>
+        <p>4 docs live</p>
+      </div>
+      <div class="grid">
+        <a class="card" href="seedance.html">
+          <div class="card-top">
+            <span class="badge video">Default</span>
+            <span class="method">POST</span>
+          </div>
+          <h3>Seedance 2.0 / 2.5</h3>
+          <p>默认视频模型，支持文生、图片/视频/音频参考、画布 @ 引用、异步进度与客户价格说明。</p>
+          <div class="card-foot">
+            <span>打开文档</span>
+            <span class="arrow" aria-hidden="true">→</span>
+          </div>
+        </a>
+
+        <a class="card" href="veo-omni-flash.html">
+          <div class="card-top">
+            <span class="badge video">Video</span>
+            <span class="method">POST</span>
+          </div>
+          <h3>VEO Omni Flash</h3>
+          <p>多参考图视频生成。最多 6 张参考图，异步提交与轮询查询。</p>
+          <div class="card-foot">
+            <span>打开文档</span>
+            <span class="arrow" aria-hidden="true">→</span>
+          </div>
+        </a>
+
+        <a class="card" href="veo-omni-flash-video-edit.html">
+          <div class="card-top">
+            <span class="badge video">Video</span>
+            <span class="method">POST</span>
+          </div>
+          <h3>Video Edit</h3>
+          <p>基于 1 个参考视频进行编辑，可附加参考图片，任务异步执行。</p>
+          <div class="card-foot">
+            <span>打开文档</span>
+            <span class="arrow" aria-hidden="true">→</span>
+          </div>
+        </a>
+
+        <a class="card" href="omni-video-content-review-guide.html">
+          <div class="card-top">
+            <span class="badge guide">Guide</span>
+            <span class="method">TIPS</span>
+          </div>
+          <h3>内容审查指南</h3>
+          <p>视频 + 图片统一避坑：内容审查、音频版权失败、安全改写与提交前自检。</p>
+          <div class="card-foot">
+            <span>打开文档</span>
+            <span class="arrow" aria-hidden="true">→</span>
+          </div>
+        </a>
+      </div>
+    </section>
+
+    <section class="group" id="image" aria-labelledby="image-title">
+      <div class="section-head">
+        <h2 id="image-title">图片接口</h2>
+        <p>2 docs live</p>
+      </div>
+      <div class="grid">
+        <a class="card" href="gpt-image-2.html">
+          <div class="card-top">
+            <span class="badge image">Image</span>
+            <span class="method">POST</span>
+          </div>
+          <h3>gpt-image-2</h3>
+          <p>OpenAI 格式 <code>/v1/images/generations</code>，分组：gpt-image-2 超分。支持高清尺寸示例 4096*4096。</p>
+          <div class="card-foot">
+            <span>打开文档</span>
+            <span class="arrow" aria-hidden="true">→</span>
+          </div>
+        </a>
+
+        <a class="card" href="gemini-image.html">
+          <div class="card-top">
+            <span class="badge image">Image</span>
+            <span class="method">POST</span>
+          </div>
+          <h3>Gemini 生图</h3>
+          <p>原生 Gemini 格式，banana 分组。Flash / Pro 均可 4K，支持文生图、图生图与多图融合。</p>
+          <div class="card-foot">
+            <span>打开文档</span>
+            <span class="arrow" aria-hidden="true">→</span>
+          </div>
+        </a>
+
+        <div class="card disabled" aria-disabled="true">
+          <div class="card-top">
+            <span class="badge soon">Soon</span>
+            <span class="method">SLOT</span>
+          </div>
+          <h3>预留入口</h3>
+          <p>后续可继续补充其它生图模型或批量接口。新增 HTML 后挂到本分组即可。</p>
+          <div class="card-foot">
+            <span>待添加</span>
+            <span class="arrow" aria-hidden="true">···</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="base" aria-labelledby="base-title">
+      <h2 id="base-title">Base URL // Auth</h2>
+      <p>图片与视频接口直连地址：</p>
+      <code><abbr class="direct-domain" title="当前画布已配置直连域名，可直接使用。如有需要请单独联系站长获取">[直连域名]</abbr></code>
+      <ul>
+        <li>直连地址由当前画布预设；将鼠标移到 <code style="padding:2px 6px;"><abbr class="direct-domain" title="当前画布已配置直连域名，可直接使用。如有需要请单独联系站长获取">[直连域名]</abbr></code> 可查看获取方式。</li>
+        <li>OpenAI 图片：<code style="padding:2px 6px;">POST /v1/images/generations</code>（模型 <code style="padding:2px 6px;">gpt-image-2</code>）</li>
+        <li>Gemini 图片：<code style="padding:2px 6px;">POST /v1beta/models/{model}:generateContent</code></li>
+        <li>视频任务提交：<code style="padding:2px 6px;">POST /v1/videos</code></li>
+        <li>视频任务查询：<code style="padding:2px 6px;">GET /v1/videos/{task_id}</code></li>
+        <li>请求头：<code style="padding:2px 6px;">Authorization: Bearer api-key</code>（Gemini 也可用 <code style="padding:2px 6px;">x-goog-api-key</code>）</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>ZPIKA // API DOCS · STATIC CUSTOMER PORTAL</footer>
+</body>
+</html>

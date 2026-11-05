@@ -202,19 +202,19 @@ function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, 
                     </div>
                 </SettingGroup>
                 <SettingGroup title="比例" color={theme.node.muted}>
-                    <div className="grid grid-cols-3 gap-2.5">
+                    <div className="grid grid-cols-2 gap-2.5">
                         {seedanceRatioOptions.map((item) => (
                             <button
                                 key={item.value}
                                 type="button"
-                                className="flex h-[68px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent px-1 text-sm transition hover:opacity-80"
+                                className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent px-2 text-sm transition hover:opacity-80"
                                 style={{ borderColor: ratio === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
                                 onMouseDown={(event) => event.stopPropagation()}
                                 onClick={() => onConfigChange("videoSize", item.value)}
                             >
                                 <SizePreview width={ratioPreview(item.value).width} height={ratioPreview(item.value).height} color={theme.node.text} />
-                                <span>{item.label}</span>
-                                <span className="text-[10px] leading-none opacity-55">{item.value === "adaptive" ? "adaptive" : seedancePixelLabel(resolution, item.value, model)}</span>
+                                <span>{item.value === "adaptive" ? item.label : `${item.label} ${item.value}`}</span>
+                                <span className="text-[10px] leading-none opacity-55">{item.value === "adaptive" ? "自动匹配" : `（${seedancePixelLabel(resolution, item.value, model)}）`}</span>
                             </button>
                         ))}
                     </div>
@@ -245,17 +245,17 @@ export function videoResolutionLabel(value: string) {
     return `${normalizeVideoResolutionValue(value)}p`;
 }
 
-export function videoSizeLabel(value: string) {
+export function videoSizeLabel(value: string, resolution = "", model = "") {
     const ratio = normalizeSeedanceRatio(value);
     if (value === "adaptive" || value === "auto") return "自适应";
-    if (ratio === value) return seedanceRatioOptions.find((item) => item.value === ratio)?.label || ratio;
+    if (ratio === value) return resolution ? `${ratio}（${seedancePixelLabel(resolution, ratio, model)}）` : ratio;
     const size = normalizeVideoSizeValue(value);
     return sizeOptions.find((item) => item.value === size)?.label || size;
 }
 
 export function videoSecondsLabel(value: string) {
     if (String(value).trim() === "-1") return "智能";
-    return `${value || "10"}s`;
+    return `${value || "5"}s`;
 }
 
 export function normalizeVideoSizeValue(value: string) {

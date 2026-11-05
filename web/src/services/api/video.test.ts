@@ -156,16 +156,16 @@ describe("readVideoResultUrl", () => {
 });
 
 describe("Veo Omni video payload", () => {
-    test("uses the global vertical video default independently from image size", () => {
+    test("uses the global landscape video default independently from image size", () => {
         const payload = buildVeoOmniPayload(defaultConfig, "veo-omni-flash", "生成视频", [], []);
 
-        expect(payload.aspect_ratio).toBe("9:16");
-        expect(payload.width).toBe(1080);
-        expect(payload.height).toBe(1920);
+        expect(payload.aspect_ratio).toBe("16:9");
+        expect(payload.width).toBe(1920);
+        expect(payload.height).toBe(1080);
         expect(defaultConfig.size).toBe("9:16");
-        expect(defaultConfig.videoSize).toBe("9:16");
-        expect(defaultConfig.vquality).toBe("1080p");
-        expect(defaultConfig.videoSeconds).toBe("10");
+        expect(defaultConfig.videoSize).toBe("16:9");
+        expect(defaultConfig.vquality).toBe("480p");
+        expect(defaultConfig.videoSeconds).toBe("5");
     });
 
     test("uses videoSize instead of the image size", () => {
