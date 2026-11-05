@@ -272,6 +272,7 @@ function InfiniteCanvasPage() {
     const [backgroundMode, setBackgroundMode] = useState<CanvasBackgroundMode>("lines");
     const [showImageInfo, setShowImageInfo] = useState(false);
     const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+    const [deleteConfirmIds, setDeleteConfirmIds] = useState<string[]>([]);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
     const [assetPickerTab, setAssetPickerTab] = useState<AssetPickerTab>("my-assets");
     const [projectLoaded, setProjectLoaded] = useState(false);
@@ -669,7 +670,7 @@ function InfiniteCanvasPage() {
         [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, effectiveConfig.videoSize, getCanvasCenter],
     );
 
-    const deleteNodes = useCallback(
+    const performDeleteNodes = useCallback(
         (ids: Set<string>) => {
             if (!ids.size) return;
             const allIds = new Set(ids);
@@ -714,6 +715,10 @@ function InfiniteCanvasPage() {
         },
         [chatSessions, cleanupCanvasFiles, projectId],
     );
+
+    const deleteNodes = useCallback((ids: Set<string>) => {
+        if (ids.size) setDeleteConfirmIds(Array.from(ids));
+    }, []);
 
     const deleteConnection = useCallback((connectionId: string) => {
         setConnections((prev) => prev.filter((conn) => conn.id !== connectionId));
@@ -2562,6 +2567,30 @@ function InfiniteCanvasPage() {
                             style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain" }}
                         />
                     ) : null}
+                </Modal>
+
+                <Modal
+                    title={deleteConfirmIds.length > 1 ? `删除 ${deleteConfirmIds.length} 个节点？` : "删除这个节点？"}
+                    open={deleteConfirmIds.length > 0}
+                    centered
+                    onCancel={() => setDeleteConfirmIds([])}
+                    footer={
+                        <>
+                            <Button onClick={() => setDeleteConfirmIds([])}>取消</Button>
+                            <Button
+                                danger
+                                type="primary"
+                                onClick={() => {
+                                    performDeleteNodes(new Set(deleteConfirmIds));
+                                    setDeleteConfirmIds([]);
+                                }}
+                            >
+                                删除
+                            </Button>
+                        </>
+                    }
+                >
+                    <p className="text-sm opacity-60">节点及相关连线将从当前画布移除，删除后仍可立即撤销。</p>
                 </Modal>
 
                 <Modal

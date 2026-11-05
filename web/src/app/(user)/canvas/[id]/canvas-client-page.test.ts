@@ -51,3 +51,11 @@ describe("CanvasClientPage generation progress", () => {
         expect(source).toContain('const updateRetryProgress = (progress: number, progressStage?: "generating" | "caching" | "downloading" | "saving")');
     });
 });
+
+describe("CanvasClientPage destructive actions", () => {
+    test("requires confirmation before deleting one or more nodes", () => {
+        expect(source).toContain("const [deleteConfirmIds, setDeleteConfirmIds]");
+        expect(source).toContain("performDeleteNodes(new Set(deleteConfirmIds))");
+        expect(source).toContain("节点及相关连线将从当前画布移除");
+    });
+});

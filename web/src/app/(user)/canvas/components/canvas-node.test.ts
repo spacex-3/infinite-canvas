@@ -24,6 +24,11 @@ describe("CanvasNode text actions", () => {
         expect(source).toContain('{canRecoverVideo ? "重新下载" : "重试"}');
     });
 
+    test("only lets the native control bar start video playback", () => {
+        expect(source).toContain('className="absolute inset-x-0 bottom-12 top-0 cursor-move rounded-t-[18px]"');
+        expect(source).toContain("<video src={node.metadata.content} controls");
+    });
+
     test("lets users select generated text without starting a node drag", () => {
         expect(textContentSource).toContain("cursor-text select-text");
         expect(textContentSource).toContain("onMouseDown={(event) => event.stopPropagation()}");

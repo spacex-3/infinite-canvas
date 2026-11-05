@@ -517,7 +517,12 @@ function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
                 <span className="text-sm">空视频节点</span>
             </div>
         );
-    return <video src={node.metadata.content} controls className="h-full w-full rounded-[18px] bg-black object-contain" data-canvas-no-zoom />;
+    return (
+        <div className="relative h-full w-full rounded-[18px] bg-black">
+            <video src={node.metadata.content} controls className="h-full w-full rounded-[18px] object-contain" data-canvas-no-zoom />
+            <div className="absolute inset-x-0 bottom-12 top-0 cursor-move rounded-t-[18px]" aria-hidden="true" />
+        </div>
+    );
 }
 
 function AudioNodeContent({ node, theme }: NodeContentRendererProps) {

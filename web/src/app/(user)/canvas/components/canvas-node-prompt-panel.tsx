@@ -8,6 +8,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, isModelAvailableForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { CreditSymbol, requestCreditCost, shouldShowRequestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { isSeedanceVideoModel, normalizeSeedanceResolution } from "@/lib/seedance-video";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasPromptLibrary } from "./canvas-prompt-library";
@@ -19,7 +20,7 @@ import type { CanvasResourceReference } from "../utils/canvas-resource-reference
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
-const DEFAULT_PANEL_WIDTH = 500;
+const DEFAULT_PANEL_WIDTH = 580;
 const MIN_PANEL_WIDTH = 360;
 const MAX_PANEL_WIDTH = 960;
 const DEFAULT_TEXTAREA_HEIGHT = 112;
@@ -114,7 +115,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     return (
         <div
             className="relative rounded-2xl border p-3 shadow-2xl backdrop-blur"
-            style={{ width: panelWidth, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
+            style={{ width: panelWidth, maxWidth: "calc(100vw - 24px)", background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
@@ -145,8 +146,8 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                         </>
                     ) : mode === "video" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="video" onMissingConfig={() => openConfigDialog(true)} />
-                            <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
+                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, videoModelPatch(config, model))} capability="video" onMissingConfig={() => openConfigDialog(true)} />
+                            <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[190px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
                         </>
                     ) : mode === "audio" ? (
                         <>
@@ -235,6 +236,10 @@ function videoConfigPatch(key: keyof AiConfig, value: string) {
     if (key === "videoGenerateAudio") return { generateAudio: value };
     if (key === "videoWatermark") return { watermark: value };
     return { [key]: value };
+}
+
+function videoModelPatch(config: AiConfig, model: string) {
+    return isSeedanceVideoModel(model) ? { model, vquality: normalizeSeedanceResolution(config.vquality, model) } : { model };
 }
 
 function audioConfigPatch(key: CanvasAudioSettingKey, value: string) {

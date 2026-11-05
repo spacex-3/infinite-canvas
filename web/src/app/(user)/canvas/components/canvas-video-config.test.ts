@@ -5,6 +5,7 @@ import { join } from "node:path";
 const canvasSource = readFileSync(join(import.meta.dir, "../[id]/canvas-client-page.tsx"), "utf8");
 const configPanelSource = readFileSync(join(import.meta.dir, "canvas-config-node-panel.tsx"), "utf8");
 const promptPanelSource = readFileSync(join(import.meta.dir, "canvas-node-prompt-panel.tsx"), "utf8");
+const settingsPopoverSource = readFileSync(join(import.meta.dir, "canvas-video-settings-popover.tsx"), "utf8");
 const typesSource = readFileSync(join(import.meta.dir, "../types.ts"), "utf8");
 
 describe("canvas video config", () => {
@@ -23,5 +24,11 @@ describe("canvas video config", () => {
         expect(canvasSource).toContain('isModelAvailableForCapability(effectiveConfig, savedImageMetadata.model, "image")');
         expect(configPanelSource).toContain("isModelAvailableForCapability(globalConfig, savedModel, mode)");
         expect(promptPanelSource).toContain("isModelAvailableForCapability(globalConfig, savedModel, mode)");
+    });
+
+    test("normalizes unsupported Seedance resolutions in controls and summaries", () => {
+        expect(configPanelSource).toContain("videoModelPatch(config, model)");
+        expect(promptPanelSource).toContain("videoModelPatch(config, model)");
+        expect(settingsPopoverSource).toContain("normalizeSeedanceResolution(config.vquality, config.model || config.videoModel)");
     });
 });

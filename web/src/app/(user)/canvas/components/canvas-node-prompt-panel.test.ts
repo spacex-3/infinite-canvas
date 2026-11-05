@@ -17,7 +17,7 @@ describe("CanvasNodePromptPanel", () => {
     });
 
     test("allows the prompt panel to be resized both horizontally and vertically", () => {
-        expect(source).toContain("DEFAULT_PANEL_WIDTH = 500");
+        expect(source).toContain("DEFAULT_PANEL_WIDTH = 580");
         expect(source).toContain("MAX_PANEL_WIDTH = 960");
         expect(source).toContain("MAX_TEXTAREA_HEIGHT = 640");
         expect(source).toContain('aria-label="调整输入框大小"');
@@ -25,5 +25,10 @@ describe("CanvasNodePromptPanel", () => {
         expect(source).toContain("setPanelWidth");
         expect(source).toContain("setTextareaHeight");
         expect(source).toContain("resize-none");
+    });
+
+    test("keeps the Seedance resolution valid when the video model changes", () => {
+        expect(source).toContain("videoModelPatch(config, model)");
+        expect(source).toContain("normalizeSeedanceResolution(config.vquality, model)");
     });
 });

@@ -7,6 +7,7 @@ import { Button } from "antd";
 
 import { VideoSettingsPanel, videoResolutionLabel, videoSecondsLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { isSeedanceVideoConfig, normalizeSeedanceResolution } from "@/lib/seedance-video";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
 
@@ -23,6 +24,7 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
     const panelRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
+    const resolution = isSeedanceVideoConfig(config) ? normalizeSeedanceResolution(config.vquality, config.model || config.videoModel) : config.vquality;
 
     useEffect(() => {
         if (!open) return;
@@ -52,7 +54,7 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
             <span ref={buttonRef} className="inline-flex min-w-0">
                 <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[170px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => setOpen((current) => !current)}>
                     <span className="truncate">
-                        {videoResolutionLabel(config.vquality)} · {videoSizeLabel(config.videoSize)} · {videoSecondsLabel(config.videoSeconds)}
+                        {videoResolutionLabel(resolution)} · {videoSizeLabel(config.videoSize)} · {videoSecondsLabel(config.videoSeconds)}
                     </span>
                 </Button>
             </span>
