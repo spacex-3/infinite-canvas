@@ -16,7 +16,8 @@ describe("ordinary-user custom channel configuration", () => {
         expect(modalSource).not.toContain("生成走 aivideo");
         expect(modalSource).toContain("每个分组通常对应中转站不同套餐 Key");
         expect(modalSource).toContain("applyPreferredModelsToChannel");
-        expect(modalSource).toContain("mode=\"tags\"");
+        expect(modalSource).toContain("mode=\"multiple\"");
+        expect(modalSource).toContain("filterModelsForZpikaChannel");
         expect(modalSource).toContain("拉取模型");
         expect(modalSource).toContain("setFetchedModels");
         expect(modalSource).not.toContain("新增渠道");

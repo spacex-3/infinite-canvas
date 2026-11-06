@@ -10,6 +10,7 @@ import { fetchImageModels } from "@/services/api/image";
 import {
     applyPreferredModelsToChannel,
     canUseCustomChannel,
+    filterModelsForZpikaChannel,
     preferredDefaultForChannel,
     useConfigStore,
     useEffectiveConfig,
@@ -112,7 +113,7 @@ export function AppConfigModal() {
                 apiKey: selectedChannel.apiKey,
                 model: selectedChannel.models[0] || preferredDefaultForChannel(selectedChannel),
             };
-            const models = uniqueModels(await fetchImageModels(requestConfig));
+            const models = filterModelsForZpikaChannel(selectedChannel.id, uniqueModels(await fetchImageModels(requestConfig)));
             setFetchedModels((current) => ({ ...current, [selectedChannel.id]: models }));
             const patched = applyPreferredModelsToChannel(selectedChannel, models);
             updateCustomChannel(patched);
@@ -311,23 +312,34 @@ export function AppConfigModal() {
                             </div>
 
                             <Form.Item label="API Key" className="mb-4" extra="每个分组通常对应中转站不同套餐 Key，请分别填写。">
-                                <Input.Password value={selectedChannel.apiKey} onChange={(event) => updateCustomChannel({ apiKey: event.target.value })} placeholder="sk-..." />
+                                <Input.Password
+                                    value={selectedChannel.apiKey}
+                                    onChange={(event) => {
+                                        const apiKey = event.target.value;
+                                        setFetchedModels((current) => {
+                                            const next = { ...current };
+                                            delete next[selectedChannel.id];
+                                            return next;
+                                        });
+                                        updateCustomChannel({ apiKey, models: [], imageModels: [], videoModels: [], textModels: [], audioModels: [] });
+                                    }}
+                                    placeholder="sk-..."
+                                />
                             </Form.Item>
 
                             <Form.Item
                                 label="分组模型"
                                 className="mb-5"
-                                extra={preferredHints.length ? `推荐优先：${preferredHints.join("、")}（拉取后若上游有则自动勾选）` : "可手动输入模型名，或先拉取上游完整列表"}
+                                extra={preferredHints.length ? `推荐优先：${preferredHints.join("、")}（仅从当前 Key 返回的模型中自动勾选）` : "请先拉取当前 Key 的可用模型"}
                             >
                                 <div className="flex items-start gap-2">
                                     <Select
-                                        mode="tags"
+                                        mode="multiple"
                                         showSearch
                                         allowClear
                                         maxTagCount="responsive"
-                                        tokenSeparators={[",", "\n"]}
                                         className="min-w-0 flex-1"
-                                        placeholder="输入模型名称或从上游拉取"
+                                        placeholder="先拉取当前 Key 的可用模型"
                                         value={selectedChannel.models}
                                         options={channelModelOptions}
                                         onChange={updateChannelModels}
