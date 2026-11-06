@@ -123,7 +123,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
             <CanvasResourceMentionTextarea
                 value={prompt}
                 references={mentionReferences}
-                enableSeedanceImageRoles={mode === "video" && isSeedanceVideoModel(config.model)}
+                seedanceModel={mode === "video" && isSeedanceVideoModel(config.model) ? config.model : undefined}
                 onChange={updatePrompt}
                 className="thin-scrollbar w-full resize-none overflow-y-auto rounded-xl border px-3 py-2 text-sm leading-5 outline-none"
                 style={{ height: textareaHeight, minHeight: MIN_TEXTAREA_HEIGHT, background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}

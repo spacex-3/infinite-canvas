@@ -111,4 +111,18 @@ describe("buildNodeGenerationContext", () => {
         ]);
         expect(context.referenceVideos.map((video) => video.id)).toEqual(["video-2", "video-1"]);
     });
+
+    test("rejects conflicting roles for the same image", () => {
+        const configNode: CanvasNodeData = { id: "config-1", type: CanvasNodeType.Config, title: "Config", position: { x: 0, y: 0 }, width: 240, height: 160, metadata: {} };
+        const imageNode: CanvasNodeData = { id: "image-1", type: CanvasNodeType.Image, title: "Image", position: { x: 0, y: 0 }, width: 180, height: 180, metadata: { content: "data:image/png;base64,abc" } };
+        const connections = [{ id: "conn-1", fromNodeId: imageNode.id, toNodeId: configNode.id }];
+
+        expect(() => buildNodeGenerationContext(configNode.id, [configNode, imageNode], connections, "@[node:image-1;role:first_frame] @[node:image-1;role:last_frame]")).toThrow("同一张图片不能同时用作");
+    });
+
+    test("rejects stale mention tokens instead of silently dropping them", () => {
+        const configNode: CanvasNodeData = { id: "config-1", type: CanvasNodeType.Config, title: "Config", position: { x: 0, y: 0 }, width: 240, height: 160, metadata: {} };
+
+        expect(() => buildNodeGenerationContext(configNode.id, [configNode], [], "使用 @[node:missing-image]")).toThrow("引用素材已删除、断开或内容丢失");
+    });
 });

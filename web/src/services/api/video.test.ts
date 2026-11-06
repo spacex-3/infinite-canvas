@@ -33,14 +33,22 @@ describe("custom channel video protocol routing", () => {
 });
 
 describe("Seedance new-api compatibility", () => {
-    test("uploads browser-local Seedance images before direct NewAPI submission", () => {
+    test("uploads browser-local Seedance images without changing the original file", () => {
         const resolver = videoSource.match(/async function resolveSeedanceImageUrl[\s\S]*?\n}\n\nasync function resolveSeedanceVideoUrl/)?.[0] || "";
-        expect(resolver).toContain("return uploadReferenceMedia(await optimizeSeedanceReferenceImage({ ...image, dataUrl }));");
-        expect(resolver).toContain("original.size <= 512 * 1024");
-        expect(resolver).toContain("1280 / Math.max(bitmap.width, bitmap.height)");
-        expect(resolver).toContain('canvas.toBlob(resolve, "image/jpeg", 0.82)');
+        expect(resolver).toContain("const storedBlob = image.storageKey ? await getImageBlob(image.storageKey) : null;");
+        expect(resolver).toContain("dataUrlToFile({ ...image, dataUrl })");
+        expect(resolver).toContain("file.size > SEEDANCE_REFERENCE_LIMITS.imageMaxBytes");
+        expect(resolver).toContain("return uploadReferenceMedia(file);");
+        expect(resolver).not.toContain("createImageBitmap");
+        expect(resolver).not.toContain("toBlob");
         expect(resolver).not.toContain('config.channelMode === "remote"');
         expect(resolver).not.toContain("return dataUrl;");
+    });
+
+    test("does not silently truncate Seedance reference arrays", () => {
+        const builder = videoSource.match(/async function buildSeedanceContent[\s\S]*?\n}\n\nasync function resolveSeedanceImageUrl/)?.[0] || "";
+        expect(builder).not.toContain(".slice(");
+        expect(videoSource).toContain("seedanceReferenceCountError(model");
     });
 
     test("uses native transport only for a direct Ark Plan channel", () => {

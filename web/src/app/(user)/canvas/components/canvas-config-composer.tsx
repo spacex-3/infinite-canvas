@@ -9,7 +9,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { SeedanceImageRole } from "@/types/image";
 import type { NodeGenerationInput } from "./canvas-node-generation";
-import { CANVAS_RESOURCE_MENTION_TOKEN_PATTERN, CANVAS_SEEDANCE_IMAGE_ROLES, canvasResourceMentionRoleLabel } from "../utils/canvas-resource-mention-format";
+import { CANVAS_RESOURCE_MENTION_TOKEN_PATTERN, CANVAS_SEEDANCE_IMAGE_ROLES, canvasResourceMentionLabels, canvasResourceMentionRoleLabel, seedanceMentionResourceDisabledReason, seedanceMentionRoleDisabledReason } from "../utils/canvas-resource-mention-format";
 import { matchesCanvasReferenceQuery, readCanvasReferenceMention, shouldResetCanvasReferenceSelection } from "../utils/canvas-resource-query";
 
 type CanvasConfigComposerProps = {
@@ -17,7 +17,7 @@ type CanvasConfigComposerProps = {
     inputs: NodeGenerationInput[];
     onChange: (value: string) => void;
     onClose: () => void;
-    enableSeedanceImageRoles?: boolean;
+    seedanceModel?: string;
 };
 
 type Token =
@@ -31,7 +31,7 @@ type MentionState = {
 
 export const CONFIG_REFERENCE_PATTERN = CANVAS_RESOURCE_MENTION_TOKEN_PATTERN;
 
-export function CanvasConfigComposer({ value, inputs, onChange, onClose, enableSeedanceImageRoles = false }: CanvasConfigComposerProps) {
+export function CanvasConfigComposer({ value, inputs, onChange, onClose, seedanceModel = "" }: CanvasConfigComposerProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const editorRef = useRef<HTMLDivElement>(null);
     const composingRef = useRef(false);
@@ -41,6 +41,8 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose, enableS
     const [roleReference, setRoleReference] = useState<NodeGenerationInput | null>(null);
     const tokens = useMemo(() => parseComposerTokens(value), [value]);
     const referenceById = useMemo(() => new Map(inputs.map((input) => [input.nodeId, input])), [inputs]);
+    const mentionResources = useMemo(() => inputs.map((input) => ({ nodeId: input.nodeId, kind: input.type })), [inputs]);
+    const labelsByNodeId = useMemo(() => canvasResourceMentionLabels(value, mentionResources), [mentionResources, value]);
     const candidates = useMemo(() => {
         if (!mention) return [];
         const query = (mention.query || "").trim().toLowerCase();
@@ -59,14 +61,15 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose, enableS
                 return;
             }
             const input = referenceById.get(token.nodeId);
-            if (input) editor.append(createReferenceChip(input, inputs, theme, setImagePreview, token.role));
+            if (input) editor.append(createReferenceChip(input, theme, setImagePreview, token.role, labelsByNodeId.get(input.nodeId) || resourceLabel(input, inputs)));
         });
-    }, [inputs, referenceById, theme, tokens]);
+    }, [inputs, labelsByNodeId, referenceById, theme, tokens]);
 
     const syncFromEditor = () => {
         const editor = editorRef.current;
         if (!editor) return;
         const next = serializeEditor(editor);
+        refreshReferenceChipLabels(editor, referenceById);
         onChange(next);
         syncMention();
     };
@@ -92,7 +95,7 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose, enableS
         const editor = editorRef.current;
         if (!editor) return;
         removeActiveMention();
-        const chip = createReferenceChip(input, inputs, theme, setImagePreview, role);
+        const chip = createReferenceChip(input, theme, setImagePreview, role, resourceLabel(input, inputs));
         const space = document.createTextNode(" ");
         const selection = window.getSelection();
         const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
@@ -108,11 +111,17 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose, enableS
             placeCaretAtEnd(editor);
         }
         closeMention();
-        onChange(serializeEditor(editor));
+        const nextValue = serializeEditor(editor);
+        refreshReferenceChipLabels(editor, referenceById);
+        onChange(nextValue);
     };
 
     const selectReference = (input: NodeGenerationInput) => {
-        if (enableSeedanceImageRoles && input.type === "image") {
+        if (seedanceModel) {
+            const disabledReason = seedanceMentionResourceDisabledReason(value, mentionResources, { nodeId: input.nodeId, kind: input.type }, seedanceModel);
+            if (disabledReason) return;
+        }
+        if (seedanceModel && input.type === "image") {
             setRoleReference(input);
             setActiveIndex(0);
             return;
@@ -167,7 +176,8 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose, enableS
                             }
                             if (event.key === "Enter") {
                                 event.preventDefault();
-                                insertReference(roleReference, CANVAS_SEEDANCE_IMAGE_ROLES[Math.min(activeIndex, CANVAS_SEEDANCE_IMAGE_ROLES.length - 1)].value);
+                                const role = CANVAS_SEEDANCE_IMAGE_ROLES[Math.min(activeIndex, CANVAS_SEEDANCE_IMAGE_ROLES.length - 1)].value;
+                                if (!seedanceMentionRoleDisabledReason(value, mentionResources, { nodeId: roleReference.nodeId, kind: roleReference.type }, role, seedanceModel)) insertReference(roleReference, role);
                                 return;
                             }
                             if (event.key === "Escape") {
@@ -212,7 +222,7 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose, enableS
                     onMouseUp={syncMention}
                     onBlur={() => window.setTimeout(closeMention, 120)}
                 />
-                {mention && roleReference ? <RoleMenu input={roleReference} activeIndex={Math.min(activeIndex, CANVAS_SEEDANCE_IMAGE_ROLES.length - 1)} theme={theme} onSelect={(role) => insertReference(roleReference, role)} /> : mention && candidates.length ? <MentionMenu inputs={candidates} allInputs={inputs} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={selectReference} /> : null}
+                {mention && roleReference ? <RoleMenu input={roleReference} activeIndex={Math.min(activeIndex, CANVAS_SEEDANCE_IMAGE_ROLES.length - 1)} theme={theme} disabledReason={(role) => seedanceMentionRoleDisabledReason(value, mentionResources, { nodeId: roleReference.nodeId, kind: roleReference.type }, role, seedanceModel)} onSelect={(role) => insertReference(roleReference, role)} /> : mention && candidates.length ? <MentionMenu inputs={candidates} allInputs={inputs} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} disabledReason={(input) => seedanceModel ? seedanceMentionResourceDisabledReason(value, mentionResources, { nodeId: input.nodeId, kind: input.type }, seedanceModel) : ""} onSelect={selectReference} /> : null}
             </div>
             {imagePreview ? <Image src={imagePreview} alt="引用图片预览" style={{ display: "none" }} preview={{ visible: true, src: imagePreview, onVisibleChange: (visible) => !visible && setImagePreview(null) }} /> : null}
         </div>
@@ -220,10 +230,10 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose, enableS
 
 }
 
-function RoleMenu({ input, activeIndex, theme, onSelect }: { input: NodeGenerationInput; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onSelect: (role: SeedanceImageRole) => void }) {
+function RoleMenu({ input, activeIndex, theme, disabledReason, onSelect }: { input: NodeGenerationInput; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; disabledReason: (role: SeedanceImageRole) => string; onSelect: (role: SeedanceImageRole) => void }) {
     const selectedRef = useRef(false);
     const selectRole = (role: SeedanceImageRole) => {
-        if (selectedRef.current) return;
+        if (selectedRef.current || disabledReason(role)) return;
         selectedRef.current = true;
         onSelect(role);
     };
@@ -231,32 +241,38 @@ function RoleMenu({ input, activeIndex, theme, onSelect }: { input: NodeGenerati
     return (
         <div className="absolute left-2 top-[calc(100%+6px)] z-[90] w-64 rounded-xl border p-1 shadow-2xl" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }}>
             <div className="px-2 py-1 text-[11px] opacity-55">{input.title} 用作</div>
-            {CANVAS_SEEDANCE_IMAGE_ROLES.map((role, index) => (
-                <button key={role.value} type="button" className="block w-full rounded-lg px-2 py-1.5 text-left text-xs transition" style={{ background: index === activeIndex ? theme.toolbar.activeBg : "transparent", color: index === activeIndex ? theme.toolbar.activeText : theme.node.text }} onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); selectRole(role.value); }}>
-                    <span className="block font-medium">{role.label}</span>
-                    <span className="block opacity-60">{role.description}</span>
-                </button>
-            ))}
+            {CANVAS_SEEDANCE_IMAGE_ROLES.map((role, index) => {
+                const reason = disabledReason(role.value);
+                return (
+                    <button key={role.value} type="button" disabled={Boolean(reason)} className="block w-full rounded-lg px-2 py-1.5 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-40" style={{ background: !reason && index === activeIndex ? theme.toolbar.activeBg : "transparent", color: !reason && index === activeIndex ? theme.toolbar.activeText : theme.node.text }} title={reason} onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); selectRole(role.value); }}>
+                        <span className="block font-medium">{role.label}</span>
+                        <span className="block opacity-60">{reason || role.description}</span>
+                    </button>
+                );
+            })}
         </div>
     );
 }
 
-function MentionMenu({ inputs, allInputs, activeIndex, theme, onSelect }: { inputs: NodeGenerationInput[]; allInputs: NodeGenerationInput[]; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onSelect: (input: NodeGenerationInput) => void }) {
+function MentionMenu({ inputs, allInputs, activeIndex, theme, disabledReason, onSelect }: { inputs: NodeGenerationInput[]; allInputs: NodeGenerationInput[]; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; disabledReason: (input: NodeGenerationInput) => string; onSelect: (input: NodeGenerationInput) => void }) {
     const selectedRef = useRef(false);
     const selectInput = (input: NodeGenerationInput) => {
-        if (selectedRef.current) return;
+        if (selectedRef.current || disabledReason(input)) return;
         selectedRef.current = true;
         onSelect(input);
     };
 
     return (
         <div className="absolute left-2 top-[calc(100%+6px)] z-[90] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }}>
-            {inputs.map((input, index) => (
-                <button
+            {inputs.map((input, index) => {
+                const reason = disabledReason(input);
+                return <button
                     key={input.nodeId}
                     type="button"
-                    className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition"
-                    style={{ background: index === activeIndex ? theme.toolbar.activeBg : "transparent", color: index === activeIndex ? theme.toolbar.activeText : theme.node.text }}
+                    disabled={Boolean(reason)}
+                    className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-40"
+                    style={{ background: !reason && index === activeIndex ? theme.toolbar.activeBg : "transparent", color: !reason && index === activeIndex ? theme.toolbar.activeText : theme.node.text }}
+                    title={reason}
                     onMouseDown={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -266,10 +282,10 @@ function MentionMenu({ inputs, allInputs, activeIndex, theme, onSelect }: { inpu
                     <ResourcePreview input={input} />
                     <span className="min-w-0 flex-1">
                         <span className="block font-medium">{resourceLabel(input, allInputs)}</span>
-                        <span className="block truncate opacity-65">{input.text || input.title}</span>
+                        <span className="block truncate opacity-65">{reason || input.text || input.title}</span>
                     </span>
                 </button>
-            ))}
+            })}
         </div>
     );
 }
@@ -285,10 +301,11 @@ function ResourcePreview({ input }: { input: NodeGenerationInput }) {
     );
 }
 
-function createReferenceChip(input: NodeGenerationInput, inputs: NodeGenerationInput[], theme: (typeof canvasThemes)[keyof typeof canvasThemes], onImagePreview: (url: string) => void, role?: SeedanceImageRole) {
+function createReferenceChip(input: NodeGenerationInput, theme: (typeof canvasThemes)[keyof typeof canvasThemes], onImagePreview: (url: string) => void, role: SeedanceImageRole | undefined, label: string) {
     const wrapper = document.createElement("span");
     wrapper.contentEditable = "false";
     wrapper.dataset.referenceNodeId = input.nodeId;
+    wrapper.dataset.referenceKind = input.type;
     if (role) wrapper.dataset.referenceRole = role;
     wrapper.className = "mx-px inline-flex h-7 max-w-40 items-center justify-center gap-1 overflow-hidden rounded-md border px-1.5 text-xs leading-none align-middle";
     Object.assign(wrapper.style, chipStyle(theme));
@@ -306,11 +323,31 @@ function createReferenceChip(input: NodeGenerationInput, inputs: NodeGenerationI
         });
     }
     const text = document.createElement("span");
+    text.dataset.referenceLabel = "true";
     text.className = "block truncate font-medium";
     const roleLabel = canvasResourceMentionRoleLabel(role);
-    text.textContent = `@${resourceLabel(input, inputs)}${roleLabel ? ` · ${roleLabel}` : ""}`;
+    text.textContent = `@${label}${roleLabel ? ` · ${roleLabel}` : ""}`;
     wrapper.appendChild(text);
     return wrapper;
+}
+
+function refreshReferenceChipLabels(editor: HTMLElement, referenceById: Map<string, NodeGenerationInput>) {
+    const labels = new Map<string, string>();
+    const counts = { image: 0, video: 0, audio: 0, text: 0 };
+    editor.querySelectorAll<HTMLElement>("[data-reference-node-id]").forEach((chip) => {
+        const nodeId = chip.dataset.referenceNodeId || "";
+        const input = referenceById.get(nodeId);
+        if (!input) return;
+        let label = labels.get(nodeId);
+        if (!label) {
+            const index = counts[input.type]++;
+            label = input.type === "image" ? `图片${index + 1}` : input.type === "video" ? `视频${index + 1}` : input.type === "audio" ? `音频${index + 1}` : `文本${index + 1}`;
+            labels.set(nodeId, label);
+        }
+        const text = chip.querySelector<HTMLElement>("[data-reference-label]");
+        const roleLabel = canvasResourceMentionRoleLabel(chip.dataset.referenceRole as SeedanceImageRole | undefined);
+        if (text) text.textContent = `@${label}${roleLabel ? ` · ${roleLabel}` : ""}`;
+    });
 }
 
 function serializeEditor(editor: HTMLElement) {

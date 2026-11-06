@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptionsForModel, seedanceResolutionOptionsForModel } from "./seedance-video";
+import { normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptionsForModel, seedanceReferenceCountError, seedanceReferenceLimitsForModel, seedanceResolutionOptionsForModel } from "./seedance-video";
 
 describe("Seedance video defaults", () => {
     test("uses landscape and 5 seconds when values are empty", () => {
@@ -24,5 +24,12 @@ describe("Seedance video defaults", () => {
         expect(normalizeSeedanceDuration("30", "doubao-seedance-2-5-260628")).toBe(30);
         expect(normalizeSeedanceDuration("30", "doubao-seedance-2-0-260128")).toBe(15);
         expect(normalizeSeedanceDuration("-1", "doubao-seedance-2-0-260128")).toBe(4);
+    });
+
+    test("uses model-specific reference limits", () => {
+        expect(seedanceReferenceLimitsForModel("doubao-seedance-2-0-mini-260615")).toEqual({ images: 9, videos: 3, audios: 3, total: 15 });
+        expect(seedanceReferenceLimitsForModel("doubao-seedance-2-5-260628")).toEqual({ images: 30, videos: 10, audios: 10, total: 50 });
+        expect(seedanceReferenceCountError("doubao-seedance-2-0-mini-260615", { images: 10, videos: 0, audios: 0 })).toContain("最多支持 9 张");
+        expect(seedanceReferenceCountError("doubao-seedance-2-5-260628", { images: 30, videos: 10, audios: 11 })).toContain("最多支持 10 个参考音频");
     });
 });

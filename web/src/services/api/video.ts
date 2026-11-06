@@ -11,9 +11,9 @@ import {
     OMNI_FLASH_REFERENCE_LIMITS,
     resolveOmniFlashModel,
 } from "@/lib/omni-flash-video";
-import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedance25Model, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedance25Model, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceReferenceCountError, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
-import { imageToDataUrl } from "@/services/image-storage";
+import { getImageBlob, imageToDataUrl } from "@/services/image-storage";
 import { assertChannelSupportsCapability, buildApiUrl, resolveCustomChannelConfig, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
@@ -176,6 +176,10 @@ export async function requestVideoGeneration(
     assertChannelSupportsCapability(config, "video");
     const model = config.model.trim();
     assertVideoConfig(config, model);
+    const isSeedance = isSeedanceVideoConfig({ ...config, model });
+    if (!isSeedance && references.some((image) => image.seedanceRole === "first_frame" || image.seedanceRole === "last_frame")) {
+        throw new Error("当前视频模型不支持 Seedance 首尾帧角色，请切换到 Seedance 或重新选择普通参考图");
+    }
     const protocol = resolveVideoRequestProtocol(config, model);
     // zpika omni-flash / omni-flash-vref → /v1/video/generations
     if (protocol === "zerofall") {
@@ -186,7 +190,7 @@ export async function requestVideoGeneration(
     if (protocol === "fpbrowser2api") {
         return requestVeoOmniGeneration(config, model, prompt, references, videoReferences, audioReferences, onProgress);
     }
-    if (isSeedanceVideoConfig({ ...config, model })) {
+    if (isSeedance) {
         return requestSeedanceGeneration(config, model, prompt, references, videoReferences, audioReferences, onProgress, onTaskRecovery);
     }
     if (videoReferences.length || audioReferences.length) {
@@ -318,7 +322,7 @@ async function requestSeedanceGeneration(
     onProgress?: GenerationProgressCallback,
     onTaskRecovery?: VideoTaskRecoveryCallback,
 ) {
-    assertSeedanceImageRoles(references, videoReferences, audioReferences);
+    assertSeedanceReferences(model, references, videoReferences, audioReferences);
     if (audioReferences.length && !references.length && !videoReferences.length) {
         throw new Error("Seedance 参考音频不能单独使用，请同时添加参考图或参考视频");
     }
@@ -806,7 +810,16 @@ function hasSeedanceFrameReferences(references: ReferenceImage[]) {
     return references.some((image) => image.seedanceRole === "first_frame" || image.seedanceRole === "last_frame");
 }
 
-function assertSeedanceImageRoles(references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
+function assertSeedanceReferences(model: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
+    const countError = seedanceReferenceCountError(model, { images: references.length, videos: videoReferences.length, audios: audioReferences.length });
+    if (countError) throw new Error(countError);
+    const rolesByImageId = new Map<string, string>();
+    for (const image of references) {
+        const role = image.seedanceRole || "reference_image";
+        const previousRole = rolesByImageId.get(image.id);
+        if (previousRole && previousRole !== role) throw new Error(`同一张图片不能同时用作 ${seedanceRoleName(previousRole)}和${seedanceRoleName(role)}`);
+        rolesByImageId.set(image.id, role);
+    }
     const firstFrames = references.filter((image) => image.seedanceRole === "first_frame");
     const lastFrames = references.filter((image) => image.seedanceRole === "last_frame");
     if (firstFrames.length > 1) throw new Error("Seedance 首帧最多只能设置 1 张图片");
@@ -819,6 +832,12 @@ function assertSeedanceImageRoles(references: ReferenceImage[], videoReferences:
     }
 }
 
+function seedanceRoleName(role: string) {
+    if (role === "first_frame") return "首帧";
+    if (role === "last_frame") return "尾帧";
+    return "普通参考图";
+}
+
 function seedanceApiUrl(config: AiConfig, taskId?: string) {
     if (config.channelMode === "remote") return taskId ? `/api/v1/videos/${encodeURIComponent(taskId)}` : "/api/v1/videos";
     return buildApiUrl(config.baseUrl, `/contents/generations/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}`);
@@ -828,13 +847,13 @@ async function buildSeedanceContent(config: AiConfig, prompt: string, references
     const content: Array<Record<string, unknown>> = [];
     const text = buildSeedancePromptText(prompt, references, videoReferences, audioReferences);
     if (text) content.push({ type: "text", text });
-    for (const image of references.slice(0, SEEDANCE_REFERENCE_LIMITS.images)) {
+    for (const image of references) {
         content.push({ type: "image_url", image_url: { url: await resolveSeedanceImageUrl(image) }, role: image.seedanceRole || "reference_image" });
     }
-    for (const video of videoReferences.slice(0, SEEDANCE_REFERENCE_LIMITS.videos)) {
+    for (const video of videoReferences) {
         content.push({ type: "video_url", video_url: { url: await resolveSeedanceVideoUrl(video) }, role: "reference_video" });
     }
-    for (const audio of audioReferences.slice(0, SEEDANCE_REFERENCE_LIMITS.audios)) {
+    for (const audio of audioReferences) {
         content.push({ type: "audio_url", audio_url: { url: await resolveSeedanceAudioUrl(audio) }, role: "reference_audio" });
     }
     return content;
@@ -843,34 +862,12 @@ async function buildSeedanceContent(config: AiConfig, prompt: string, references
 async function resolveSeedanceImageUrl(image: ReferenceImage) {
     const directUrl = image.url || image.dataUrl;
     if (isPublicMediaUrl(directUrl) || directUrl.startsWith("asset://")) return directUrl;
-    const dataUrl = await imageToDataUrl(image);
-    if (!dataUrl) throw new Error("参考图读取失败，请换一张图片或重新上传");
-    return uploadReferenceMedia(await optimizeSeedanceReferenceImage({ ...image, dataUrl }));
-}
-
-async function optimizeSeedanceReferenceImage(image: ReferenceImage) {
-    const original = dataUrlToFile(image);
-    if (original.size <= 512 * 1024) return original;
-
-    const bitmap = await createImageBitmap(original);
-    const scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (!context) {
-        bitmap.close();
-        return original;
-    }
-    context.fillStyle = "#fff";
-    context.fillRect(0, 0, width, height);
-    context.drawImage(bitmap, 0, 0, width, height);
-    bitmap.close();
-    const compressed = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
-    if (!compressed || compressed.size >= original.size) return original;
-    return new File([compressed], "seedance-reference.jpg", { type: "image/jpeg" });
+    const storedBlob = image.storageKey ? await getImageBlob(image.storageKey) : null;
+    const dataUrl = storedBlob ? "" : await imageToDataUrl(image);
+    if (!storedBlob && !dataUrl) throw new Error("参考图读取失败，请换一张图片或重新上传");
+    const file = storedBlob ? new File([storedBlob], image.name || "seedance-reference", { type: image.type || storedBlob.type }) : dataUrlToFile({ ...image, dataUrl });
+    if (file.size > SEEDANCE_REFERENCE_LIMITS.imageMaxBytes) throw new Error("Seedance 参考图片不能超过 30MiB");
+    return uploadReferenceMedia(file);
 }
 
 async function resolveSeedanceVideoUrl(video: ReferenceVideo) {

@@ -2384,7 +2384,7 @@ function InfiniteCanvasPage() {
                                     <CanvasConfigComposer
                                         value={panelNode.metadata?.composerContent ?? panelNode.metadata?.prompt ?? ""}
                                         inputs={configInputsById.get(panelNode.id) || []}
-                                        enableSeedanceImageRoles={panelNode.metadata?.generationMode === "video" && isSeedanceVideoModel(generationModelForMode(effectiveConfig, panelNode, "video"))}
+                                        seedanceModel={panelNode.metadata?.generationMode === "video" && isSeedanceVideoModel(generationModelForMode(effectiveConfig, panelNode, "video")) ? generationModelForMode(effectiveConfig, panelNode, "video") : undefined}
                                         onChange={(composerContent) => handleConfigNodeChange(panelNode.id, { composerContent })}
                                         onClose={() => setDialogNodeId(null)}
                                     />

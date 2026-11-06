@@ -3,13 +3,16 @@ import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
 export const SEEDANCE_REFERENCE_LIMITS = {
-    images: 9,
-    videos: 3,
-    audios: 3,
     imageMaxBytes: 30 * 1024 * 1024,
     videoMaxBytes: 50 * 1024 * 1024,
     audioMaxBytes: 15 * 1024 * 1024,
 };
+
+export type SeedanceReferenceCounts = { images: number; videos: number; audios: number };
+export type SeedanceReferenceCountLimits = SeedanceReferenceCounts & { total: number };
+
+const seedance20ReferenceLimits: SeedanceReferenceCountLimits = { images: 9, videos: 3, audios: 3, total: 15 };
+const seedance25ReferenceLimits: SeedanceReferenceCountLimits = { images: 30, videos: 10, audios: 10, total: 50 };
 
 export const seedanceResolutionOptions = [
     { value: "480p", label: "480p" },
@@ -94,6 +97,19 @@ export function isSeedance25Model(model: string) {
 export function isSeedance20FullModel(model: string) {
     const value = model.toLowerCase();
     return isSeedanceVideoModel(value) && !isSeedanceFastModel(value) && !isSeedanceMiniModel(value) && (value.includes("seedance-2-0") || value.includes("seedance-2.0"));
+}
+
+export function seedanceReferenceLimitsForModel(model: string): SeedanceReferenceCountLimits {
+    return isSeedance25Model(model) ? seedance25ReferenceLimits : seedance20ReferenceLimits;
+}
+
+export function seedanceReferenceCountError(model: string, counts: SeedanceReferenceCounts) {
+    const limits = seedanceReferenceLimitsForModel(model);
+    if (counts.images > limits.images) return `${model || "当前 Seedance 模型"} 最多支持 ${limits.images} 张参考图片（首尾帧计入图片数量）`;
+    if (counts.videos > limits.videos) return `${model || "当前 Seedance 模型"} 最多支持 ${limits.videos} 个参考视频`;
+    if (counts.audios > limits.audios) return `${model || "当前 Seedance 模型"} 最多支持 ${limits.audios} 个参考音频`;
+    if (counts.images + counts.videos + counts.audios > limits.total) return `${model || "当前 Seedance 模型"} 最多支持 ${limits.total} 项参考素材`;
+    return "";
 }
 
 export function isArkPlanBaseUrl(baseUrl: string) {
