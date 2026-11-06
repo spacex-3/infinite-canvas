@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const source = readFileSync(join(import.meta.dir, "canvas-node-hover-toolbar.tsx"), "utf8");
+const imageToolsSource = readFileSync(join(import.meta.dir, "canvas-image-toolbar-tools.tsx"), "utf8");
 
 describe("CanvasNodeHoverToolbar", () => {
     test("allows editing failed image nodes that still have a prompt", () => {
@@ -19,5 +20,12 @@ describe("CanvasNodeHoverToolbar", () => {
         expect(source).toContain("const canRecoverVideo = canRetry && isVideo && Boolean(node.metadata?.videoTaskId)");
         expect(source).toContain('title: canRecoverVideo ? "取回已有视频，不会重新生成" : "重新生成"');
         expect(source).toContain('label: canRecoverVideo ? "重新下载" : "重试"');
+    });
+
+    test("uses a compact image toolbar by default and wraps customized tools", () => {
+        expect(imageToolsSource).toContain('canvas-image-quick-tools-v6');
+        expect(imageToolsSource).toContain('["delete", "saveAsset", "download", "edit"]');
+        expect(source).toContain("flex-wrap");
+        expect(source).toContain('maxWidth: "min(720px, calc(100vw - 24px))"');
     });
 });

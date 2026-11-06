@@ -23,7 +23,6 @@ export type ImageToolHandlers = {
 
 export type ImageToolDefinition = {
     id: ImageNodeActionToolId;
-    defaultVisible: boolean;
     panelLabel: string;
     label: string | ((node: CanvasNodeData) => string);
     title: string | ((node: CanvasNodeData) => string);
@@ -37,14 +36,13 @@ export type ImageQuickToolsConfig = {
     showLabels: boolean;
 };
 
-export const IMAGE_QUICK_TOOLS_STORAGE_KEY = "canvas-image-quick-tools-v5";
+export const IMAGE_QUICK_TOOLS_STORAGE_KEY = "canvas-image-quick-tools-v6";
 
-const defaultBaseToolIds: ImageQuickToolId[] = ["info", "delete", "saveAsset", "download", "edit"];
+const baseToolIds: ImageQuickToolId[] = ["info", "delete", "saveAsset", "download", "edit"];
 
 export const imageToolDefinitions: ImageToolDefinition[] = [
     {
         id: "copyPrompt",
-        defaultVisible: true,
         panelLabel: "复制提示词",
         label: "复制提示词",
         title: "复制生成该图片的提示词",
@@ -53,7 +51,6 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "reversePrompt",
-        defaultVisible: true,
         panelLabel: "反推提示词",
         label: "反推提示词",
         title: "创建反推提示词的文本和配置节点",
@@ -62,7 +59,6 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "replace",
-        defaultVisible: true,
         panelLabel: "替换图片",
         label: "替换图片",
         title: "替换图片",
@@ -71,7 +67,6 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "resize",
-        defaultVisible: false,
         panelLabel: "锁比例",
         label: (node) => (node.metadata?.freeResize ? "自由比例" : "锁比例"),
         title: (node) => (node.metadata?.freeResize ? "切换为等比缩放" : "切换为自由比例"),
@@ -81,7 +76,6 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "maskEdit",
-        defaultVisible: true,
         panelLabel: "局部编辑",
         label: "局部编辑",
         title: "添加蒙版遮罩后局部修改",
@@ -90,7 +84,6 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "crop",
-        defaultVisible: true,
         panelLabel: "裁剪",
         label: "裁剪",
         title: "裁剪并生成新节点",
@@ -99,7 +92,6 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "upscale",
-        defaultVisible: true,
         panelLabel: "放大",
         label: "放大",
         title: "放大图片分辨率",
@@ -108,7 +100,6 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "superResolve",
-        defaultVisible: false,
         panelLabel: "超分",
         label: "超分",
         title: "AI 超分",
@@ -117,7 +108,6 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "angle",
-        defaultVisible: false,
         panelLabel: "多角度",
         label: "多角度",
         title: "生成角度",
@@ -126,7 +116,6 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "view",
-        defaultVisible: true,
         panelLabel: "查看大图",
         label: "查看大图",
         title: "查看图片详情",
@@ -135,7 +124,7 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
 ];
 
-export const defaultImageQuickToolIds: ImageQuickToolId[] = [...defaultBaseToolIds, ...imageToolDefinitions.filter((tool) => tool.defaultVisible).map((tool) => tool.id)];
+export const defaultImageQuickToolIds: ImageQuickToolId[] = ["delete", "saveAsset", "download", "edit"];
 
 export function buildImageToolbarTools(node: CanvasNodeData, handlers: ImageToolHandlers) {
     return imageToolDefinitions.map((tool) => ({
@@ -149,7 +138,7 @@ export function buildImageToolbarTools(node: CanvasNodeData, handlers: ImageTool
 }
 
 export function normalizeImageQuickToolIds(value: unknown[]) {
-    const allIds: ImageQuickToolId[] = [...defaultBaseToolIds, ...imageToolDefinitions.map((tool) => tool.id)];
+    const allIds: ImageQuickToolId[] = [...baseToolIds, ...imageToolDefinitions.map((tool) => tool.id)];
     const ids = new Set(allIds);
     return allIds.filter((id) => value.includes(id) && ids.has(id));
 }
