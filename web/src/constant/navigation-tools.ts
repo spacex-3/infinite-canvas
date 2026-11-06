@@ -1,4 +1,4 @@
-import { FileText, Home, ImagePlus, Images, Maximize2, Video } from "lucide-react";
+import { FileText, Home, Images, Maximize2 } from "lucide-react";
 
 export const navigationTools = [
     {
@@ -6,18 +6,6 @@ export const navigationTools = [
         label: "首页",
         shortLabel: "首页",
         icon: Home,
-    },
-    {
-        slug: "image",
-        label: "AI 图片",
-        shortLabel: "图片",
-        icon: ImagePlus,
-    },
-    {
-        slug: "video",
-        label: "AI 视频",
-        shortLabel: "视频",
-        icon: Video,
     },
     {
         slug: "canvas",

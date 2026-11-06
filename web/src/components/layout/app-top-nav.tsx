@@ -13,7 +13,7 @@ export function AppTopNav() {
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = pathname === "/" ? "" : navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
-    const mobileTools = navigationTools.filter((tool) => tool.slug !== "prompts");
+    const mobileTools = navigationTools;
 
     return (
         <>
@@ -60,7 +60,7 @@ export function AppTopNav() {
                     </div>
 
                     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white/92 px-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:hidden dark:border-stone-800 dark:bg-stone-950/92 dark:shadow-[0_-10px_28px_rgba(0,0,0,0.28)]" aria-label="移动端工作台导航">
-                        <div className="mx-auto grid h-14 w-full max-w-xl grid-cols-5">
+                        <div className="mx-auto grid h-14 w-full max-w-xl grid-cols-4">
                             {mobileTools.map((tool) => {
                                 const Icon = tool.icon;
                                 const active = tool.slug === activeToolSlug;
