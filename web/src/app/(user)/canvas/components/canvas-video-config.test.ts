@@ -29,9 +29,9 @@ describe("canvas video config", () => {
     test("normalizes unsupported Seedance resolutions while keeping the compact summary readable", () => {
         expect(configPanelSource).toContain("videoModelPatch(config, model)");
         expect(promptPanelSource).toContain("videoModelPatch(config, model)");
+        expect(settingsPopoverSource).toContain("videoResolutionLabel(config.vquality)");
         expect(settingsPopoverSource).toContain("videoSizeLabel(config.videoSize)");
         expect(settingsPopoverSource).toContain("videoSecondsLabel(config.videoSeconds)");
-        expect(settingsPopoverSource).not.toContain("videoResolutionLabel");
     });
 
     test("locks Seedance frame requests to the adaptive ratio in both canvas entry points", () => {
