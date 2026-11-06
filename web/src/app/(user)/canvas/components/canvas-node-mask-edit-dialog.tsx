@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Button, Input, Modal, Slider } from "antd";
+import { Button, Input, Modal, Select, Slider, Switch } from "antd";
 import { Brush, Eraser, RotateCcw, WandSparkles, X } from "lucide-react";
 
 import { readImageMeta } from "@/lib/image-utils";
 
 export type CanvasImageMaskEditPayload = {
+    model: string;
     prompt: string;
     maskDataUrl: string;
+    restrictToMask: boolean;
 };
 
 type DrawMode = "paint" | "erase";
@@ -17,24 +19,42 @@ const defaultBrushSize = 100;
 const maskFillColor = "rgba(37, 99, 235, .38)";
 const maskBorderColor = "rgba(255, 255, 255, .72)";
 
-export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (payload: CanvasImageMaskEditPayload) => void }) {
+export function CanvasNodeMaskEditDialog({
+    dataUrl,
+    models,
+    defaultModel,
+    open,
+    onClose,
+    onConfirm,
+}: {
+    dataUrl: string;
+    models: string[];
+    defaultModel?: string;
+    open: boolean;
+    onClose: () => void;
+    onConfirm: (payload: CanvasImageMaskEditPayload) => void;
+}) {
     const maskCanvasRef = useRef<HTMLCanvasElement>(null);
     const previewCanvasRef = useRef<HTMLCanvasElement>(null);
     const drawingRef = useRef<{ active: boolean; last: { x: number; y: number } | null }>({ active: false, last: null });
     const [image, setImage] = useState<{ width: number; height: number } | null>(null);
     const [prompt, setPrompt] = useState("");
+    const [model, setModel] = useState("");
     const [brushSize, setBrushSize] = useState(defaultBrushSize);
     const [mode, setMode] = useState<DrawMode>("paint");
+    const [restrictToMask, setRestrictToMask] = useState(false);
     const [error, setError] = useState("");
 
     useEffect(() => {
         if (!open) return;
         setPrompt("");
+        setModel(defaultModel && models.includes(defaultModel) ? defaultModel : models[0] || "");
         setBrushSize(defaultBrushSize);
         setMode("paint");
+        setRestrictToMask(false);
         setError("");
         void readImageMeta(dataUrl).then(setImage);
-    }, [dataUrl, open]);
+    }, [dataUrl, defaultModel, models, open]);
 
     useEffect(() => {
         clearCanvas(maskCanvasRef.current);
@@ -94,10 +114,11 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
     const submit = () => {
         const nextPrompt = prompt.trim();
         const canvas = maskCanvasRef.current;
+        if (!model) return setError("请先配置支持蒙版的 gpt-image-2 模型");
         if (!nextPrompt) return setError("请输入修改要求");
         if (!canvas) return;
         if (!canvasHasPaint(canvas)) return setError("请先涂抹局部区域");
-        onConfirm({ prompt: nextPrompt, maskDataUrl: buildEditMask(canvas) });
+        onConfirm({ model, prompt: nextPrompt, maskDataUrl: buildEditMask(canvas), restrictToMask });
     };
 
     return (
@@ -128,6 +149,21 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
                     <div>
                         <h2 className="text-xl font-semibold">局部遮罩编辑</h2>
                         <div className="mt-2 text-sm opacity-60">{image ? `${image.width} x ${image.height}px` : "读取中"}</div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <div className="text-sm font-medium opacity-75">编辑模型</div>
+                        <Select
+                            className="w-full"
+                            value={model || undefined}
+                            placeholder="请先配置 gpt-image-2"
+                            notFoundContent="暂无支持蒙版的 gpt-image-2 模型"
+                            options={models.map((item) => ({ label: item, value: item }))}
+                            onChange={(value) => {
+                                setModel(value);
+                                setError("");
+                            }}
+                        />
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
@@ -162,6 +198,11 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
                         {error ? <div className="text-xs font-medium text-[#ef4444]">{error}</div> : null}
                     </div>
 
+                    <div className="flex items-center justify-between gap-4 text-sm font-medium opacity-75">
+                        <span>只修改蒙版透明区域，其他区域保持不变</span>
+                        <Switch checked={restrictToMask} onChange={setRestrictToMask} />
+                    </div>
+
                     <div className="mt-auto flex items-center justify-between gap-2">
                         <Button icon={<RotateCcw className="size-4" />} onClick={resetMask}>
                             重置
@@ -170,7 +211,7 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
                             <Button icon={<X className="size-4" />} onClick={onClose}>
                                 取消
                             </Button>
-                            <Button type="primary" icon={<WandSparkles className="size-4" />} onClick={submit}>
+                            <Button type="primary" icon={<WandSparkles className="size-4" />} disabled={!model} onClick={submit}>
                                 AI 修改
                             </Button>
                         </div>
