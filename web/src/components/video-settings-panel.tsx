@@ -38,11 +38,12 @@ type VideoSettingsPanelProps = {
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
+    forceAdaptiveRatio?: boolean;
 };
 
-export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
+export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", forceAdaptiveRatio = false }: VideoSettingsPanelProps) {
     if (isSeedanceVideoConfig(config)) {
-        return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
+        return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} forceAdaptiveRatio={forceAdaptiveRatio} />;
     }
     if (isOmniFlashVideoModel(config.model || config.videoModel)) {
         return <OmniFlashVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
@@ -178,12 +179,13 @@ function OmniFlashVideoSettingsPanel({ config, onConfigChange, theme, showTitle,
     );
 }
 
-function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, className }: VideoSettingsPanelProps) {
+function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, className, forceAdaptiveRatio }: VideoSettingsPanelProps) {
     const model = config.model || config.videoModel;
     const resolution = normalizeSeedanceResolution(config.vquality, model);
-    const ratio = normalizeSeedanceRatio(config.videoSize);
+    const ratio = forceAdaptiveRatio ? "adaptive" : normalizeSeedanceRatio(config.videoSize);
     const duration = normalizeSeedanceDuration(config.videoSeconds, model);
     const resolutionOptions = seedanceResolutionOptionsForModel(model);
+    const ratioOptions = forceAdaptiveRatio ? seedanceRatioOptions.filter((item) => item.value === "adaptive") : seedanceRatioOptions;
     const durationOptions = seedanceDurationOptionsForModel(model);
     const generateAudio = boolConfig(config.videoGenerateAudio, true);
     const watermark = boolConfig(config.videoWatermark, false);
@@ -203,11 +205,12 @@ function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, 
                 </SettingGroup>
                 <SettingGroup title="比例" color={theme.node.muted}>
                     <div className="grid grid-cols-2 gap-2.5">
-                        {seedanceRatioOptions.map((item) => (
+                        {ratioOptions.map((item) => (
                             <button
                                 key={item.value}
                                 type="button"
-                                className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent px-2 text-sm transition hover:opacity-80"
+                                disabled={forceAdaptiveRatio}
+                                className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent px-2 text-sm transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-70"
                                 style={{ borderColor: ratio === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
                                 onMouseDown={(event) => event.stopPropagation()}
                                 onClick={() => onConfigChange("videoSize", item.value)}

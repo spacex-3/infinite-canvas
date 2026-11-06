@@ -16,6 +16,7 @@ import { CanvasAudioSettingsPopover, type CanvasAudioSettingKey } from "./canvas
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "../types";
+import { hasSeedanceFrameMention } from "../utils/canvas-resource-mention-format";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
@@ -47,7 +48,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
-    const [prompt, setPrompt] = useState(initialPromptValue(node, isEditingExistingContent));
+    const [prompt, setPrompt] = useState(initialPromptValue(node));
     const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
     const [textareaHeight, setTextareaHeight] = useState(DEFAULT_TEXTAREA_HEIGHT);
     const resizeRef = useRef({
@@ -60,7 +61,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const credits = requestCreditCost({ channelMode: config.channelMode, modelCosts, model: config.model, count: mode === "image" ? config.count : 1 });
 
     useEffect(() => {
-        setPrompt(initialPromptValue(node, isEditingExistingContent));
+        setPrompt(initialPromptValue(node));
     }, [isEditingExistingContent, node.id]);
 
     useEffect(() => {
@@ -148,7 +149,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     ) : mode === "video" ? (
                         <>
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, videoModelPatch(config, model))} capability="video" onMissingConfig={() => openConfigDialog(true)} />
-                            <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[190px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
+                            <CanvasVideoSettingsPopover config={config} forceAdaptiveRatio={isSeedanceVideoModel(config.model) && hasSeedanceFrameMention(prompt)} buttonClassName="!h-10 !max-w-[190px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
                         </>
                     ) : mode === "audio" ? (
                         <>
@@ -199,8 +200,8 @@ function defaultMode(type: CanvasNodeData["type"]): CanvasNodeGenerationMode {
     return type === CanvasNodeType.Text ? "text" : type === CanvasNodeType.Video ? "video" : type === CanvasNodeType.Audio ? "audio" : "image";
 }
 
-function initialPromptValue(node: CanvasNodeData, isEditingExistingContent: boolean) {
-    return node.metadata?.prompt || (isEditingExistingContent ? "" : "");
+function initialPromptValue(node: CanvasNodeData) {
+    return node.metadata?.composerContent ?? node.metadata?.prompt ?? "";
 }
 
 function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: CanvasNodeGenerationMode): AiConfig {

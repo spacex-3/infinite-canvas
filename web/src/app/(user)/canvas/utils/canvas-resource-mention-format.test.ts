@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { canvasResourceMentionLabels, canvasResourceMentionToken, canonicalizeCanvasResourceMentionText, renderCanvasResourceMentionText, seedanceMentionResourceDisabledReason, seedanceMentionRoleDisabledReason } from "./canvas-resource-mention-format";
+import { canvasResourceMentionLabels, canvasResourceMentionToken, canonicalizeCanvasResourceMentionText, hasSeedanceFrameMention, renderCanvasResourceMentionText, seedanceMentionResourceDisabledReason, seedanceMentionRoleDisabledReason } from "./canvas-resource-mention-format";
 import type { CanvasResourceReference } from "./canvas-resource-references";
 
 const references: CanvasResourceReference[] = [
@@ -16,6 +16,12 @@ describe("canvas resource mention formatting", () => {
     test("renders node tokens with their current resource labels", () => {
         expect(renderCanvasResourceMentionText("把 @[node:image-1] 的车换进 @[node:video-1]", references)).toBe("把 图片1 的车换进 视频1");
         expect(renderCanvasResourceMentionText("从 @[node:image-1;role:first_frame] 开始", references)).toBe("从 图片1 · 首帧 开始");
+    });
+
+    test("detects first and last frame roles without treating ordinary references as frames", () => {
+        expect(hasSeedanceFrameMention("从 @[node:image-1;role:first_frame] 开始")).toBe(true);
+        expect(hasSeedanceFrameMention("到 @[node:image-1;role:last_frame] 结束")).toBe(true);
+        expect(hasSeedanceFrameMention("参考 @[node:image-1;role:reference_image]")).toBe(false);
     });
 
     test("canonicalizes visible resource labels back to stable node tokens", () => {

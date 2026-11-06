@@ -11,7 +11,7 @@ import {
     OMNI_FLASH_REFERENCE_LIMITS,
     resolveOmniFlashModel,
 } from "@/lib/omni-flash-video";
-import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedance25Model, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceReferenceCountError, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceReferenceCountError, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { getImageBlob, imageToDataUrl } from "@/services/image-storage";
 import { assertChannelSupportsCapability, buildApiUrl, resolveCustomChannelConfig, type AiConfig } from "@/stores/use-config-store";
@@ -337,7 +337,7 @@ async function requestSeedanceGeneration(
     const payload = {
         model,
         content,
-        ratio: isSeedance25Model(model) && hasSeedanceFrameReferences(references) ? "adaptive" : normalizeSeedanceRatio(config.videoSize),
+        ratio: hasSeedanceFrameReferences(references) ? "adaptive" : normalizeSeedanceRatio(config.videoSize),
         resolution: normalizeSeedanceResolution(config.vquality, model),
         duration: normalizeSeedanceDuration(config.videoSeconds, model),
         generate_audio: boolConfig(config.videoGenerateAudio, true),
@@ -390,7 +390,7 @@ export function buildSeedanceV1Payload(config: Pick<AiConfig, "videoSize" | "vqu
         seconds: String(duration),
         metadata: {
             resolution: normalizeSeedanceResolution(config.vquality, model),
-            ratio: isSeedance25Model(model) && references.some((item) => item.role === "first_frame" || item.role === "last_frame") ? "adaptive" : normalizeSeedanceRatio(config.videoSize),
+            ratio: references.some((item) => item.role === "first_frame" || item.role === "last_frame") ? "adaptive" : normalizeSeedanceRatio(config.videoSize),
             generate_audio: boolConfig(config.videoGenerateAudio, true),
         },
     };

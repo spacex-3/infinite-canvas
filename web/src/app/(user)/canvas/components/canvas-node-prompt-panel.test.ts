@@ -9,11 +9,11 @@ describe("CanvasNodePromptPanel", () => {
         expect(source).not.toMatch(/onGenerate\(node\.id,\s*mode,\s*text\);\s*setPrompt\(""\);/);
     });
 
-    test("prefills existing generated image prompt when opening the edit panel", () => {
-        expect(source).toContain("const [prompt, setPrompt] = useState(initialPromptValue(node, isEditingExistingContent));");
-        expect(source).toContain("setPrompt(initialPromptValue(node, isEditingExistingContent));");
-        expect(source).toContain("function initialPromptValue(node: CanvasNodeData, isEditingExistingContent: boolean)");
-        expect(source).toContain('return node.metadata?.prompt || (isEditingExistingContent ? "" : "");');
+    test("prefills the original composer prompt before the expanded execution prompt", () => {
+        expect(source).toContain("const [prompt, setPrompt] = useState(initialPromptValue(node));");
+        expect(source).toContain("setPrompt(initialPromptValue(node));");
+        expect(source).toContain("function initialPromptValue(node: CanvasNodeData)");
+        expect(source).toContain('return node.metadata?.composerContent ?? node.metadata?.prompt ?? "";');
     });
 
     test("allows the prompt panel to be resized both horizontally and vertically", () => {

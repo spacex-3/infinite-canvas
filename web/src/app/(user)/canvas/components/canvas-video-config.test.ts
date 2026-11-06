@@ -33,4 +33,11 @@ describe("canvas video config", () => {
         expect(settingsPopoverSource).toContain("videoSecondsLabel(config.videoSeconds)");
         expect(settingsPopoverSource).not.toContain("videoResolutionLabel");
     });
+
+    test("locks Seedance frame requests to the adaptive ratio in both canvas entry points", () => {
+        expect(configPanelSource).toContain("forceAdaptiveRatio={isSeedanceVideoModel(config.model) && hasSeedanceFrameMention");
+        expect(promptPanelSource).toContain("forceAdaptiveRatio={isSeedanceVideoModel(config.model) && hasSeedanceFrameMention(prompt)}");
+        expect(settingsPopoverSource).toContain('videoSizeLabel(forceAdaptiveRatio ? "adaptive" : config.videoSize)');
+        expect(settingsPopoverSource).toContain("forceAdaptiveRatio={forceAdaptiveRatio}");
+    });
 });

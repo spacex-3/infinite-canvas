@@ -18,6 +18,10 @@ export function parseCanvasResourceMentionTokens(value: string): CanvasResourceM
     return Array.from(value.matchAll(CANVAS_RESOURCE_MENTION_TOKEN_PATTERN), (match) => ({ nodeId: match[1], role: match[2] as SeedanceImageRole | undefined }));
 }
 
+export function hasSeedanceFrameMention(value: string) {
+    return /@\[node:[^;\]]+;role:(?:first_frame|last_frame)\]/.test(value);
+}
+
 export function canvasResourceMentionLabels(value: string, resources: CanvasMentionResource[]) {
     const resourceByNodeId = new Map(resources.map((resource) => [resource.nodeId, resource]));
     const labels = new Map<string, string>();
