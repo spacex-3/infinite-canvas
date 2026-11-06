@@ -11,7 +11,7 @@ import {
     OMNI_FLASH_REFERENCE_LIMITS,
     resolveOmniFlashModel,
 } from "@/lib/omni-flash-video";
-import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceReferenceCountError, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceFrameRatio, seedanceFrameReferenceError, seedanceReferenceCountError, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { getImageBlob, imageToDataUrl } from "@/services/image-storage";
 import { assertChannelSupportsCapability, buildApiUrl, resolveCustomChannelConfig, type AiConfig } from "@/stores/use-config-store";
@@ -329,15 +329,16 @@ async function requestSeedanceGeneration(
     assertSeedanceVideoReferences(videoReferences);
     assertSeedanceAudioReferences(audioReferences);
     const usesNativeApi = usesSeedanceNativeApi(config);
+    const frameRatio = seedanceFrameRatio(model, references, config.videoSize);
     const content = await buildSeedanceContent(config, prompt, references, videoReferences, audioReferences);
     if (!content.length) throw new Error("请输入视频提示词，或连接参考图片/视频/音频");
     if (!usesNativeApi) {
-        return requestSeedanceV1Generation(config, buildSeedanceV1Payload(config, model, buildSeedancePromptText(prompt, references, videoReferences, audioReferences), content), onProgress, onTaskRecovery);
+        return requestSeedanceV1Generation(config, buildSeedanceV1Payload(config, model, buildSeedancePromptText(prompt, references, videoReferences, audioReferences), content, frameRatio), onProgress, onTaskRecovery);
     }
     const payload = {
         model,
         content,
-        ratio: hasSeedanceFrameReferences(references) ? "adaptive" : normalizeSeedanceRatio(config.videoSize),
+        ratio: hasSeedanceFrameReferences(references) ? frameRatio : normalizeSeedanceRatio(config.videoSize),
         resolution: normalizeSeedanceResolution(config.vquality, model),
         duration: normalizeSeedanceDuration(config.videoSeconds, model),
         generate_audio: boolConfig(config.videoGenerateAudio, true),
@@ -380,7 +381,7 @@ export function usesSeedanceNativeApi(config: Pick<AiConfig, "channelMode" | "ba
     return config.channelMode === "local" && isArkPlanBaseUrl(config.baseUrl);
 }
 
-export function buildSeedanceV1Payload(config: Pick<AiConfig, "videoSize" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark">, model: string, prompt: string, content: Array<Record<string, unknown>>): SeedanceV1Payload {
+export function buildSeedanceV1Payload(config: Pick<AiConfig, "videoSize" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark">, model: string, prompt: string, content: Array<Record<string, unknown>>, frameRatio = "adaptive"): SeedanceV1Payload {
     const duration = normalizeSeedanceDuration(config.videoSeconds, model);
     const references = content.filter((item) => item.type !== "text");
     const payload: SeedanceV1Payload = {
@@ -390,7 +391,7 @@ export function buildSeedanceV1Payload(config: Pick<AiConfig, "videoSize" | "vqu
         seconds: String(duration),
         metadata: {
             resolution: normalizeSeedanceResolution(config.vquality, model),
-            ratio: references.some((item) => item.role === "first_frame" || item.role === "last_frame") ? "adaptive" : normalizeSeedanceRatio(config.videoSize),
+            ratio: references.some((item) => item.role === "first_frame" || item.role === "last_frame") ? frameRatio : normalizeSeedanceRatio(config.videoSize),
             generate_audio: boolConfig(config.videoGenerateAudio, true),
         },
     };
@@ -825,6 +826,8 @@ function assertSeedanceReferences(model: string, references: ReferenceImage[], v
     if (firstFrames.length > 1) throw new Error("Seedance 首帧最多只能设置 1 张图片");
     if (lastFrames.length > 1) throw new Error("Seedance 尾帧最多只能设置 1 张图片");
     if (lastFrames.length && !firstFrames.length) throw new Error("Seedance 尾帧必须和首帧一起使用，请先添加首帧图片");
+    const frameError = seedanceFrameReferenceError(references);
+    if (frameError) throw new Error(frameError);
     if (!firstFrames.length && !lastFrames.length) return;
     const ordinaryImages = references.filter((image) => !image.seedanceRole || image.seedanceRole === "reference_image");
     if (ordinaryImages.length || videoReferences.length || audioReferences.length) {
@@ -924,8 +927,14 @@ async function videoResultFromUrl(url: string, onProgress?: GenerationProgressCa
     try {
         onProgress?.(0, "caching");
         downloadUrl = await cacheRemoteVideo(url, onProgress);
+    } catch {
+        downloadUrl = url;
+    }
+    try {
         onProgress?.(0, "downloading");
+        const token = useUserStore.getState().token;
         const response = await axios.get<Blob>(downloadUrl, {
+            headers: downloadUrl.startsWith("/") && token ? { Authorization: `Bearer ${token}` } : undefined,
             responseType: "blob",
             timeout: 15 * 60 * 1000,
             onDownloadProgress: (event) => {

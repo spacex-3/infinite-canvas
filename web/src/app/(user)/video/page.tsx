@@ -132,7 +132,7 @@ export default function VideoPage() {
         const nextReferences = await Promise.all(
             imageFiles.map(async (file) => {
                 const image = await uploadImage(file);
-                return { id: nanoid(), name: file.name, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
+                return { id: nanoid(), name: file.name, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height };
             }),
         );
         const nextVideoReferences = await Promise.all(
@@ -170,7 +170,7 @@ export default function VideoPage() {
             const nextReferences = await Promise.all(
                 blobs.map(async (blob, index) => {
                     const image = await uploadImage(blob);
-                    return { id: nanoid(), name: `clipboard-${index + 1}.png`, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
+                    return { id: nanoid(), name: `clipboard-${index + 1}.png`, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height };
                 }),
             );
             setReferences((value) => [...value, ...nextReferences]);
@@ -264,7 +264,7 @@ export default function VideoPage() {
         } else if (payload.kind === "image") {
             if (references.length >= referenceLimits.images || references.length + videoReferences.length + audioReferences.length >= referenceLimits.total) return message.error(`当前模型最多支持 ${referenceLimits.images} 张图片、合计 ${referenceLimits.total} 项参考素材`);
             const stored = await uploadImage(payload.dataUrl);
-            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
+            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height }]);
         } else if (payload.kind === "video") {
             if (videoReferences.length >= referenceLimits.videos || references.length + videoReferences.length + audioReferences.length >= referenceLimits.total) return message.error(`当前模型最多支持 ${referenceLimits.videos} 个视频、合计 ${referenceLimits.total} 项参考素材`);
             setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }]);

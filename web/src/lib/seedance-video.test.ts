@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptionsForModel, seedanceReferenceCountError, seedanceReferenceLimitsForModel, seedanceResolutionOptionsForModel } from "./seedance-video";
+import { normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptionsForModel, seedanceFrameRatio, seedanceFrameReferenceError, seedanceReferenceCountError, seedanceReferenceLimitsForModel, seedanceResolutionOptionsForModel } from "./seedance-video";
 
 describe("Seedance video defaults", () => {
     test("uses landscape and 5 seconds when values are empty", () => {
@@ -31,5 +31,23 @@ describe("Seedance video defaults", () => {
         expect(seedanceReferenceLimitsForModel("doubao-seedance-2-5-260628")).toEqual({ images: 30, videos: 10, audios: 10, total: 50 });
         expect(seedanceReferenceCountError("doubao-seedance-2-0-mini-260615", { images: 10, videos: 0, audios: 0 })).toContain("最多支持 9 张");
         expect(seedanceReferenceCountError("doubao-seedance-2-5-260628", { images: 30, videos: 10, audios: 11 })).toContain("最多支持 10 个参考音频");
+    });
+
+    test("uses fixed frame ratios for 2.0 models and adaptive for 2.5", () => {
+        const frames = [
+            { id: "first", name: "first.png", type: "image/png", dataUrl: "first", seedanceRole: "first_frame" as const, width: 1080, height: 1920 },
+            { id: "last", name: "last.png", type: "image/png", dataUrl: "last", seedanceRole: "last_frame" as const, width: 1080, height: 1920 },
+        ];
+        expect(seedanceFrameRatio("doubao-seedance-2-0-mini-260615", frames, "16:9")).toBe("9:16");
+        expect(seedanceFrameRatio("doubao-seedance-2-0-fast-260128", frames, "16:9")).toBe("9:16");
+        expect(seedanceFrameRatio("doubao-seedance-2-0-260128", frames, "16:9")).toBe("9:16");
+        expect(seedanceFrameRatio("doubao-seedance-2-5-260628", frames, "16:9")).toBe("adaptive");
+        expect(seedanceFrameReferenceError(frames)).toBe("");
+    });
+
+    test("rejects mismatched or unsupported first and last frames locally", () => {
+        const first = { id: "first", name: "first.png", type: "image/png", dataUrl: "first", seedanceRole: "first_frame" as const, width: 1080, height: 1920 };
+        expect(seedanceFrameReferenceError([first, { ...first, id: "last", seedanceRole: "last_frame", width: 1280 }])).toContain("尺寸必须一致");
+        expect(seedanceFrameReferenceError([{ ...first, width: 1280 }])).toContain("不属于支持的比例");
     });
 });

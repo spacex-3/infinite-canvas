@@ -98,17 +98,19 @@ describe("Seedance new-api compatibility", () => {
         });
     });
 
-    test("preserves first and last frame roles and forces adaptive ratio for every Seedance model", () => {
+    test("preserves frame roles and applies each Seedance model's frame ratio rule", () => {
         const content = [
             { type: "text", text: "从图片1过渡到图片2" },
             { type: "image_url", image_url: { url: "https://example.com/first.png" }, role: "first_frame" },
             { type: "image_url", image_url: { url: "https://example.com/last.png" }, role: "last_frame" },
         ];
-        for (const model of ["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-0-mini-260615", "doubao-seedance-2-5-260628"]) {
-            const payload = buildSeedanceV1Payload({ videoSize: "16:9", vquality: "480p", videoSeconds: "5", videoGenerateAudio: "true", videoWatermark: "false" }, model, "从图片1过渡到图片2", content);
-            expect(payload.metadata.ratio).toBe("adaptive");
+        for (const model of ["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-0-mini-260615"]) {
+            const payload = buildSeedanceV1Payload({ videoSize: "16:9", vquality: "480p", videoSeconds: "5", videoGenerateAudio: "true", videoWatermark: "false" }, model, "从图片1过渡到图片2", content, "9:16");
+            expect(payload.metadata.ratio).toBe("9:16");
             expect(payload.metadata.content?.map((item) => item.role)).toEqual(["first_frame", "last_frame"]);
         }
+        const payload = buildSeedanceV1Payload({ videoSize: "16:9", vquality: "480p", videoSeconds: "5", videoGenerateAudio: "true", videoWatermark: "false" }, "doubao-seedance-2-5-260628", "从图片1过渡到图片2", content, "adaptive");
+        expect(payload.metadata.ratio).toBe("adaptive");
         expect(videoSource).toContain("Seedance 首尾帧模式不能与普通参考图、参考视频或参考音频混用");
     });
 
@@ -116,6 +118,7 @@ describe("Seedance new-api compatibility", () => {
         expect(videoSource).toContain('onProgress?.(0, "caching")');
         expect(videoSource).toContain("downloadUrl = await cacheRemoteVideo(url, onProgress)");
         expect(videoSource).toContain('onProgress?.(0, "downloading")');
+        expect(videoSource).toContain('downloadUrl.startsWith("/") && token ? { Authorization: `Bearer ${token}` } : undefined');
         expect(videoSource).toContain('onProgress?.((event.loaded / event.total) * 100, "downloading")');
         expect(videoSource).toContain("timeout: 15 * 60 * 1000");
     });

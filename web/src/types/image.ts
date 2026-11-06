@@ -8,4 +8,6 @@ export type ReferenceImage = {
     url?: string;
     storageKey?: string;
     seedanceRole?: SeedanceImageRole;
+    width?: number;
+    height?: number;
 };

@@ -16,9 +16,10 @@ type CanvasVideoSettingsPopoverProps = {
     buttonClassName?: string;
     placement?: "topLeft" | "top" | "topRight" | "bottomLeft" | "bottom" | "bottomRight";
     forceAdaptiveRatio?: boolean;
+    followFirstFrameRatio?: boolean;
 };
 
-export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClassName, placement = "topLeft", forceAdaptiveRatio = false }: CanvasVideoSettingsPopoverProps) {
+export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClassName, placement = "topLeft", forceAdaptiveRatio = false, followFirstFrameRatio = false }: CanvasVideoSettingsPopoverProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const buttonRef = useRef<HTMLSpanElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
@@ -46,14 +47,14 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
         };
     }, [open]);
 
-    const panel = open && buttonRect ? <VideoSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} forceAdaptiveRatio={forceAdaptiveRatio} /> : null;
+    const panel = open && buttonRect ? <VideoSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} forceAdaptiveRatio={forceAdaptiveRatio} followFirstFrameRatio={followFirstFrameRatio} /> : null;
 
     return (
         <>
             <span ref={buttonRef} className="inline-flex min-w-0">
                 <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[210px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => setOpen((current) => !current)}>
                     <span className="truncate">
-                        {videoResolutionLabel(config.vquality)} · {videoSizeLabel(forceAdaptiveRatio ? "adaptive" : config.videoSize)} · {videoSecondsLabel(config.videoSeconds)}
+                        {videoResolutionLabel(config.vquality)} · {followFirstFrameRatio ? "跟随首帧" : videoSizeLabel(forceAdaptiveRatio ? "adaptive" : config.videoSize)} · {videoSecondsLabel(config.videoSeconds)}
                     </span>
                 </Button>
             </span>
@@ -70,6 +71,7 @@ function VideoSettingsPortal({
     config,
     onConfigChange,
     forceAdaptiveRatio,
+    followFirstFrameRatio,
 }: {
     buttonRect: DOMRect;
     panelRef: RefObject<HTMLDivElement | null>;
@@ -78,6 +80,7 @@ function VideoSettingsPortal({
     config: AiConfig;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
     forceAdaptiveRatio: boolean;
+    followFirstFrameRatio: boolean;
 }) {
     const width = 356;
     const gap = 8;
@@ -109,7 +112,7 @@ function VideoSettingsPortal({
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
-            <VideoSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" forceAdaptiveRatio={forceAdaptiveRatio} />
+            <VideoSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" forceAdaptiveRatio={forceAdaptiveRatio} followFirstFrameRatio={followFirstFrameRatio} />
         </div>,
         document.body,
     );
