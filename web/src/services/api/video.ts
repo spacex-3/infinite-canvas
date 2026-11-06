@@ -11,7 +11,7 @@ import {
     OMNI_FLASH_REFERENCE_LIMITS,
     resolveOmniFlashModel,
 } from "@/lib/omni-flash-video";
-import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedance25Model, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { assertChannelSupportsCapability, buildApiUrl, resolveCustomChannelConfig, type AiConfig } from "@/stores/use-config-store";
@@ -318,6 +318,7 @@ async function requestSeedanceGeneration(
     onProgress?: GenerationProgressCallback,
     onTaskRecovery?: VideoTaskRecoveryCallback,
 ) {
+    assertSeedanceImageRoles(references, videoReferences, audioReferences);
     if (audioReferences.length && !references.length && !videoReferences.length) {
         throw new Error("Seedance 参考音频不能单独使用，请同时添加参考图或参考视频");
     }
@@ -332,7 +333,7 @@ async function requestSeedanceGeneration(
     const payload = {
         model,
         content,
-        ratio: normalizeSeedanceRatio(config.videoSize),
+        ratio: isSeedance25Model(model) && hasSeedanceFrameReferences(references) ? "adaptive" : normalizeSeedanceRatio(config.videoSize),
         resolution: normalizeSeedanceResolution(config.vquality, model),
         duration: normalizeSeedanceDuration(config.videoSeconds, model),
         generate_audio: boolConfig(config.videoGenerateAudio, true),
@@ -385,7 +386,7 @@ export function buildSeedanceV1Payload(config: Pick<AiConfig, "videoSize" | "vqu
         seconds: String(duration),
         metadata: {
             resolution: normalizeSeedanceResolution(config.vquality, model),
-            ratio: normalizeSeedanceRatio(config.videoSize),
+            ratio: isSeedance25Model(model) && references.some((item) => item.role === "first_frame" || item.role === "last_frame") ? "adaptive" : normalizeSeedanceRatio(config.videoSize),
             generate_audio: boolConfig(config.videoGenerateAudio, true),
         },
     };
@@ -801,6 +802,23 @@ function assertSeedanceAudioReferences(audioReferences: ReferenceAudio[]) {
     if (total > 15000) throw new Error("Seedance 参考音频总时长不能超过 15 秒");
 }
 
+function hasSeedanceFrameReferences(references: ReferenceImage[]) {
+    return references.some((image) => image.seedanceRole === "first_frame" || image.seedanceRole === "last_frame");
+}
+
+function assertSeedanceImageRoles(references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
+    const firstFrames = references.filter((image) => image.seedanceRole === "first_frame");
+    const lastFrames = references.filter((image) => image.seedanceRole === "last_frame");
+    if (firstFrames.length > 1) throw new Error("Seedance 首帧最多只能设置 1 张图片");
+    if (lastFrames.length > 1) throw new Error("Seedance 尾帧最多只能设置 1 张图片");
+    if (lastFrames.length && !firstFrames.length) throw new Error("Seedance 尾帧必须和首帧一起使用，请先添加首帧图片");
+    if (!firstFrames.length && !lastFrames.length) return;
+    const ordinaryImages = references.filter((image) => !image.seedanceRole || image.seedanceRole === "reference_image");
+    if (ordinaryImages.length || videoReferences.length || audioReferences.length) {
+        throw new Error("Seedance 首尾帧模式不能与普通参考图、参考视频或参考音频混用");
+    }
+}
+
 function seedanceApiUrl(config: AiConfig, taskId?: string) {
     if (config.channelMode === "remote") return taskId ? `/api/v1/videos/${encodeURIComponent(taskId)}` : "/api/v1/videos";
     return buildApiUrl(config.baseUrl, `/contents/generations/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}`);
@@ -811,7 +829,7 @@ async function buildSeedanceContent(config: AiConfig, prompt: string, references
     const text = buildSeedancePromptText(prompt, references, videoReferences, audioReferences);
     if (text) content.push({ type: "text", text });
     for (const image of references.slice(0, SEEDANCE_REFERENCE_LIMITS.images)) {
-        content.push({ type: "image_url", image_url: { url: await resolveSeedanceImageUrl(image) }, role: "reference_image" });
+        content.push({ type: "image_url", image_url: { url: await resolveSeedanceImageUrl(image) }, role: image.seedanceRole || "reference_image" });
     }
     for (const video of videoReferences.slice(0, SEEDANCE_REFERENCE_LIMITS.videos)) {
         content.push({ type: "video_url", video_url: { url: await resolveSeedanceVideoUrl(video) }, role: "reference_video" });

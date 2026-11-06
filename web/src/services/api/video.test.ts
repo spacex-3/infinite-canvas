@@ -90,6 +90,19 @@ describe("Seedance new-api compatibility", () => {
         });
     });
 
+    test("preserves first and last frame roles and forces adaptive ratio for Seedance 2.5", () => {
+        const content = [
+            { type: "text", text: "从图片1过渡到图片2" },
+            { type: "image_url", image_url: { url: "https://example.com/first.png" }, role: "first_frame" },
+            { type: "image_url", image_url: { url: "https://example.com/last.png" }, role: "last_frame" },
+        ];
+        const payload = buildSeedanceV1Payload({ videoSize: "16:9", vquality: "720p", videoSeconds: "5", videoGenerateAudio: "true", videoWatermark: "false" }, "doubao-seedance-2-5-260628", "从图片1过渡到图片2", content);
+
+        expect(payload.metadata.ratio).toBe("adaptive");
+        expect(payload.metadata.content?.map((item) => item.role)).toEqual(["first_frame", "last_frame"]);
+        expect(videoSource).toContain("Seedance 首尾帧模式不能与普通参考图、参考视频或参考音频混用");
+    });
+
     test("shows a download stage after a completed task returns a video URL", () => {
         expect(videoSource).toContain('onProgress?.(0, "caching")');
         expect(videoSource).toContain("downloadUrl = await cacheRemoteVideo(url, onProgress)");

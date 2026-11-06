@@ -24,9 +24,10 @@ describe("canvas prompt keyboard behavior", () => {
         expect(textareaSource).not.toContain("MentionHighlightText");
         expect(textareaSource).not.toContain('rgba(0,0,0,0.01)');
         expect(textareaSource).toContain("contentEditable");
-        expect(textareaSource).toContain('chip.textContent = `@${reference.label}`');
+        expect(textareaSource).toContain('chip.textContent = `@${reference.label}${roleLabel ? ` · ${roleLabel}` : ""}`');
         expect(textareaSource).toContain("theme.toolbar.activeBg");
-        expect(textareaSource).toContain('result += `@[node:${nodeId}]`');
+        expect(textareaSource).toContain('result += `@[node:${nodeId}${role ? `;role:${role}` : ""}]`');
+        expect(textareaSource).toContain("CANVAS_SEEDANCE_IMAGE_ROLES");
     });
 
     test("prompt panel uses free resize handle and assistant keeps vertical resizing", () => {

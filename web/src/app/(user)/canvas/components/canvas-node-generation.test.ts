@@ -86,4 +86,29 @@ describe("buildNodeGenerationContext", () => {
         expect(context.referenceVideos.map((video) => video.id)).toEqual(["video-1"]);
         expect(context.referenceImages.map((image) => image.id)).toEqual(["image-1"]);
     });
+
+    test("keeps image frame roles while numbering all referenced materials by send order", () => {
+        const configNode: CanvasNodeData = {
+            id: "config-1",
+            type: CanvasNodeType.Config,
+            title: "Config",
+            position: { x: 0, y: 0 },
+            width: 240,
+            height: 160,
+            metadata: { composerContent: "从 @[node:image-2;role:first_frame] 过渡到 @[node:image-1;role:last_frame]，参考 @[node:video-2] 和 @[node:video-1] 的运动" },
+        };
+        const imageNode = (id: string): CanvasNodeData => ({ id, type: CanvasNodeType.Image, title: id, position: { x: 0, y: 0 }, width: 180, height: 180, metadata: { content: `data:image/png;base64,${id}` } });
+        const videoNode = (id: string): CanvasNodeData => ({ id, type: CanvasNodeType.Video, title: id, position: { x: 0, y: 0 }, width: 320, height: 180, metadata: { content: `https://example.com/${id}.mp4` } });
+        const nodes = [configNode, imageNode("image-1"), imageNode("image-2"), videoNode("video-1"), videoNode("video-2")];
+        const connections = nodes.slice(1).map((node, index) => ({ id: `conn-${index}`, fromNodeId: node.id, toNodeId: configNode.id }));
+
+        const context = buildNodeGenerationContext(configNode.id, nodes, connections, configNode.metadata.composerContent);
+
+        expect(context.prompt).toBe("从 图片1 过渡到 图片2，参考 视频1 和 视频2 的运动");
+        expect(context.referenceImages.map((image) => [image.id, image.seedanceRole])).toEqual([
+            ["image-2", "first_frame"],
+            ["image-1", "last_frame"],
+        ]);
+        expect(context.referenceVideos.map((video) => video.id)).toEqual(["video-2", "video-1"]);
+    });
 });

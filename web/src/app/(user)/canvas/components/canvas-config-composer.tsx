@@ -7,7 +7,9 @@ import { FileText, Image as ImageIcon, Music2, Video, X } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
+import type { SeedanceImageRole } from "@/types/image";
 import type { NodeGenerationInput } from "./canvas-node-generation";
+import { CANVAS_RESOURCE_MENTION_TOKEN_PATTERN, CANVAS_SEEDANCE_IMAGE_ROLES, canvasResourceMentionRoleLabel } from "../utils/canvas-resource-mention-format";
 import { matchesCanvasReferenceQuery, readCanvasReferenceMention, shouldResetCanvasReferenceSelection } from "../utils/canvas-resource-query";
 
 type CanvasConfigComposerProps = {
@@ -15,26 +17,28 @@ type CanvasConfigComposerProps = {
     inputs: NodeGenerationInput[];
     onChange: (value: string) => void;
     onClose: () => void;
+    enableSeedanceImageRoles?: boolean;
 };
 
 type Token =
     | { type: "text"; value: string }
-    | { type: "reference"; nodeId: string };
+    | { type: "reference"; nodeId: string; role?: SeedanceImageRole };
 
 type MentionState = {
     start: number;
     query: string;
 };
 
-export const CONFIG_REFERENCE_PATTERN = /@\[node:([^\]]+)\]/g;
+export const CONFIG_REFERENCE_PATTERN = CANVAS_RESOURCE_MENTION_TOKEN_PATTERN;
 
-export function CanvasConfigComposer({ value, inputs, onChange, onClose }: CanvasConfigComposerProps) {
+export function CanvasConfigComposer({ value, inputs, onChange, onClose, enableSeedanceImageRoles = false }: CanvasConfigComposerProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const editorRef = useRef<HTMLDivElement>(null);
     const composingRef = useRef(false);
     const [mention, setMention] = useState<MentionState | null>(null);
     const [activeIndex, setActiveIndex] = useState(0);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const [roleReference, setRoleReference] = useState<NodeGenerationInput | null>(null);
     const tokens = useMemo(() => parseComposerTokens(value), [value]);
     const referenceById = useMemo(() => new Map(inputs.map((input) => [input.nodeId, input])), [inputs]);
     const candidates = useMemo(() => {
@@ -55,7 +59,7 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
                 return;
             }
             const input = referenceById.get(token.nodeId);
-            if (input) editor.append(createReferenceChip(input, inputs, theme, setImagePreview));
+            if (input) editor.append(createReferenceChip(input, inputs, theme, setImagePreview, token.role));
         });
     }, [inputs, referenceById, theme, tokens]);
 
@@ -80,14 +84,15 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
 
     const closeMention = () => {
         setMention(null);
+        setRoleReference(null);
         setActiveIndex(0);
     };
 
-    const insertReference = (input: NodeGenerationInput) => {
+    const insertReference = (input: NodeGenerationInput, role?: SeedanceImageRole) => {
         const editor = editorRef.current;
         if (!editor) return;
         removeActiveMention();
-        const chip = createReferenceChip(input, inputs, theme, setImagePreview);
+        const chip = createReferenceChip(input, inputs, theme, setImagePreview, role);
         const space = document.createTextNode(" ");
         const selection = window.getSelection();
         const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
@@ -104,6 +109,15 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
         }
         closeMention();
         onChange(serializeEditor(editor));
+    };
+
+    const selectReference = (input: NodeGenerationInput) => {
+        if (enableSeedanceImageRoles && input.type === "image") {
+            setRoleReference(input);
+            setActiveIndex(0);
+            return;
+        }
+        insertReference(input);
     };
 
     const stopCanvasInteraction = (event: PointerEvent | MouseEvent) => event.stopPropagation();
@@ -144,6 +158,25 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
                     }}
                     onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
                         event.stopPropagation();
+                        if (mention && roleReference) {
+                            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                                event.preventDefault();
+                                const offset = event.key === "ArrowDown" ? 1 : -1;
+                                setActiveIndex((index) => (index + offset + CANVAS_SEEDANCE_IMAGE_ROLES.length) % CANVAS_SEEDANCE_IMAGE_ROLES.length);
+                                return;
+                            }
+                            if (event.key === "Enter") {
+                                event.preventDefault();
+                                insertReference(roleReference, CANVAS_SEEDANCE_IMAGE_ROLES[Math.min(activeIndex, CANVAS_SEEDANCE_IMAGE_ROLES.length - 1)].value);
+                                return;
+                            }
+                            if (event.key === "Escape") {
+                                event.preventDefault();
+                                setRoleReference(null);
+                                setActiveIndex(0);
+                                return;
+                            }
+                        }
                         if (mention && candidates.length) {
                             if (event.key === "ArrowDown") {
                                 event.preventDefault();
@@ -157,7 +190,7 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
                             }
                             if (event.key === "Enter") {
                                 event.preventDefault();
-                                insertReference(candidates[Math.min(activeIndex, candidates.length - 1)]);
+                                selectReference(candidates[Math.min(activeIndex, candidates.length - 1)]);
                                 return;
                             }
                             if (event.key === "Escape") {
@@ -179,12 +212,33 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
                     onMouseUp={syncMention}
                     onBlur={() => window.setTimeout(closeMention, 120)}
                 />
-                {mention && candidates.length ? <MentionMenu inputs={candidates} allInputs={inputs} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null}
+                {mention && roleReference ? <RoleMenu input={roleReference} activeIndex={Math.min(activeIndex, CANVAS_SEEDANCE_IMAGE_ROLES.length - 1)} theme={theme} onSelect={(role) => insertReference(roleReference, role)} /> : mention && candidates.length ? <MentionMenu inputs={candidates} allInputs={inputs} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={selectReference} /> : null}
             </div>
             {imagePreview ? <Image src={imagePreview} alt="引用图片预览" style={{ display: "none" }} preview={{ visible: true, src: imagePreview, onVisibleChange: (visible) => !visible && setImagePreview(null) }} /> : null}
         </div>
     );
 
+}
+
+function RoleMenu({ input, activeIndex, theme, onSelect }: { input: NodeGenerationInput; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onSelect: (role: SeedanceImageRole) => void }) {
+    const selectedRef = useRef(false);
+    const selectRole = (role: SeedanceImageRole) => {
+        if (selectedRef.current) return;
+        selectedRef.current = true;
+        onSelect(role);
+    };
+
+    return (
+        <div className="absolute left-2 top-[calc(100%+6px)] z-[90] w-64 rounded-xl border p-1 shadow-2xl" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }}>
+            <div className="px-2 py-1 text-[11px] opacity-55">{input.title} 用作</div>
+            {CANVAS_SEEDANCE_IMAGE_ROLES.map((role, index) => (
+                <button key={role.value} type="button" className="block w-full rounded-lg px-2 py-1.5 text-left text-xs transition" style={{ background: index === activeIndex ? theme.toolbar.activeBg : "transparent", color: index === activeIndex ? theme.toolbar.activeText : theme.node.text }} onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); selectRole(role.value); }}>
+                    <span className="block font-medium">{role.label}</span>
+                    <span className="block opacity-60">{role.description}</span>
+                </button>
+            ))}
+        </div>
+    );
 }
 
 function MentionMenu({ inputs, allInputs, activeIndex, theme, onSelect }: { inputs: NodeGenerationInput[]; allInputs: NodeGenerationInput[]; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onSelect: (input: NodeGenerationInput) => void }) {
@@ -231,10 +285,11 @@ function ResourcePreview({ input }: { input: NodeGenerationInput }) {
     );
 }
 
-function createReferenceChip(input: NodeGenerationInput, inputs: NodeGenerationInput[], theme: (typeof canvasThemes)[keyof typeof canvasThemes], onImagePreview: (url: string) => void) {
+function createReferenceChip(input: NodeGenerationInput, inputs: NodeGenerationInput[], theme: (typeof canvasThemes)[keyof typeof canvasThemes], onImagePreview: (url: string) => void, role?: SeedanceImageRole) {
     const wrapper = document.createElement("span");
     wrapper.contentEditable = "false";
     wrapper.dataset.referenceNodeId = input.nodeId;
+    if (role) wrapper.dataset.referenceRole = role;
     wrapper.className = "mx-px inline-flex h-7 max-w-40 items-center justify-center gap-1 overflow-hidden rounded-md border px-1.5 text-xs leading-none align-middle";
     Object.assign(wrapper.style, chipStyle(theme));
     wrapper.title = input.text || input.title;
@@ -252,7 +307,8 @@ function createReferenceChip(input: NodeGenerationInput, inputs: NodeGenerationI
     }
     const text = document.createElement("span");
     text.className = "block truncate font-medium";
-    text.textContent = `@${resourceLabel(input, inputs)}`;
+    const roleLabel = canvasResourceMentionRoleLabel(role);
+    text.textContent = `@${resourceLabel(input, inputs)}${roleLabel ? ` · ${roleLabel}` : ""}`;
     wrapper.appendChild(text);
     return wrapper;
 }
@@ -267,7 +323,8 @@ function serializeNodes(nodes: NodeListOf<ChildNode>) {
         if (node.nodeType === Node.TEXT_NODE) result += node.textContent || "";
         if (!(node instanceof HTMLElement)) return;
         const nodeId = node.dataset.referenceNodeId;
-        if (nodeId) result += `@[node:${nodeId}]`;
+        const role = node.dataset.referenceRole;
+        if (nodeId) result += `@[node:${nodeId}${role ? `;role:${role}` : ""}]`;
         else if (node.tagName === "BR") result += "\n";
         else result += serializeNodes(node.childNodes);
     });
@@ -349,7 +406,7 @@ function parseComposerTokens(value: string): Token[] {
     for (const match of value.matchAll(CONFIG_REFERENCE_PATTERN)) {
         if (match.index === undefined) continue;
         if (match.index > lastIndex) tokens.push({ type: "text", value: value.slice(lastIndex, match.index) });
-        tokens.push({ type: "reference", nodeId: match[1] });
+        tokens.push({ type: "reference", nodeId: match[1], role: match[2] as SeedanceImageRole | undefined });
         lastIndex = match.index + match[0].length;
     }
     if (lastIndex < value.length) tokens.push({ type: "text", value: value.slice(lastIndex) });

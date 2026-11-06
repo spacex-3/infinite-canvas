@@ -1,7 +1,7 @@
 import type { ChatCompletionMessage } from "@/services/api/image";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import { seedanceReferenceLabel } from "@/lib/seedance-video";
-import type { ReferenceImage } from "@/types/image";
+import type { ReferenceImage, SeedanceImageRole } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../types";
 import { getGenerationResourceNodes } from "../utils/canvas-resource-references";
@@ -68,7 +68,7 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
     let lastIndex = 0;
     let nextPrompt = "";
 
-    for (const match of prompt.matchAll(/@\[node:([^\]]+)\]/g)) {
+    for (const match of prompt.matchAll(/@\[node:([^;\]]+)(?:;role:(reference_image|first_frame|last_frame))?\]/g)) {
         if (match.index === undefined) continue;
         hasToken = true;
         nextPrompt += prompt.slice(lastIndex, match.index);
@@ -79,6 +79,7 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
                 label = generationLabel(input.type, counts[input.type]++);
                 labelByNodeId.set(input.nodeId, label);
                 if (input.type === "text") textBlocks.push(`【${label}】\n${input.text || ""}`);
+                else if (input.type === "image" && input.image) selectedInputs.push({ ...input, image: { ...input.image, seedanceRole: (match[2] as SeedanceImageRole | undefined) || "reference_image" } });
                 else selectedInputs.push(input);
             }
             nextPrompt += input.type === "text" ? `【${label}】` : label;

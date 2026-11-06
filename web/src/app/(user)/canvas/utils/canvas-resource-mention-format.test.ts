@@ -15,6 +15,7 @@ describe("canvas resource mention formatting", () => {
 
     test("renders node tokens with their current resource labels", () => {
         expect(renderCanvasResourceMentionText("把 @[node:image-1] 的车换进 @[node:video-1]", references)).toBe("把 图片1 的车换进 视频1");
+        expect(renderCanvasResourceMentionText("从 @[node:image-1;role:first_frame] 开始", references)).toBe("从 图片1 · 首帧 开始");
     });
 
     test("canonicalizes visible resource labels back to stable node tokens", () => {
