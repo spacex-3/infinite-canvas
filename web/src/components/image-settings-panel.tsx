@@ -4,15 +4,10 @@ import { type ReactNode, useState } from "react";
 import { ConfigProvider, Switch } from "antd";
 
 import { type CanvasTheme } from "@/lib/canvas-theme";
+import { getImageModelCapabilities, imageQualityLabelForModel, normalizeImageQualityForModel } from "@/lib/image-model-capabilities";
 import { resolveSemanticImageDimensions } from "@/lib/image-resolution";
 import type { AiConfig } from "@/stores/use-config-store";
 
-const qualityOptions = [
-    { value: "high", label: "4K" },
-    { value: "medium", label: "2K" },
-    { value: "low", label: "1K" },
-    { value: "auto", label: "自动" },
-];
 const DIMENSION_STEP = 16;
 
 const aspectOptions = [
@@ -28,7 +23,8 @@ const aspectOptions = [
 
 type ImageSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "quality" | "size" | "count", value: string) => void;
+    model?: string;
+    onConfigChange: (key: "quality" | "size" | "count" | "imageOutputFormat" | "imageBackground", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -36,13 +32,17 @@ type ImageSettingsPanelProps = {
     quickCount?: number;
 };
 
-export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
+export function ImageSettingsPanel({ config, model = config.model || config.imageModel, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
-    const quality = config.quality || "auto";
+    const capabilities = getImageModelCapabilities(model);
+    const quality = normalizeImageQualityForModel(model, config.quality) || config.quality || "auto";
+    const dimensionQuality = resolutionQuality(capabilities.lockedResolution) || quality;
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
+    const outputFormat = capabilities.supportsGif && config.imageOutputFormat === "gif" ? "gif" : "png";
+    const background = ["opaque", "transparent"].includes(config.imageBackground) ? config.imageBackground : "auto";
     const selectedAspect = aspectOptions.find((item) => item.value === activeSize);
-    const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0], quality);
+    const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0], dimensionQuality);
     const selectAspect = (value: string) => {
         const option = aspectOptions.find((item) => item.value === value);
         onConfigChange("size", option?.value || "auto");
@@ -67,33 +67,48 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
             >
                 {showTitle ? <div className="text-lg font-semibold">图像设置</div> : null}
                 <div className="space-y-2.5">
-                    <SettingTitle color={theme.node.muted}>分辨率</SettingTitle>
-                    <div className="grid grid-cols-4 gap-2.5">
-                        {qualityOptions.map((item) => (
-                            <OptionPill key={item.value} selected={quality === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
-                                {item.label}
-                            </OptionPill>
-                        ))}
-                    </div>
+                    <SettingTitle color={theme.node.muted}>{capabilities.qualityOptions.length ? "质量 / 分辨率" : "分辨率"}</SettingTitle>
+                    {capabilities.qualityOptions.length ? (
+                        <>
+                            <div className="grid grid-cols-3 gap-2.5">
+                                {capabilities.qualityOptions.map((item) => (
+                                    <OptionPill key={item.value} selected={quality === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
+                                        {item.label}
+                                    </OptionPill>
+                                ))}
+                            </div>
+                            {capabilities.qualityOptions.some((item) => item.priceTier) ? (
+                                <div className="text-xs" style={{ color: theme.node.muted }}>
+                                    Low / Medium / High 按 std 价，XHigh / Max 按 xhigh 价
+                                </div>
+                            ) : null}
+                        </>
+                    ) : (
+                        <div className="h-9 rounded-xl px-3 py-2 text-sm" style={{ background: theme.node.fill, color: theme.node.text }}>
+                            {capabilities.lockedResolution || "由模型决定"}
+                        </div>
+                    )}
                 </div>
-                <div className="space-y-2.5">
-                    <div className="flex items-center justify-between gap-3">
-                        <SettingTitle color={theme.node.muted}>尺寸</SettingTitle>
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium" style={{ color: theme.node.muted }}>
-                                16倍数对齐
-                            </span>
-                            <span title="输入完成后自动向上补成 16 的倍数" onMouseDown={(event) => event.stopPropagation()}>
-                                <Switch size="small" checked={snapDimensionToStep} onChange={setSnapDimensionToStep} />
-                            </span>
+                {capabilities.lockedResolution !== "最高约 1.5K" ? (
+                    <div className="space-y-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                            <SettingTitle color={theme.node.muted}>尺寸</SettingTitle>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium" style={{ color: theme.node.muted }}>
+                                    16倍数对齐
+                                </span>
+                                <span title="输入完成后自动向上补成 16 的倍数" onMouseDown={(event) => event.stopPropagation()}>
+                                    <Switch size="small" checked={snapDimensionToStep} onChange={setSnapDimensionToStep} />
+                                </span>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
+                            <DimensionInput prefix="W" value={dimensions.width} disabled={activeSize === "auto"} theme={theme} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("width", value)} />
+                            <span className="text-lg opacity-45">↔</span>
+                            <DimensionInput prefix="H" value={dimensions.height} disabled={activeSize === "auto"} theme={theme} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("height", value)} />
                         </div>
                     </div>
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
-                        <DimensionInput prefix="W" value={dimensions.width} disabled={activeSize === "auto"} theme={theme} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("width", value)} />
-                        <span className="text-lg opacity-45">↔</span>
-                        <DimensionInput prefix="H" value={dimensions.height} disabled={activeSize === "auto"} theme={theme} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("height", value)} />
-                    </div>
-                </div>
+                ) : null}
                 <div className="space-y-2.5">
                     <SettingTitle color={theme.node.muted}>宽高比</SettingTitle>
                     <div className="grid grid-cols-4 gap-2.5">
@@ -123,6 +138,29 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         <CountInput value={count} max={maxCount} theme={theme} onChange={(value) => onConfigChange("count", String(value || 1))} />
                     </div>
                 </div>
+                {capabilities.supportsGif ? (
+                    <div className="space-y-2.5">
+                        <SettingTitle color={theme.node.muted}>输出格式</SettingTitle>
+                        <div className="grid grid-cols-2 gap-2.5">
+                            <OptionPill selected={outputFormat === "png"} theme={theme} onClick={() => onConfigChange("imageOutputFormat", "png")}>PNG</OptionPill>
+                            <OptionPill selected={outputFormat === "gif"} theme={theme} onClick={() => onConfigChange("imageOutputFormat", "gif")}>GIF</OptionPill>
+                        </div>
+                    </div>
+                ) : null}
+                {capabilities.supportsBackground && outputFormat !== "gif" ? (
+                    <div className="space-y-2.5">
+                        <SettingTitle color={theme.node.muted}>背景</SettingTitle>
+                        <div className="grid grid-cols-3 gap-2.5">
+                            {[
+                                { value: "auto", label: "自动" },
+                                { value: "opaque", label: "不透明" },
+                                { value: "transparent", label: "透明" },
+                            ].map((item) => (
+                                <OptionPill key={item.value} selected={background === item.value} theme={theme} onClick={() => onConfigChange("imageBackground", item.value)}>{item.label}</OptionPill>
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
             </div>
         </ImageSettingsTheme>
     );
@@ -141,8 +179,8 @@ export function ImageSettingsTheme({ theme, children }: { theme: CanvasTheme; ch
     );
 }
 
-export function imageQualityLabel(value: string) {
-    return ({ auto: "自动", high: "4K", medium: "2K", low: "1K" } as Record<string, string>)[value] || value;
+export function imageQualityLabel(value: string, model = "") {
+    return model ? imageQualityLabelForModel(model, value) : ({ auto: "自动", high: "4K", medium: "2K", low: "1K", "1k": "1K", "2k": "2K", "4k": "4K" } as Record<string, string>)[value] || value;
 }
 
 export function imageSizeLabel(size: string) {
@@ -239,4 +277,11 @@ function readSizeDimensions(size: string, fallback: { width: number; height: num
 
 function alignDimension(value: number, enabled: boolean) {
     return enabled ? Math.ceil(value / DIMENSION_STEP) * DIMENSION_STEP : value;
+}
+
+function resolutionQuality(resolution?: string) {
+    if (resolution === "4K") return "high";
+    if (resolution === "2K") return "medium";
+    if (resolution === "1K") return "low";
+    return "";
 }

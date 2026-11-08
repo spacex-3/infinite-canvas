@@ -42,12 +42,22 @@ export function readFileAsDataUrl(file: File) {
 export function readImageMeta(dataUrl: string) {
     return new Promise<{ width: number; height: number; mimeType: string }>((resolve) => {
         const image = new Image();
-        const done = () => resolve({ width: image.naturalWidth || 1024, height: image.naturalHeight || 1024, mimeType: dataUrl.match(/^data:([^;]+)/)?.[1] || "image/png" });
+        const done = () => resolve({ width: image.naturalWidth || 1024, height: image.naturalHeight || 1024, mimeType: inferImageMimeType(dataUrl) });
         image.onload = done;
         image.onerror = done;
         setTimeout(done, 3000);
         image.src = dataUrl;
     });
+}
+
+export function inferImageMimeType(value: string) {
+    const dataMime = value.match(/^data:([^;]+)/)?.[1];
+    if (dataMime) return dataMime;
+    const extension = value.match(/[.]([a-z0-9]+)(?:[?#]|$)/i)?.[1]?.toLowerCase();
+    if (extension === "gif") return "image/gif";
+    if (extension === "webp") return "image/webp";
+    if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+    return "image/png";
 }
 
 export function dataUrlToBlob(dataUrl: string, fallbackMimeType = "image/png") {

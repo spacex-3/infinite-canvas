@@ -3,7 +3,7 @@
 import localforage from "localforage";
 
 import { nanoid } from "nanoid";
-import { dataUrlToBlob, readImageMeta } from "@/lib/image-utils";
+import { dataUrlToBlob, inferImageMimeType, readImageMeta } from "@/lib/image-utils";
 
 export type UploadedImage = {
     url: string;
@@ -36,7 +36,8 @@ export async function uploadImage(input: string | Blob): Promise<UploadedImage> 
         const url = URL.createObjectURL(blob);
         objectUrls.set(storageKey, url);
         const meta = await readImageMeta(url);
-        return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType };
+        const inferredMimeType = typeof input === "string" ? inferImageMimeType(input) : "";
+        return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type.startsWith("image/") ? blob.type : inferredMimeType || meta.mimeType };
     } catch (error) {
         const name = error && typeof error === "object" && "name" in error ? String((error as { name?: string }).name || "") : "";
         const message = error instanceof Error ? error.message : "";

@@ -46,8 +46,8 @@ const protocolLabel: Record<CustomAiChannel["protocol"], string> = {
 
 const groupCapabilityLabel: Record<string, string> = {
     [ZPIKA_GROUP_IDS.text]: "文字 / 音频",
-    [ZPIKA_GROUP_IDS.openaiImage]: "OpenAI 画图",
-    [ZPIKA_GROUP_IDS.geminiImage]: "Gemini 画图",
+    [ZPIKA_GROUP_IDS.openaiImage]: "图片接口（OpenAI 格式）",
+    [ZPIKA_GROUP_IDS.geminiImage]: "Gemini 画图（原生）",
     [ZPIKA_GROUP_IDS.video]: "视频",
 };
 

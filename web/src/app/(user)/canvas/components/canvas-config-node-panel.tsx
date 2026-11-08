@@ -151,6 +151,8 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         ...globalConfig,
         model: savedModel && isModelAvailableForCapability(globalConfig, savedModel, mode) ? savedModel : defaultModel || (mode === "audio" ? defaultConfig.audioModel : globalConfig.model || defaultConfig.model),
         quality: node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
+        imageOutputFormat: node.metadata?.imageOutputFormat || globalConfig.imageOutputFormat || defaultConfig.imageOutputFormat,
+        imageBackground: node.metadata?.imageBackground || globalConfig.imageBackground || defaultConfig.imageBackground,
         size: mode === "image" ? node.metadata?.size || globalConfig.size || defaultConfig.size : globalConfig.size,
         videoSize: mode === "video" ? node.metadata?.videoSize || globalConfig.videoSize || defaultConfig.videoSize : globalConfig.videoSize,
         videoSeconds: node.metadata?.seconds || globalConfig.videoSeconds || defaultConfig.videoSeconds,

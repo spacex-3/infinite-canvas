@@ -41,6 +41,8 @@ export type CanvasNodeMetadata = {
     size?: string;
     videoSize?: string;
     quality?: string;
+    imageOutputFormat?: string;
+    imageBackground?: string;
     count?: number;
     seconds?: string;
     vquality?: string;

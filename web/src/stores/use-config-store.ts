@@ -58,6 +58,8 @@ export type AiConfig = {
     quality: string;
     size: string;
     count: string;
+    imageOutputFormat: string;
+    imageBackground: string;
     canvasImageCount: string;
     customChannels: CustomAiChannel[];
     imageChannelId: string;
@@ -67,7 +69,7 @@ export type AiConfig = {
 };
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
-export const CONFIG_STORE_VERSION = 9;
+export const CONFIG_STORE_VERSION = 10;
 
 export const ZPIKA_BASE_URL = "https://vip.zpika.com";
 export const ZPIKA_DIRECT_BASE_URL = "https://aivideo.zpika.com";
@@ -82,7 +84,30 @@ export const ZPIKA_GROUP_IDS = {
 export const ZPIKA_SEEDANCE_MODELS = ["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-0-mini-260615", "doubao-seedance-2-5-260628"] as const;
 export const ZPIKA_VIDEO_MODELS = [ZPIKA_SEEDANCE_MODELS[2], ZPIKA_SEEDANCE_MODELS[0], ZPIKA_SEEDANCE_MODELS[1], ZPIKA_SEEDANCE_MODELS[3], "veo-omni-flash", "veo-omni-flash-video-edit"] as const;
 export const ZPIKA_TEXT_MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const;
-export const ZPIKA_OPENAI_IMAGE_MODELS = ["gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"] as const;
+export const ZPIKA_OPENAI_IMAGE_MODELS = [
+    "gemini-3.1-flash-image-preview",
+    "gemini-3-pro-image-preview",
+    "gpt-image-2",
+    "gpt-image-2.5",
+    "gpt-image-2.5-flare",
+    "gpt-image-2.5-sunburst",
+    "gpt-image-2.6",
+    "gpt-image-2-1k",
+    "gpt-image-2-2k",
+    "gpt-image-2-4k",
+    "gpt-image-2.5-flare-1k",
+    "gpt-image-2.5-flare-2k",
+    "gpt-image-2.5-flare-4k",
+    "gpt-image-2.5-sunburst-1k",
+    "gpt-image-2.5-sunburst-2k",
+    "gpt-image-2.5-sunburst-4k",
+    "gpt-image-2.6-flare-1k",
+    "gpt-image-2.6-flare-2k",
+    "gpt-image-2.6-flare-4k",
+    "gpt-image-2.6-sunburst-1k",
+    "gpt-image-2.6-sunburst-2k",
+    "gpt-image-2.6-sunburst-4k",
+] as const;
 export const ZPIKA_GEMINI_IMAGE_MODELS = ["gemini-3.1-flash-image", "gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview", "gemini-3.0-pro-image"] as const;
 export const ZPIKA_IMAGE_MODELS = [...ZPIKA_OPENAI_IMAGE_MODELS, ...ZPIKA_GEMINI_IMAGE_MODELS] as const;
 export const ZPIKA_BUILTIN_MODELS = [...ZPIKA_TEXT_MODELS, ...ZPIKA_IMAGE_MODELS, ...ZPIKA_VIDEO_MODELS] as const;
@@ -90,7 +115,7 @@ const REMOVED_ZPIKA_IMAGE_ALIASES = new Set(["nana-banana-2", "nana-banana-pro"]
 
 export const ZPIKA_PREFERRED_MODELS = {
     text: ZPIKA_TEXT_MODELS,
-    openaiImage: ZPIKA_OPENAI_IMAGE_MODELS,
+    openaiImage: [ZPIKA_OPENAI_IMAGE_MODELS[0], ZPIKA_OPENAI_IMAGE_MODELS[1], ZPIKA_OPENAI_IMAGE_MODELS[2], ZPIKA_OPENAI_IMAGE_MODELS[6]],
     geminiImage: ZPIKA_GEMINI_IMAGE_MODELS,
     video: ZPIKA_SEEDANCE_MODELS,
 } as const;
@@ -120,7 +145,7 @@ const defaultCustomChannels: CustomAiChannel[] = [
     },
     {
         id: ZPIKA_GROUP_IDS.openaiImage,
-        name: "OpenAI画图",
+        name: "图片接口（OpenAI 格式）",
         protocol: "openai",
         baseUrl: ZPIKA_DIRECT_BASE_URL,
         apiKey: "",
@@ -135,7 +160,7 @@ const defaultCustomChannels: CustomAiChannel[] = [
     },
     {
         id: ZPIKA_GROUP_IDS.geminiImage,
-        name: "Gemini画图",
+        name: "Gemini 画图（原生）",
         protocol: "gemini",
         baseUrl: ZPIKA_DIRECT_BASE_URL,
         apiKey: "",
@@ -171,8 +196,8 @@ export const defaultConfig: AiConfig = {
     baseUrl: ZPIKA_BASE_URL,
     directBaseUrl: ZPIKA_DIRECT_BASE_URL,
     apiKey: "",
-    model: ZPIKA_DEFAULT_MODELS.geminiImage,
-    imageModel: ZPIKA_DEFAULT_MODELS.geminiImage,
+    model: ZPIKA_DEFAULT_MODELS.openaiImage,
+    imageModel: ZPIKA_DEFAULT_MODELS.openaiImage,
     videoModel: ZPIKA_DEFAULT_MODELS.video,
     textModel: ZPIKA_DEFAULT_MODELS.text,
     audioModel: "gpt-4o-mini-tts",
@@ -194,9 +219,11 @@ export const defaultConfig: AiConfig = {
     quality: "high",
     size: "9:16",
     count: "1",
+    imageOutputFormat: "png",
+    imageBackground: "auto",
     canvasImageCount: "1",
     customChannels: defaultCustomChannels,
-    imageChannelId: ZPIKA_GROUP_IDS.geminiImage,
+    imageChannelId: ZPIKA_GROUP_IDS.openaiImage,
     videoChannelId: ZPIKA_GROUP_IDS.video,
     textChannelId: ZPIKA_GROUP_IDS.text,
     audioChannelId: ZPIKA_GROUP_IDS.text,
@@ -390,7 +417,7 @@ export function filterModelsByCapability(models: string[], capability?: ModelCap
 
 export function filterModelsForZpikaChannel(channelId: string, models: string[]) {
     const normalized = normalizeModelList(models);
-    if (channelId === ZPIKA_GROUP_IDS.openaiImage) return normalized.filter(isOpenAiImageModelName);
+    if (channelId === ZPIKA_GROUP_IDS.openaiImage) return normalized.filter((model) => isOpenAiImageModelName(model) || isGeminiImageModelName(model));
     if (channelId === ZPIKA_GROUP_IDS.geminiImage) return normalized.filter(isGeminiImageModelName);
     if (channelId === ZPIKA_GROUP_IDS.video) return normalized.filter((model) => model.toLowerCase().includes("seedance"));
     if (channelId === ZPIKA_GROUP_IDS.text) return normalized.filter((model) => isTextModelName(model) || isAudioModelName(model));
@@ -475,7 +502,7 @@ export const useConfigStore = create<ConfigStore>()(
                         protocol: normalizeCustomChannelProtocol(migrated.protocol),
                         baseUrl: ZPIKA_BASE_URL,
                         directBaseUrl: ZPIKA_DIRECT_BASE_URL,
-                        imageModel: migrated.imageModel || ZPIKA_DEFAULT_MODELS.geminiImage,
+                        imageModel: migrated.imageModel || ZPIKA_DEFAULT_MODELS.openaiImage,
                         videoModel: migrated.videoModel || ZPIKA_DEFAULT_MODELS.video,
                         textModel: migrated.textModel || ZPIKA_DEFAULT_MODELS.text,
                         audioModel: migrated.audioModel || defaultConfig.audioModel,
@@ -545,26 +572,22 @@ export function migrateConfigToZpikaPreset(config: Partial<AiConfig>, persistedV
     const mapped = hasPresetChannels ? legacyChannels : mapLegacyChannelsToZpikaGroups(legacyChannels, config);
     const customChannels = createZpikaPresetChannels(mapped);
     const upgradeProductDefaults = persistedVersion < CONFIG_STORE_VERSION;
-    const upgradeImageDefault =
-        upgradeProductDefaults &&
-        (!config.imageModel ||
-            REMOVED_ZPIKA_IMAGE_ALIASES.has(config.imageModel) ||
-            (config.imageChannelId === ZPIKA_GROUP_IDS.openaiImage && isGeminiImageModelName(config.imageModel)));
+    const upgradeImageDefault = upgradeProductDefaults && (!config.imageModel || REMOVED_ZPIKA_IMAGE_ALIASES.has(config.imageModel));
     const next: AiConfig = {
         ...base,
         baseUrl: ZPIKA_BASE_URL,
         directBaseUrl: ZPIKA_DIRECT_BASE_URL,
         customChannels,
-        imageChannelId: pickMigratedChannelId(upgradeImageDefault ? ZPIKA_GROUP_IDS.geminiImage : config.imageChannelId, customChannels, "image", ZPIKA_GROUP_IDS.geminiImage, legacyChannels, mapped),
+        imageChannelId: pickMigratedChannelId(upgradeImageDefault ? ZPIKA_GROUP_IDS.openaiImage : config.imageChannelId, customChannels, "image", ZPIKA_GROUP_IDS.openaiImage, legacyChannels, mapped),
         videoChannelId: pickMigratedChannelId(config.videoChannelId, customChannels, "video", ZPIKA_GROUP_IDS.video, legacyChannels, mapped),
         textChannelId: pickMigratedChannelId(config.textChannelId, customChannels, "text", ZPIKA_GROUP_IDS.text, legacyChannels, mapped),
         audioChannelId: pickMigratedChannelId(config.audioChannelId, customChannels, "audio", ZPIKA_GROUP_IDS.text, legacyChannels, mapped),
     };
 
-    const persistedImageModel = upgradeImageDefault ? ZPIKA_DEFAULT_MODELS.geminiImage : config.imageModel || ZPIKA_DEFAULT_MODELS.geminiImage;
+    const persistedImageModel = upgradeImageDefault ? ZPIKA_DEFAULT_MODELS.openaiImage : config.imageModel || ZPIKA_DEFAULT_MODELS.openaiImage;
     const persistedVideoModel = upgradeProductDefaults && (!config.videoModel || config.videoModel === "veo-omni-flash" || config.videoModel === ZPIKA_SEEDANCE_MODELS[0]) ? ZPIKA_DEFAULT_MODELS.video : config.videoModel || ZPIKA_DEFAULT_MODELS.video;
     const persistedTextModel = upgradeProductDefaults && (!config.textModel || config.textModel === "gpt-5.6-terra") ? ZPIKA_DEFAULT_MODELS.text : config.textModel || config.model || ZPIKA_DEFAULT_MODELS.text;
-    next.imageModel = resolveMigratedDefaultModel(next, "image", persistedImageModel, ZPIKA_DEFAULT_MODELS.geminiImage);
+    next.imageModel = resolveMigratedDefaultModel(next, "image", persistedImageModel, ZPIKA_DEFAULT_MODELS.openaiImage);
     next.videoModel = resolveMigratedDefaultModel(next, "video", persistedVideoModel, ZPIKA_DEFAULT_MODELS.video);
     next.textModel = resolveMigratedDefaultModel(next, "text", persistedTextModel, ZPIKA_DEFAULT_MODELS.text);
     next.audioModel = resolveMigratedDefaultModel(next, "audio", config.audioModel || defaultConfig.audioModel, defaultConfig.audioModel);
@@ -600,13 +623,10 @@ function mapLegacyChannelsToZpikaGroups(legacyChannels: CustomAiChannel[], confi
         const textModels = normalizeModelList(channel.textModels?.length ? channel.textModels : filterModelsByCapability(channel.models, "text"));
         const audioModels = normalizeModelList(channel.audioModels?.length ? channel.audioModels : filterModelsByCapability(channel.models, "audio"));
 
-        if (protocol === "gemini" || imageModels.some((model) => model.toLowerCase().includes("gemini"))) {
+        if (protocol === "gemini") {
             pushModels(ZPIKA_GROUP_IDS.geminiImage, imageModels.length ? imageModels : protocol === "gemini" ? normalizeModelList(channel.models) : [], "image", apiKey);
         }
-        if (
-            imageModels.some((model) => model.toLowerCase().includes("gpt-image") || model.toLowerCase().includes("dall-e") || model.toLowerCase().includes("dalle")) ||
-            (protocol === "openai" && imageModels.length && !imageModels.some((model) => model.toLowerCase().includes("gemini")))
-        ) {
+        if (protocol === "openai" && imageModels.length) {
             pushModels(ZPIKA_GROUP_IDS.openaiImage, imageModels, "image", apiKey);
         }
         if (videoModels.length || protocol === "fpbrowser2api" || protocol === "zerofall") {
@@ -698,7 +718,7 @@ function normalizeCapabilityChannelId(value: string | undefined, channels: Custo
 }
 
 function defaultCapabilityChannelId(capability: ModelCapability) {
-    if (capability === "image") return ZPIKA_GROUP_IDS.geminiImage;
+    if (capability === "image") return ZPIKA_GROUP_IDS.openaiImage;
     if (capability === "video") return ZPIKA_GROUP_IDS.video;
     return ZPIKA_GROUP_IDS.text;
 }
@@ -719,7 +739,7 @@ function resolveLocalEffectiveConfig(config: AiConfig): AiConfig {
         const preferredDefault = preferredChannel
             ? preferredDefaultForChannel(preferredChannel)
             : capability === "image"
-              ? ZPIKA_DEFAULT_MODELS.geminiImage
+              ? ZPIKA_DEFAULT_MODELS.openaiImage
               : capability === "video"
                 ? ZPIKA_DEFAULT_MODELS.video
                 : capability === "text"

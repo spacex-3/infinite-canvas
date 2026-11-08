@@ -59,7 +59,7 @@ type GenerationLog = {
     thumbnails: string[];
 };
 
-type GenerationLogConfig = Pick<AiConfig, "model" | "imageModel" | "quality" | "size" | "count">;
+type GenerationLogConfig = Pick<AiConfig, "model" | "imageModel" | "quality" | "size" | "count" | "imageOutputFormat" | "imageBackground">;
 
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
@@ -203,12 +203,12 @@ export default function ImagePage() {
     };
 
     const downloadImage = (image: GeneratedImage, index: number) => {
-        saveAs(image.dataUrl, `image-${index + 1}.png`);
+        saveAs(image.dataUrl, "image-" + (index + 1) + "." + imageFileExtension(image));
     };
 
     const addResultToReferences = async (image: GeneratedImage, index: number) => {
         const stored = await uploadImage(image.dataUrl);
-        setReferences((value) => [...value, { id: nanoid(), name: `result-${index + 1}.png`, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
+        setReferences((value) => [...value, { id: nanoid(), name: "result-" + (index + 1) + "." + imageFileExtension({ ...image, mimeType: stored.mimeType }), type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
         message.success("已加入参考图");
     };
 
@@ -274,6 +274,8 @@ export default function ImagePage() {
         if (log.config.quality) updateConfig("quality", log.config.quality);
         if (log.config.size) updateConfig("size", log.config.size);
         if (log.config.count) updateConfig("count", log.config.count);
+        if (log.config.imageOutputFormat) updateConfig("imageOutputFormat", log.config.imageOutputFormat);
+        if (log.config.imageBackground) updateConfig("imageBackground", log.config.imageBackground);
         setResults(log.images.map((image) => ({ id: image.id, status: "success", image })));
     };
 
@@ -298,7 +300,7 @@ export default function ImagePage() {
             const image = result[0];
             if (!image?.dataUrl) throw new Error("接口没有返回图片");
             const meta = await readImageMeta(image.dataUrl);
-            const nextImage = { id: image.id, dataUrl: image.dataUrl, durationMs: performance.now() - itemStartedAt, width: meta.width, height: meta.height, bytes: getDataUrlByteSize(image.dataUrl) };
+            const nextImage = { id: image.id, dataUrl: image.dataUrl, durationMs: performance.now() - itemStartedAt, width: meta.width, height: meta.height, bytes: getDataUrlByteSize(image.dataUrl), mimeType: meta.mimeType };
             setResults((value) => updateResultAt(value, index, { status: "success", image: nextImage }));
             return nextImage;
         } catch (error) {
@@ -498,7 +500,7 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
                 <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
             </label>
             <div className="col-span-2">
-                <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} />
+                <ImageSettingsPanel config={config} model={model} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} />
             </div>
         </>
     );
@@ -760,6 +762,8 @@ function normalizeLogConfig(log: Partial<GenerationLog>): GenerationLogConfig {
         quality: log.config?.quality || log.quality || "",
         size: log.config?.size || log.size || "",
         count: log.config?.count || String(log.imageCount || log.successCount || 1),
+        imageOutputFormat: log.config?.imageOutputFormat || "png",
+        imageBackground: log.config?.imageBackground || "auto",
     };
 }
 
@@ -769,6 +773,14 @@ function moveListItem<T>(items: T[], index: number, offset: number) {
     const next = [...items];
     [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
     return next;
+}
+
+function imageFileExtension(image: Pick<GeneratedImage, "dataUrl" | "mimeType">) {
+    const fromMime = image.mimeType?.match(/^image[/]([^;]+)/)?.[1];
+    const fromData = image.dataUrl.match(/^data:image[/]([^;]+)/)?.[1];
+    const fromUrl = image.dataUrl.match(/[.]([a-z0-9]+)(?:[?#]|$)/i)?.[1];
+    const value = fromMime || fromData || fromUrl || "png";
+    return value === "jpeg" ? "jpg" : value;
 }
 
 function ReferenceOrderButtons({ index, total, onMove }: { index: number; total: number; onMove: (offset: number) => void }) {
@@ -808,6 +820,8 @@ function buildLog({
         quality: config.quality,
         size: config.size,
         count: config.count,
+        imageOutputFormat: config.imageOutputFormat,
+        imageBackground: config.imageBackground,
     };
     return {
         id: nanoid(),

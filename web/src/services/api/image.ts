@@ -4,6 +4,7 @@ import { assertChannelSupportsCapability, buildApiUrl, resolveCustomChannelConfi
 import { useUserStore } from "@/stores/use-user-store";
 import { nanoid } from "nanoid";
 import { resolveSemanticImageDimensions, type ImageResolutionLimits } from "@/lib/image-resolution";
+import { getImageModelCapabilities, normalizeImageQualityForModel } from "@/lib/image-model-capabilities";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
@@ -45,26 +46,13 @@ type FpbrowserVideoImageResponse = {
 };
 type ReferenceMediaUploadResponse = { id: string; url: string; mimeType: string; bytes: number };
 
-const IMAGE_QUALITIES = new Set(["low", "medium", "high"]);
-const QUALITY_ALIASES: Record<string, string> = {
-    "1k": "low",
-    "2k": "medium",
-    "4k": "high",
-};
 const IMAGE_SIZE_STEP = 16;
 const IMAGE_MAX_RATIO = 3;
-const IMAGE_OUTPUT_FORMAT = "png";
 const IMAGE_TASK_POLL_MS = 2000;
 const IMAGE_TASK_TIMEOUT_MS = 20 * 60 * 1000;
 const FPBROWSER_VIDEO_IMAGE_MODELS = new Set(["nana-banana-2", "nana-banana-pro", "nana-banana-2-4k", "nana-banana-pro-4k", "gpt-image2-1k", "gpt-image2-2k", "gpt-image2-4k"]);
 const EXTENDED_IMAGE_LIMITS: ImageResolutionLimits = { maxEdge: 4096, minPixels: 262144, maxPixels: 16777216 };
 const OPENAI_IMAGE_LIMITS: ImageResolutionLimits = { maxEdge: 3840, minPixels: 655360, maxPixels: 8294400 };
-
-function normalizeQuality(quality: string) {
-    const value = quality.trim().toLowerCase();
-    const normalized = QUALITY_ALIASES[value] || value;
-    return IMAGE_QUALITIES.has(normalized) ? normalized : undefined;
-}
 
 function parseImageDimensions(value: string) {
     const match = value.match(/^(\d+)x(\d+)$/i);
@@ -81,9 +69,12 @@ function validateImageSize(width: number, height: number, limits: ImageResolutio
     if (pixels < limits.minPixels || pixels > limits.maxPixels) throw new Error(`图像总像素需在 ${limits.minPixels} 到 ${limits.maxPixels} 之间，请调整尺寸`);
 }
 
-export function resolveImageRequestSize(config: Pick<AiConfig, "channelMode" | "baseUrl">, quality: string | undefined, size: string) {
+export function resolveImageRequestSize(config: Pick<AiConfig, "channelMode" | "baseUrl"> & Partial<Pick<AiConfig, "model">>, quality: string | undefined, size: string) {
     const value = size.trim();
     if (!value || value.toLowerCase() === "auto") return undefined;
+    const capabilities = config.model ? getImageModelCapabilities(config.model) : null;
+    if (capabilities?.lockedResolution === "最高约 1.5K" && parseImageDimensions(value)) return undefined;
+    if (capabilities?.usesRatioSize && /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/.test(value)) return value;
     const limits = isOfficialOpenAIImageEndpoint(config) ? OPENAI_IMAGE_LIMITS : EXTENDED_IMAGE_LIMITS;
     const dimensions = resolveSemanticImageDimensions(quality, value, limits);
     if (!dimensions) throw new Error("图像尺寸格式不支持，请使用 auto、9:16 或 1024x1024");
@@ -100,9 +91,9 @@ function isOfficialOpenAIImageEndpoint(config: Pick<AiConfig, "channelMode" | "b
     }
 }
 
-function resolveImageDataUrl(item: Record<string, unknown>) {
+function resolveImageDataUrl(item: Record<string, unknown>, outputFormat: string) {
     if (typeof item.b64_json === "string" && item.b64_json) {
-        return `data:image/png;base64,${item.b64_json}`;
+        return `data:image/${outputFormat === "jpg" ? "jpeg" : outputFormat};base64,${item.b64_json}`;
     }
     if (typeof item.url === "string" && item.url) {
         return item.url;
@@ -110,13 +101,13 @@ function resolveImageDataUrl(item: Record<string, unknown>) {
     return null;
 }
 
-export function parseImagePayload(payload: ImageApiResponse) {
+export function parseImagePayload(payload: ImageApiResponse, outputFormat = "png") {
     if (typeof payload.code === "number" && payload.code !== 0) {
         throw new Error(payload.msg || "请求失败");
     }
     const openAIImages =
         payload.data
-            ?.map(resolveImageDataUrl)
+            ?.map((item) => resolveImageDataUrl(item, outputFormat))
             .filter((value): value is string => Boolean(value))
             .map((dataUrl) => ({ id: nanoid(), dataUrl })) || [];
     const geminiImages = payload.candidates ? parseGeminiImagePayload(payload as never).map((dataUrl) => ({ id: nanoid(), dataUrl })) : [];
@@ -196,28 +187,35 @@ function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) 
 
 export async function requestGeneration(config: AiConfig, prompt: string, onProgress?: GenerationProgressCallback) {
     config = resolveCustomChannelConfig(config, "image", (config.model || config.imageModel).trim());
-    const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
-    if (config.channelMode === "local" && config.protocol === "gemini") return requestGeminiImage(config, prompt, [], n, onProgress);
-    const quality = normalizeQuality(config.quality);
+    const requestedCount = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    if (config.channelMode === "local" && config.protocol === "gemini") return requestGeminiImage(config, prompt, [], requestedCount, onProgress);
+    const capabilities = getImageModelCapabilities(config.model);
+    const quality = normalizeImageQualityForModel(config.model, config.quality);
     const requestSize = resolveImageRequestSize(config, quality, config.size);
     if (shouldUseFpbrowserVideoImageApi(config)) {
-        return requestFpbrowserVideoImageGeneration(config, prompt, [], { n, quality, size: requestSize }, onProgress);
+        return requestFpbrowserVideoImageGeneration(config, prompt, [], { n: requestedCount, quality, size: requestSize }, onProgress);
     }
+    const outputFormat = capabilities.supportsGif && config.imageOutputFormat === "gif" ? "gif" : "png";
+    const background = capabilities.supportsBackground && outputFormat !== "gif" && ["opaque", "transparent"].includes(config.imageBackground) ? config.imageBackground : undefined;
     const payload = {
         model: config.model,
         prompt: withSystemPrompt(config, prompt),
-        n,
+        n: 1,
         ...(quality ? { quality } : {}),
         ...(requestSize ? { size: requestSize } : {}),
-        response_format: "b64_json",
-        output_format: IMAGE_OUTPUT_FORMAT,
+        ...(background ? { background } : {}),
+        response_format: outputFormat === "gif" ? "url" : "b64_json",
+        output_format: outputFormat,
     };
     try {
-        const payloadData =
-            config.channelMode === "remote"
-                ? await requestRemoteImageTask(config, "/images/generations", payload, aiHeaders(config, "application/json"), onProgress)
-                : (await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/generations"), payload, { headers: aiHeaders(config, "application/json") })).data;
-        const images = parseImagePayload(payloadData);
+        const payloads = await Promise.all(
+            Array.from({ length: requestedCount }, async () =>
+                config.channelMode === "remote"
+                    ? requestRemoteImageTask(config, "/images/generations", payload, aiHeaders(config, "application/json"), onProgress)
+                    : (await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/generations"), payload, { headers: aiHeaders(config, "application/json") })).data,
+            ),
+        );
+        const images = payloads.flatMap((payloadData) => parseImagePayload(payloadData, outputFormat));
         refreshRemoteUser(config);
         return images;
     } catch (error) {
@@ -227,40 +225,51 @@ export async function requestGeneration(config: AiConfig, prompt: string, onProg
 
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, onProgress?: GenerationProgressCallback) {
     config = resolveCustomChannelConfig(config, "image", (config.model || config.imageModel).trim());
-    const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const requestedCount = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const requestPrompt = buildImageReferencePromptText(prompt, references);
+    const capabilities = getImageModelCapabilities(config.model);
+    if (references.length > capabilities.referenceLimit) throw new Error(`${config.model} 最多支持 ${capabilities.referenceLimit} 张参考图`);
     if (config.channelMode === "local" && config.protocol === "gemini") {
         if (mask) throw new Error("Gemini 原生图片协议暂不支持蒙版编辑");
-        return requestGeminiImage(config, requestPrompt, references, n, onProgress);
+        return requestGeminiImage(config, requestPrompt, references, requestedCount, onProgress);
     }
-    const quality = normalizeQuality(config.quality);
+    const outputFormat = capabilities.supportsGif && config.imageOutputFormat === "gif" ? "gif" : "png";
+    if (mask && outputFormat === "gif") throw new Error("GIF 输出不支持蒙版编辑，请改用 PNG");
+    if (mask && !capabilities.supportsMask) throw new Error(`${config.model} 尚未在画布验证蒙版编辑`);
+    const quality = normalizeImageQualityForModel(config.model, config.quality);
     const requestSize = resolveImageRequestSize(config, quality, config.size);
     if (shouldUseFpbrowserVideoImageApi(config)) {
         if (mask) throw new Error("当前 fpbrowser2api 图片模型暂不支持蒙版编辑");
-        return requestFpbrowserVideoImageGeneration(config, requestPrompt, references, { n, quality, size: requestSize }, onProgress);
+        return requestFpbrowserVideoImageGeneration(config, requestPrompt, references, { n: requestedCount, quality, size: requestSize }, onProgress);
     }
     const formData = new FormData();
     formData.set("model", config.model);
     formData.set("prompt", withSystemPrompt(config, requestPrompt));
-    formData.set("n", String(n));
-    formData.set("response_format", "b64_json");
-    formData.set("output_format", IMAGE_OUTPUT_FORMAT);
+    formData.set("n", "1");
+    formData.set("response_format", outputFormat === "gif" ? "url" : "b64_json");
+    formData.set("output_format", outputFormat);
     if (quality) {
         formData.set("quality", quality);
     }
     if (requestSize) {
         formData.set("size", requestSize);
     }
+    if (capabilities.supportsBackground && outputFormat !== "gif" && ["opaque", "transparent"].includes(config.imageBackground)) {
+        formData.set("background", config.imageBackground);
+    }
     const files = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
     files.forEach((file) => formData.append("image", file));
     if (mask) formData.set("mask", dataUrlToFile(mask));
 
     try {
-        const payloadData =
-            config.channelMode === "remote"
-                ? await requestRemoteImageTask(config, "/images/edits", formData, aiHeaders(config), onProgress)
-                : (await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config) })).data;
-        const images = parseImagePayload(payloadData);
+        const payloads = await Promise.all(
+            Array.from({ length: requestedCount }, async () =>
+                config.channelMode === "remote"
+                    ? requestRemoteImageTask(config, "/images/edits", formData, aiHeaders(config), onProgress)
+                    : (await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config) })).data,
+            ),
+        );
+        const images = payloads.flatMap((payloadData) => parseImagePayload(payloadData, outputFormat));
         refreshRemoteUser(config);
         return images;
     } catch (error) {

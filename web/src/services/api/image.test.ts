@@ -41,6 +41,13 @@ describe("semantic image resolution mapping", () => {
         expect(resolveImageRequestSize({ channelMode: "remote", baseUrl: "" }, "low", "9:16")).toBe("576x1024");
         expect(resolveImageRequestSize({ channelMode: "local", baseUrl: "https://api.openai.com" }, "low", "9:16")).toBe("608x1088");
     });
+
+    test("keeps documented Zpika image model ratios semantic", () => {
+        const resolveImageRequestSize = imageApi.resolveImageRequestSize!;
+        expect(resolveImageRequestSize({ channelMode: "local", baseUrl: "https://vip.zpika.com", model: "gemini-3.1-flash-image-preview" }, "2k", "16:9")).toBe("16:9");
+        expect(resolveImageRequestSize({ channelMode: "local", baseUrl: "https://vip.zpika.com", model: "gpt-image-2.6-flare-2k" }, "xhigh", "1:1")).toBe("1:1");
+        expect(resolveImageRequestSize({ channelMode: "local", baseUrl: "https://vip.zpika.com", model: "gpt-image-2.6" }, undefined, "2048x2048")).toBeUndefined();
+    });
 });
 
 describe("Gemini native image protocol", () => {
@@ -82,5 +89,6 @@ describe("Gemini native image protocol", () => {
         expect(source).toContain("requestGeminiImage");
         expect(typeof imageApi.parseImagePayload).toBe("function");
         expect(imageApi.parseImagePayload!({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: "REMOTE_IMAGE" } }] } }] })).toMatchObject([{ dataUrl: "data:image/png;base64,REMOTE_IMAGE" }]);
+        expect(imageApi.parseImagePayload!({ data: [{ b64_json: "GIF_DATA" }] }, "gif")).toMatchObject([{ dataUrl: "data:image/gif;base64,GIF_DATA" }]);
     });
 });

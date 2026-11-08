@@ -1419,7 +1419,7 @@ function InfiniteCanvasPage() {
 
     const downloadNodeImage = useCallback((node: CanvasNodeData) => {
         if ((node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio) || !node.metadata?.content) return;
-        saveAs(node.metadata.content, `canvas-${node.type}-${node.id}.${node.type === CanvasNodeType.Video ? "mp4" : node.type === CanvasNodeType.Audio ? audioExtension(node.metadata.mimeType) : imageExtension(node.metadata.content)}`);
+        saveAs(node.metadata.content, `canvas-${node.type}-${node.id}.${node.type === CanvasNodeType.Video ? "mp4" : node.type === CanvasNodeType.Audio ? audioExtension(node.metadata.mimeType) : imageExtension(node.metadata.content, node.metadata.mimeType)}`);
     }, []);
 
     const saveNodeAsset = useCallback(
@@ -2097,6 +2097,8 @@ function InfiniteCanvasPage() {
                           ...effectiveConfig,
                           model: savedImageMetadata.model && isModelAvailableForCapability(effectiveConfig, savedImageMetadata.model, "image") ? savedImageMetadata.model : effectiveConfig.imageModel || effectiveConfig.model,
                           quality: savedImageMetadata.quality || effectiveConfig.quality,
+                          imageOutputFormat: savedImageMetadata.imageOutputFormat || effectiveConfig.imageOutputFormat,
+                          imageBackground: savedImageMetadata.imageBackground || effectiveConfig.imageBackground,
                           size: savedImageMetadata.size || effectiveConfig.size,
                           count: "1",
                       }
@@ -2162,7 +2164,7 @@ function InfiniteCanvasPage() {
                 const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                 const imageSize = fitNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
                 const generationMetadata = savedImageMetadata?.generationType
-                    ? { generationType: savedImageMetadata.generationType, model: generationConfig.model, size: generationConfig.size, quality: generationConfig.quality, count: savedImageMetadata.count || 1, references: savedImageMetadata.references }
+                    ? { generationType: savedImageMetadata.generationType, model: generationConfig.model, size: generationConfig.size, quality: generationConfig.quality, imageOutputFormat: generationConfig.imageOutputFormat, imageBackground: generationConfig.imageBackground, count: savedImageMetadata.count || 1, references: savedImageMetadata.references }
                     : buildImageGenerationMetadata(useReferenceImages ? "edit" : "generation", generationConfig, 1, retryImages);
                 setNodes((prev) =>
                     prev.map((item) =>
@@ -2843,8 +2845,11 @@ function Shortcut({ keys, value }: { keys: string[]; value: string }) {
     );
 }
 
-function imageExtension(dataUrl: string) {
-    return dataUrl.match(/^data:image[/]([^;]+)/)?.[1] || dataUrl.match(/image[/]([^;]+)/)?.[1] || "png";
+function imageExtension(dataUrl: string, mimeType?: string) {
+    const fromMime = mimeType?.match(/^image[/]([^;]+)/)?.[1];
+    const fromData = dataUrl.match(/^data:image[/]([^;]+)/)?.[1];
+    const fromUrl = dataUrl.match(/[.]([a-z0-9]+)(?:[?#]|$)/i)?.[1];
+    return fromMime === "jpeg" ? "jpg" : fromMime || fromData || fromUrl || "png";
 }
 
 function audioExtension(mimeType?: string) {
@@ -2880,6 +2885,8 @@ function buildImageGenerationMetadata(type: CanvasImageGenerationType, config: A
         model: config.model,
         size: config.size,
         quality: config.quality,
+        imageOutputFormat: config.imageOutputFormat,
+        imageBackground: config.imageBackground,
         count,
         references: references.map(referenceUrl).filter((url): url is string => Boolean(url)),
     };
@@ -3022,6 +3029,8 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         ...config,
         model: generationModelForMode(config, node, mode),
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
+        imageOutputFormat: node?.metadata?.imageOutputFormat || config.imageOutputFormat || defaultConfig.imageOutputFormat,
+        imageBackground: node?.metadata?.imageBackground || config.imageBackground || defaultConfig.imageBackground,
         size: mode === "image" ? node?.metadata?.size || config.size || defaultConfig.size : config.size,
         videoSize: mode === "video" ? node?.metadata?.videoSize || (node?.type === CanvasNodeType.Video ? node.metadata?.size : undefined) || config.videoSize || defaultConfig.videoSize : config.videoSize,
         videoSeconds: node?.metadata?.seconds || config.videoSeconds || defaultConfig.videoSeconds,

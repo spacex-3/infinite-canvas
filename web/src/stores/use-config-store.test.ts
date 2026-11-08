@@ -8,6 +8,7 @@ const {
     canUseCustomChannel,
     defaultConfig,
     filterModelsByCapability,
+    filterModelsForZpikaChannel,
     isModelAvailableForCapability,
     isModelSelectedForChannel,
     isAiConfigReady,
@@ -19,7 +20,6 @@ const {
     ZPIKA_BASE_URL,
     ZPIKA_DEFAULT_MODELS,
     ZPIKA_DIRECT_BASE_URL,
-    ZPIKA_GEMINI_IMAGE_MODELS,
     ZPIKA_GROUP_IDS,
     ZPIKA_OPENAI_IMAGE_MODELS,
 } = configStore;
@@ -57,8 +57,9 @@ describe("custom channel access", () => {
     test("locks zpika dual hosts and preferred defaults", () => {
         expect(defaultConfig.baseUrl).toBe(ZPIKA_BASE_URL);
         expect(defaultConfig.directBaseUrl).toBe(ZPIKA_DIRECT_BASE_URL);
-        expect(defaultConfig.imageModel).toBe(ZPIKA_DEFAULT_MODELS.geminiImage);
-        expect(defaultConfig.imageModel).toBe("gemini-3.1-flash-image");
+        expect(defaultConfig.imageModel).toBe(ZPIKA_DEFAULT_MODELS.openaiImage);
+        expect(defaultConfig.imageModel).toBe("gemini-3.1-flash-image-preview");
+        expect(defaultConfig.imageChannelId).toBe(ZPIKA_GROUP_IDS.openaiImage);
         expect(defaultConfig.videoModel).toBe(ZPIKA_DEFAULT_MODELS.video);
         expect(defaultConfig.videoModel).toBe("doubao-seedance-2-0-mini-260615");
         expect(defaultConfig.textModel).toBe(ZPIKA_DEFAULT_MODELS.text);
@@ -263,10 +264,13 @@ describe("custom channel access", () => {
         expect(patched.videoModels).toEqual(["doubao-seedance-2-0-mini-260615"]);
     });
 
-    test("keeps OpenAI image and Gemini image groups separate", () => {
-        const channel = defaultConfig.customChannels.find((item) => item.id === ZPIKA_GROUP_IDS.openaiImage)!;
-        const patched = applyPreferredModelsToChannel(channel, [...ZPIKA_GEMINI_IMAGE_MODELS, ...ZPIKA_OPENAI_IMAGE_MODELS]);
-        expect(patched.imageModels).toEqual([...ZPIKA_OPENAI_IMAGE_MODELS]);
+    test("keeps OpenAI Images and Gemini native protocols available together", () => {
+        const openaiChannel = defaultConfig.customChannels.find((item) => item.id === ZPIKA_GROUP_IDS.openaiImage)!;
+        const geminiChannel = defaultConfig.customChannels.find((item) => item.id === ZPIKA_GROUP_IDS.geminiImage)!;
+        expect(openaiChannel.protocol).toBe("openai");
+        expect(geminiChannel.protocol).toBe("gemini");
+        expect(filterModelsForZpikaChannel(openaiChannel.id, ["gemini-3.1-flash-image-preview", "gpt-image-2.6", "gpt-5.6-sol"])).toEqual(["gemini-3.1-flash-image-preview", "gpt-image-2.6"]);
+        expect(filterModelsForZpikaChannel(geminiChannel.id, ["gemini-3.1-flash-image-preview", "gpt-image-2.6"])).toEqual(["gemini-3.1-flash-image-preview"]);
     });
 
     test("removes the invalid nana-banana aliases from persisted zpika presets", () => {
@@ -281,7 +285,7 @@ describe("custom channel access", () => {
             },
             6,
         );
-        expect(migrated.imageModel).toBe("gemini-3.1-flash-image");
+        expect(migrated.imageModel).toBe("gemini-3.1-flash-image-preview");
         expect(migrated.customChannels.flatMap((channel) => channel.models)).not.toContain("nana-banana-2");
         expect(migrated.customChannels.flatMap((channel) => channel.models)).not.toContain("nana-banana-pro");
     });

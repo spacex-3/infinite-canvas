@@ -12,7 +12,10 @@ describe("image settings panel", () => {
         expect(imageQualityLabel("medium")).toBe("2K");
         expect(imageQualityLabel("low")).toBe("1K");
         expect(imageSizeLabel("1:1")).toBe("1:1");
-        expect(source).toContain("<SettingTitle color={theme.node.muted}>分辨率</SettingTitle>");
+        expect(source).toContain('capabilities.qualityOptions.length ? "质量 / 分辨率" : "分辨率"');
+        expect(source).toContain("Low / Medium / High 按 std 价，XHigh / Max 按 xhigh 价");
+        expect(source).toContain("imageOutputFormat");
+        expect(source).toContain("imageBackground");
         expect(source).not.toContain("1:1(2k)");
         expect(source).not.toContain("16:9(4k)");
         expect(source).not.toContain("9:16(4k)");
