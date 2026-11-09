@@ -39,11 +39,12 @@ type VideoSettingsPanelProps = {
     showTitle?: boolean;
     className?: string;
     forceAdaptiveRatio?: boolean;
+    followFirstFrameRatio?: boolean;
 };
 
-export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", forceAdaptiveRatio = false }: VideoSettingsPanelProps) {
+export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", forceAdaptiveRatio = false, followFirstFrameRatio = false }: VideoSettingsPanelProps) {
     if (isSeedanceVideoConfig(config)) {
-        return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} forceAdaptiveRatio={forceAdaptiveRatio} />;
+        return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} forceAdaptiveRatio={forceAdaptiveRatio} followFirstFrameRatio={followFirstFrameRatio} />;
     }
     if (isOmniFlashVideoModel(config.model || config.videoModel)) {
         return <OmniFlashVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
@@ -179,7 +180,7 @@ function OmniFlashVideoSettingsPanel({ config, onConfigChange, theme, showTitle,
     );
 }
 
-function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, className, forceAdaptiveRatio }: VideoSettingsPanelProps) {
+function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, className, forceAdaptiveRatio, followFirstFrameRatio }: VideoSettingsPanelProps) {
     const model = config.model || config.videoModel;
     const resolution = normalizeSeedanceResolution(config.vquality, model);
     const ratio = forceAdaptiveRatio ? "adaptive" : normalizeSeedanceRatio(config.videoSize);
@@ -204,23 +205,29 @@ function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, 
                     </div>
                 </SettingGroup>
                 <SettingGroup title="比例" color={theme.node.muted}>
-                    <div className="grid grid-cols-2 gap-2.5">
-                        {ratioOptions.map((item) => (
-                            <button
-                                key={item.value}
-                                type="button"
-                                disabled={forceAdaptiveRatio}
-                                className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent px-2 text-sm transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-70"
-                                style={{ borderColor: ratio === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
-                                onMouseDown={(event) => event.stopPropagation()}
-                                onClick={() => onConfigChange("videoSize", item.value)}
-                            >
-                                <SizePreview width={ratioPreview(item.value).width} height={ratioPreview(item.value).height} color={theme.node.text} />
-                                <span>{item.value === "adaptive" ? item.label : `${item.label} ${item.value}`}</span>
-                                <span className="text-[10px] leading-none opacity-55">{item.value === "adaptive" ? "自动匹配" : `（${seedancePixelLabel(resolution, item.value, model)}）`}</span>
-                            </button>
-                        ))}
-                    </div>
+                    {followFirstFrameRatio ? (
+                        <div className="flex h-[72px] items-center justify-center rounded-xl border text-sm" style={{ borderColor: theme.node.text, color: theme.node.text }}>
+                            跟随首帧
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 gap-2.5">
+                            {ratioOptions.map((item) => (
+                                <button
+                                    key={item.value}
+                                    type="button"
+                                    disabled={forceAdaptiveRatio}
+                                    className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent px-2 text-sm transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-70"
+                                    style={{ borderColor: ratio === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onClick={() => onConfigChange("videoSize", item.value)}
+                                >
+                                    <SizePreview width={ratioPreview(item.value).width} height={ratioPreview(item.value).height} color={theme.node.text} />
+                                    <span>{item.value === "adaptive" ? item.label : `${item.label} ${item.value}`}</span>
+                                    <span className="text-[10px] leading-none opacity-55">{item.value === "adaptive" ? "自动匹配" : `（${seedancePixelLabel(resolution, item.value, model)}）`}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </SettingGroup>
                 <SettingGroup title="时长" color={theme.node.muted}>
                     <div className="grid grid-cols-4 gap-2.5">

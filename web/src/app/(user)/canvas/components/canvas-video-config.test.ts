@@ -34,12 +34,12 @@ describe("canvas video config", () => {
         expect(settingsPopoverSource).toContain("videoSecondsLabel(config.videoSeconds)");
     });
 
-    test("locks every Seedance frame request to the adaptive ratio", () => {
-        expect(configPanelSource).toContain("forceAdaptiveRatio={isSeedanceVideoModel(config.model) && hasSeedanceFrameMention");
-        expect(promptPanelSource).toContain("forceAdaptiveRatio={isSeedanceVideoModel(config.model) && hasSeedanceFrameMention(prompt)}");
-        expect(configPanelSource).not.toContain("followFirstFrameRatio");
-        expect(promptPanelSource).not.toContain("followFirstFrameRatio");
+    test("locks 2.5 frames to adaptive and 2.0 frames to the first-frame ratio", () => {
+        expect(configPanelSource).toContain("forceAdaptiveRatio={isSeedance25Model(config.model) && hasSeedanceFrameMention");
+        expect(promptPanelSource).toContain("forceAdaptiveRatio={isSeedance25Model(config.model) && hasSeedanceFrameMention(prompt)}");
+        expect(configPanelSource).toContain("followFirstFrameRatio={isSeedanceVideoModel(config.model) && !isSeedance25Model(config.model)");
+        expect(promptPanelSource).toContain("followFirstFrameRatio={isSeedanceVideoModel(config.model) && !isSeedance25Model(config.model)");
         expect(settingsPopoverSource).toContain('videoSizeLabel(forceAdaptiveRatio ? "adaptive" : config.videoSize)');
-        expect(settingsPopoverSource).toContain("forceAdaptiveRatio={forceAdaptiveRatio}");
+        expect(settingsPopoverSource).toContain('followFirstFrameRatio ? "跟随首帧"');
     });
 });

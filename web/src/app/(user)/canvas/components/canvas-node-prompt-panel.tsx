@@ -8,7 +8,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, isModelAvailableForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { CreditSymbol, requestCreditCost, shouldShowRequestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { isSeedanceVideoModel, normalizeSeedanceResolution } from "@/lib/seedance-video";
+import { isSeedance25Model, isSeedanceVideoModel, normalizeSeedanceResolution } from "@/lib/seedance-video";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasPromptLibrary } from "./canvas-prompt-library";
@@ -149,7 +149,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     ) : mode === "video" ? (
                         <>
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, videoModelPatch(config, model))} capability="video" onMissingConfig={() => openConfigDialog(true)} />
-                            <CanvasVideoSettingsPopover config={config} forceAdaptiveRatio={isSeedanceVideoModel(config.model) && hasSeedanceFrameMention(prompt)} buttonClassName="!h-10 !max-w-[230px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
+                            <CanvasVideoSettingsPopover config={config} forceAdaptiveRatio={isSeedance25Model(config.model) && hasSeedanceFrameMention(prompt)} followFirstFrameRatio={isSeedanceVideoModel(config.model) && !isSeedance25Model(config.model) && hasSeedanceFrameMention(prompt)} buttonClassName="!h-10 !max-w-[230px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
                         </>
                     ) : mode === "audio" ? (
                         <>

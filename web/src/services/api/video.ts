@@ -826,7 +826,7 @@ function assertSeedanceReferences(model: string, references: ReferenceImage[], v
     if (firstFrames.length > 1) throw new Error("Seedance 首帧最多只能设置 1 张图片");
     if (lastFrames.length > 1) throw new Error("Seedance 尾帧最多只能设置 1 张图片");
     if (lastFrames.length && !firstFrames.length) throw new Error("Seedance 尾帧必须和首帧一起使用，请先添加首帧图片");
-    const frameError = seedanceFrameReferenceError(references);
+    const frameError = seedanceFrameReferenceError(references, model);
     if (frameError) throw new Error(frameError);
     if (!firstFrames.length && !lastFrames.length) return;
     const ordinaryImages = references.filter((image) => !image.seedanceRole || image.seedanceRole === "reference_image");

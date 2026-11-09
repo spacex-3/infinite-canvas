@@ -33,21 +33,22 @@ describe("Seedance video defaults", () => {
         expect(seedanceReferenceCountError("doubao-seedance-2-5-260628", { images: 30, videos: 10, audios: 11 })).toContain("最多支持 10 个参考音频");
     });
 
-    test("uses adaptive frame ratios for every Seedance model", () => {
+    test("uses fixed first-frame ratios for 2.0 and adaptive for 2.5", () => {
         const frames = [
             { id: "first", name: "first.png", type: "image/png", dataUrl: "first", seedanceRole: "first_frame" as const, width: 1080, height: 1920 },
             { id: "last", name: "last.png", type: "image/png", dataUrl: "last", seedanceRole: "last_frame" as const, width: 1080, height: 1920 },
         ];
-        expect(seedanceFrameRatio("doubao-seedance-2-0-mini-260615", frames, "16:9")).toBe("adaptive");
-        expect(seedanceFrameRatio("doubao-seedance-2-0-fast-260128", frames, "16:9")).toBe("adaptive");
-        expect(seedanceFrameRatio("doubao-seedance-2-0-260128", frames, "16:9")).toBe("adaptive");
+        expect(seedanceFrameRatio("doubao-seedance-2-0-mini-260615", frames, "16:9")).toBe("9:16");
+        expect(seedanceFrameRatio("doubao-seedance-2-0-fast-260128", frames, "16:9")).toBe("9:16");
+        expect(seedanceFrameRatio("doubao-seedance-2-0-260128", frames, "16:9")).toBe("9:16");
         expect(seedanceFrameRatio("doubao-seedance-2-5-260628", frames, "16:9")).toBe("adaptive");
-        expect(seedanceFrameReferenceError(frames)).toBe("");
+        expect(seedanceFrameReferenceError(frames, "doubao-seedance-2-0-fast-260128")).toBe("");
     });
 
-    test("allows arbitrary first-frame ratios but rejects mismatched frame sizes", () => {
+    test("allows arbitrary 2.5 frames but validates 2.0 ratios and paired dimensions", () => {
         const first = { id: "first", name: "first.png", type: "image/png", dataUrl: "first", seedanceRole: "first_frame" as const, width: 1080, height: 1920 };
-        expect(seedanceFrameReferenceError([first, { ...first, id: "last", seedanceRole: "last_frame", width: 1280 }])).toContain("尺寸必须一致");
-        expect(seedanceFrameReferenceError([{ ...first, width: 1280 }])).toBe("");
+        expect(seedanceFrameReferenceError([first, { ...first, id: "last", seedanceRole: "last_frame", width: 1280 }], "doubao-seedance-2-5-260628")).toContain("尺寸必须一致");
+        expect(seedanceFrameReferenceError([{ ...first, width: 1280 }], "doubao-seedance-2-0-fast-260128")).toContain("不属于支持的比例");
+        expect(seedanceFrameReferenceError([{ ...first, width: 1280 }], "doubao-seedance-2-5-260628")).toBe("");
     });
 });

@@ -34,6 +34,14 @@ export const seedanceRatioOptions = [
 const seedanceStandardDurationOptions = [4, 5, 6, 8, 10, 12, 15] as const;
 const seedanceExtendedDurationOptions = [...seedanceStandardDurationOptions, 20, 25, 30] as const;
 const seedanceDatedModels = new Set(["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-0-mini-260615", "doubao-seedance-2-5-260628"]);
+const seedanceFrameRatios = [
+    ["16:9", 16 / 9],
+    ["9:16", 9 / 16],
+    ["1:1", 1],
+    ["4:3", 4 / 3],
+    ["3:4", 3 / 4],
+    ["21:9", 21 / 9],
+] as const;
 const seedancePixels = {
     "480p": {
         "16:9": "864x496",
@@ -174,22 +182,33 @@ export function normalizeSeedanceRatio(value: string) {
     return options.reduce((best, item) => (Math.abs(item[1] - ratio) < Math.abs(best[1] - ratio) ? item : best), options[0])[0];
 }
 
-export function seedanceFrameRatio(_model: string, images: ReferenceImage[], fallback: string) {
+export function seedanceFrameRatio(model: string, images: ReferenceImage[], fallback: string) {
     const firstFrame = images.find((image) => image.seedanceRole === "first_frame");
     if (!firstFrame) return normalizeSeedanceRatio(fallback);
-    return "adaptive";
+    if (isSeedance25Model(model)) return "adaptive";
+    return firstFrame.width && firstFrame.height ? closestSeedanceFrameRatio(firstFrame.width, firstFrame.height) || normalizeSeedanceRatio(fallback) : normalizeSeedanceRatio(fallback);
 }
 
-export function seedanceFrameReferenceError(images: ReferenceImage[]) {
+export function seedanceFrameReferenceError(images: ReferenceImage[], model = "") {
     const firstFrame = images.find((image) => image.seedanceRole === "first_frame");
     const lastFrame = images.find((image) => image.seedanceRole === "last_frame");
-    if (!firstFrame || !lastFrame) return "";
+    if (!firstFrame) return "";
     if (!firstFrame.width || !firstFrame.height) return "无法读取 Seedance 首帧尺寸，请重新上传图片后再试";
+    const ratio = closestSeedanceFrameRatio(firstFrame.width, firstFrame.height);
+    if (!isSeedance25Model(model) && !ratio) return `Seedance 2.0 系列首帧尺寸 ${firstFrame.width}x${firstFrame.height} 不属于支持的比例，请先使用图片节点的“裁剪”生成 16:9、9:16、1:1、4:3、3:4 或 21:9 图片`;
+    if (!lastFrame) return "";
     if (!lastFrame.width || !lastFrame.height) return "无法读取 Seedance 尾帧尺寸，请重新上传图片后再试";
     if (firstFrame.width !== lastFrame.width || firstFrame.height !== lastFrame.height) {
         return `Seedance 首尾帧尺寸必须一致，当前为 ${firstFrame.width}x${firstFrame.height} 和 ${lastFrame.width}x${lastFrame.height}；请先使用图片节点的“裁剪”生成相同尺寸的新图片`;
     }
+    if (!isSeedance25Model(model) && closestSeedanceFrameRatio(lastFrame.width, lastFrame.height) !== ratio) return "Seedance 首尾帧比例必须一致，请先裁剪为相同比例";
     return "";
+}
+
+function closestSeedanceFrameRatio(width: number, height: number) {
+    const value = width / height;
+    const closest = seedanceFrameRatios.reduce((best, item) => (Math.abs(item[1] - value) < Math.abs(best[1] - value) ? item : best), seedanceFrameRatios[0]);
+    return Math.abs(closest[1] - value) / closest[1] <= 0.015 ? closest[0] : "";
 }
 
 export function seedancePixelLabel(resolution: string, ratio: string, model = "") {
