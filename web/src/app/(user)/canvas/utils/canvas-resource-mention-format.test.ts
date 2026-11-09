@@ -49,7 +49,8 @@ describe("canvas resource mention formatting", () => {
             { nodeId: "video-3", kind: "video" as const },
             { nodeId: "video-4", kind: "video" as const },
         ];
-        expect(seedanceMentionRoleDisabledReason("", resources, resources[2], "last_frame", "doubao-seedance-2-0-mini-260615")).toContain("请先设置首帧");
+        expect(seedanceMentionRoleDisabledReason("", resources, resources[2], "first_frame", "doubao-seedance-2-0-mini-260615")).toContain("仅验证 Seedance 2.5");
+        expect(seedanceMentionRoleDisabledReason("", resources, resources[2], "last_frame", "doubao-seedance-2-5-260628")).toContain("请先设置首帧");
         expect(seedanceMentionResourceDisabledReason("@[node:image-1;role:first_frame]", resources, resources[1], "doubao-seedance-2-0-mini-260615")).toContain("首尾帧模式");
         expect(seedanceMentionResourceDisabledReason("@[node:video-1] @[node:video-2] @[node:video-3]", resources, resources[5], "doubao-seedance-2-0-mini-260615")).toContain("最多支持 3 个");
     });

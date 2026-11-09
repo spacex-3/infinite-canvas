@@ -39,7 +39,7 @@ describe("CanvasClientPage retry config", () => {
         expect(source).toContain("const videoTaskRecovery = readVideoTaskRecovery(node)");
         expect(source).toContain("? await recoverVideoGeneration(generationConfig, videoTaskRecovery, updateRetryProgress)");
         expect(source).toContain("videoTaskId: recovery.taskId");
-        expect(source).toContain('readVideoTaskRecovery(node) ? "页面刷新中断了视频取回，请重新下载。"');
+        expect(source).toContain('recovery.status === "completed" ? "页面刷新中断了视频取回，请重新下载。" : "页面刷新中断了任务查询，请继续查询。"');
     });
 });
 

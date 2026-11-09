@@ -19,9 +19,10 @@ describe("CanvasNode text actions", () => {
         expect(source).toContain('if (stage === "saving") return "正在保存视频";');
     });
 
-    test("offers download recovery for failed video nodes with a saved task", () => {
+    test("distinguishes task polling from completed video download recovery", () => {
         expect(source).toContain("const canRecoverVideo = node.type === CanvasNodeType.Video && Boolean(node.metadata?.videoTaskId)");
-        expect(source).toContain('{canRecoverVideo ? "重新下载" : "重试"}');
+        expect(source).toContain('node.metadata?.videoTaskStatus === "completed"');
+        expect(source).toContain('canRedownloadVideo ? "重新下载" : "继续查询"');
     });
 
     test("only lets the native control bar start video playback", () => {

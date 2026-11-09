@@ -1,5 +1,5 @@
 import type { CanvasResourceReference } from "./canvas-resource-references";
-import { seedanceReferenceLimitsForModel } from "@/lib/seedance-video";
+import { isSeedance25Model, seedanceReferenceLimitsForModel } from "@/lib/seedance-video";
 import type { SeedanceImageRole } from "@/types/image";
 import type { CanvasResourceKind } from "./canvas-resource-references";
 
@@ -48,6 +48,7 @@ export function seedanceMentionResourceDisabledReason(value: string, resources: 
 }
 
 export function seedanceMentionRoleDisabledReason(value: string, resources: CanvasMentionResource[], resource: CanvasMentionResource, role: SeedanceImageRole, model: string) {
+    if (role !== "reference_image" && !isSeedance25Model(model)) return "当前站点链路仅验证 Seedance 2.5 首尾帧，请改用 2.5 或选择普通参考图";
     const state = seedanceMentionState(value, resources);
     const existingRole = state.rolesByNodeId.get(resource.nodeId);
     if (existingRole && existingRole !== role) return `该图片已设为${seedanceRoleLabel(existingRole)}，同一图片不能同时使用多个角色`;

@@ -11,7 +11,7 @@ import {
     OMNI_FLASH_REFERENCE_LIMITS,
     resolveOmniFlashModel,
 } from "@/lib/omni-flash-video";
-import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceFrameRatio, seedanceFrameReferenceError, seedanceReferenceCountError, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedance25Model, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceFrameRatio, seedanceFrameReferenceError, seedanceReferenceCountError, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { getImageBlob, imageToDataUrl } from "@/services/image-storage";
 import { assertChannelSupportsCapability, buildApiUrl, resolveCustomChannelConfig, type AiConfig } from "@/stores/use-config-store";
@@ -140,6 +140,13 @@ export type VideoTaskRecovery = {
     resultUrl?: string;
 };
 type VideoTaskRecoveryCallback = (recovery: VideoTaskRecovery) => void;
+const VIDEO_RETRIEVAL_TIMEOUT_MS = 5 * 60 * 1000;
+
+class VideoRetrievalTimeoutError extends Error {
+    constructor() {
+        super("视频已生成，下载等待超过 5 分钟，请点击重新下载");
+    }
+}
 
 function aiApiUrl(config: AiConfig, path: string) {
     return config.channelMode === "remote" ? `/api/v1${path}` : buildApiUrl(config.baseUrl, path);
@@ -823,6 +830,9 @@ function assertSeedanceReferences(model: string, references: ReferenceImage[], v
     }
     const firstFrames = references.filter((image) => image.seedanceRole === "first_frame");
     const lastFrames = references.filter((image) => image.seedanceRole === "last_frame");
+    if ((firstFrames.length || lastFrames.length) && !isSeedance25Model(model)) {
+        throw new Error("当前站点链路仅验证 Seedance 2.5 首尾帧，请改用 2.5 或选择普通参考图");
+    }
     if (firstFrames.length > 1) throw new Error("Seedance 首帧最多只能设置 1 张图片");
     if (lastFrames.length > 1) throw new Error("Seedance 尾帧最多只能设置 1 张图片");
     if (lastFrames.length && !firstFrames.length) throw new Error("Seedance 尾帧必须和首帧一起使用，请先添加首帧图片");
@@ -923,11 +933,13 @@ async function uploadReferenceMedia(file: File) {
 }
 
 async function videoResultFromUrl(url: string, onProgress?: GenerationProgressCallback): Promise<VideoGenerationResult> {
+    const deadline = Date.now() + VIDEO_RETRIEVAL_TIMEOUT_MS;
     let downloadUrl = url;
     try {
         onProgress?.(0, "caching");
-        downloadUrl = await cacheRemoteVideo(url, onProgress);
-    } catch {
+        downloadUrl = await cacheRemoteVideo(url, onProgress, deadline);
+    } catch (error) {
+        if (error instanceof VideoRetrievalTimeoutError) throw error;
         downloadUrl = url;
     }
     try {
@@ -936,7 +948,7 @@ async function videoResultFromUrl(url: string, onProgress?: GenerationProgressCa
         const response = await axios.get<Blob>(downloadUrl, {
             headers: downloadUrl.startsWith("/") && token ? { Authorization: `Bearer ${token}` } : undefined,
             responseType: "blob",
-            timeout: 15 * 60 * 1000,
+            timeout: remainingRetrievalTime(deadline),
             onDownloadProgress: (event) => {
                 if (event.total && event.total > 0) onProgress?.((event.loaded / event.total) * 100, "downloading");
             },
@@ -944,30 +956,47 @@ async function videoResultFromUrl(url: string, onProgress?: GenerationProgressCa
         await assertVideoBlob(response.data);
         onProgress?.(100, "downloading");
         return { blob: response.data };
-    } catch {
+    } catch (error) {
+        if (error instanceof VideoRetrievalTimeoutError || isAxiosTimeout(error)) throw new VideoRetrievalTimeoutError();
         return { url: downloadUrl, mimeType: "video/mp4" };
     }
 }
 
-async function cacheRemoteVideo(url: string, onProgress?: GenerationProgressCallback) {
+async function cacheRemoteVideo(url: string, onProgress: GenerationProgressCallback | undefined, deadline: number) {
     if (url.startsWith("/api/media/cache/")) return url;
     const token = useUserStore.getState().token;
     if (!token) return url;
     const headers = { Authorization: `Bearer ${token}` };
-    const created = unwrapEnvelope((await axios.post<ApiEnvelope<RemoteVideoCacheTask>>("/api/v1/media/cache/videos", { url }, { headers })).data, "服务器视频缓存任务创建失败");
+    const created = unwrapEnvelope((await axios.post<ApiEnvelope<RemoteVideoCacheTask>>("/api/v1/media/cache/videos", { url }, { headers, timeout: remainingRetrievalTime(deadline) })).data, "服务器视频缓存任务创建失败");
     if (!created.id) throw new Error("服务器视频缓存任务没有返回 ID");
     onProgress?.(0, "caching");
-    for (let attempt = 0; attempt < 900; attempt += 1) {
-        const task = unwrapEnvelope((await axios.get<ApiEnvelope<RemoteVideoCacheTask>>(`/api/v1/media/cache/videos/${encodeURIComponent(created.id)}`, { headers })).data, "服务器视频缓存任务查询失败");
+    while (Date.now() < deadline) {
+        let task: RemoteVideoCacheTask;
+        try {
+            task = unwrapEnvelope((await axios.get<ApiEnvelope<RemoteVideoCacheTask>>(`/api/v1/media/cache/videos/${encodeURIComponent(created.id)}`, { headers, timeout: remainingRetrievalTime(deadline) })).data, "服务器视频缓存任务查询失败");
+        } catch (error) {
+            if (isAxiosTimeout(error)) throw new VideoRetrievalTimeoutError();
+            throw error;
+        }
         onProgress?.(Number(task.progress) || 0, "caching");
         if (task.status === "completed") {
             if (!task.url) throw new Error("服务器视频缓存任务没有返回文件地址");
             return task.url;
         }
         if (task.status === "failed") throw new Error(task.error || "服务器下载视频失败");
-        await delay(2000);
+        await delay(Math.min(2000, Math.max(0, deadline - Date.now())));
     }
-    throw new Error("服务器下载视频超时");
+    throw new VideoRetrievalTimeoutError();
+}
+
+function remainingRetrievalTime(deadline: number) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new VideoRetrievalTimeoutError();
+    return remaining;
+}
+
+function isAxiosTimeout(error: unknown) {
+    return axios.isAxiosError(error) && (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT");
 }
 
 function isRetryableVideoPollError(error: unknown) {

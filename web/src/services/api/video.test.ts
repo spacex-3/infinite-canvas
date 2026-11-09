@@ -98,28 +98,27 @@ describe("Seedance new-api compatibility", () => {
         });
     });
 
-    test("preserves frame roles and submits the model-specific frame ratio", () => {
+    test("preserves verified Seedance 2.5 frame roles with adaptive ratio", () => {
         const content = [
             { type: "text", text: "从图片1过渡到图片2" },
             { type: "image_url", image_url: { url: "https://example.com/first.png" }, role: "first_frame" },
             { type: "image_url", image_url: { url: "https://example.com/last.png" }, role: "last_frame" },
         ];
-        for (const model of ["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-0-mini-260615", "doubao-seedance-2-5-260628"]) {
-            const frameRatio = model === "doubao-seedance-2-5-260628" ? "adaptive" : "16:9";
-            const payload = buildSeedanceV1Payload({ videoSize: "16:9", vquality: "480p", videoSeconds: "5", videoGenerateAudio: "true", videoWatermark: "false" }, model, "从图片1过渡到图片2", content, frameRatio);
-            expect(payload.metadata.ratio).toBe(frameRatio);
-            expect(payload.metadata.content?.map((item) => item.role)).toEqual(["first_frame", "last_frame"]);
-        }
+        const payload = buildSeedanceV1Payload({ videoSize: "16:9", vquality: "480p", videoSeconds: "5", videoGenerateAudio: "true", videoWatermark: "false" }, "doubao-seedance-2-5-260628", "从图片1过渡到图片2", content, "adaptive");
+        expect(payload.metadata.ratio).toBe("adaptive");
+        expect(payload.metadata.content?.map((item) => item.role)).toEqual(["first_frame", "last_frame"]);
+        expect(videoSource).toContain("当前站点链路仅验证 Seedance 2.5 首尾帧");
         expect(videoSource).toContain("Seedance 首尾帧模式不能与普通参考图、参考视频或参考音频混用");
     });
 
     test("shows a download stage after a completed task returns a video URL", () => {
         expect(videoSource).toContain('onProgress?.(0, "caching")');
-        expect(videoSource).toContain("downloadUrl = await cacheRemoteVideo(url, onProgress)");
+        expect(videoSource).toContain("downloadUrl = await cacheRemoteVideo(url, onProgress, deadline)");
         expect(videoSource).toContain('onProgress?.(0, "downloading")');
         expect(videoSource).toContain('downloadUrl.startsWith("/") && token ? { Authorization: `Bearer ${token}` } : undefined');
         expect(videoSource).toContain('onProgress?.((event.loaded / event.total) * 100, "downloading")');
-        expect(videoSource).toContain("timeout: 15 * 60 * 1000");
+        expect(videoSource).toContain("const VIDEO_RETRIEVAL_TIMEOUT_MS = 5 * 60 * 1000");
+        expect(videoSource).toContain("视频已生成，下载等待超过 5 分钟，请点击重新下载");
     });
 
     test("persists Seedance task recovery before polling and retries transient poll failures", () => {

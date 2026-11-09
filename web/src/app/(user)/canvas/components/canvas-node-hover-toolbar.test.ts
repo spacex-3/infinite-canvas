@@ -16,10 +16,10 @@ describe("CanvasNodeHoverToolbar", () => {
         expect(source).toContain("...(canGenerateTextImage ? [{ id: \"generateImage\"");
     });
 
-    test("labels an existing video task as a download recovery", () => {
+    test("labels submitted and completed video recovery separately", () => {
         expect(source).toContain("const canRecoverVideo = canRetry && isVideo && Boolean(node.metadata?.videoTaskId)");
-        expect(source).toContain('title: canRecoverVideo ? "取回已有视频，不会重新生成" : "重新生成"');
-        expect(source).toContain('label: canRecoverVideo ? "重新下载" : "重试"');
+        expect(source).toContain('node.metadata?.videoTaskStatus === "completed"');
+        expect(source).toContain('canRedownloadVideo ? "重新下载" : "继续查询"');
     });
 
     test("uses a compact image toolbar by default and wraps customized tools", () => {

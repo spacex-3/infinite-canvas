@@ -3048,9 +3048,15 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
 function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
     return nodes.map((node) =>
         node.metadata?.status === "loading"
-            ? { ...node, metadata: { ...node.metadata, status: "error" as const, errorDetails: readVideoTaskRecovery(node) ? "页面刷新中断了视频取回，请重新下载。" : "页面刷新后生成已中断，请重新生成。" } }
+            ? { ...node, metadata: { ...node.metadata, status: "error" as const, errorDetails: interruptedGenerationMessage(node) } }
             : node,
     );
+}
+
+function interruptedGenerationMessage(node: CanvasNodeData) {
+    const recovery = readVideoTaskRecovery(node);
+    if (!recovery) return "页面刷新后生成已中断，请重新生成。";
+    return recovery.status === "completed" ? "页面刷新中断了视频取回，请重新下载。" : "页面刷新中断了任务查询，请继续查询。";
 }
 
 function findRetrySourceNode(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {

@@ -378,6 +378,8 @@ function formatGenerationProgress(progress: unknown, stage?: string) {
 
 function ErrorContent({ node, theme, onRetry }: Pick<NodeContentRendererProps, "node" | "theme" | "onRetry">) {
     const canRecoverVideo = node.type === CanvasNodeType.Video && Boolean(node.metadata?.videoTaskId);
+    const canRedownloadVideo = canRecoverVideo && node.metadata?.videoTaskStatus === "completed";
+    const retryLabel = canRecoverVideo ? (canRedownloadVideo ? "重新下载" : "继续查询") : "重试";
     return (
         <div className="flex max-w-[260px] flex-col items-center gap-3 px-5 text-center">
             <div className="text-xs leading-5 text-red-300">{node.metadata?.errorDetails || "生成失败"}</div>
@@ -391,8 +393,8 @@ function ErrorContent({ node, theme, onRetry }: Pick<NodeContentRendererProps, "
                 }}
                 onMouseDown={(event) => event.stopPropagation()}
             >
-                {canRecoverVideo ? <Download className="size-3.5" /> : <RefreshCw className="size-3.5" />}
-                {canRecoverVideo ? "重新下载" : "重试"}
+                {canRedownloadVideo ? <Download className="size-3.5" /> : <RefreshCw className="size-3.5" />}
+                {retryLabel}
             </button>
         </div>
     );
