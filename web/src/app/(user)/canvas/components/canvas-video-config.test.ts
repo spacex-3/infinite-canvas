@@ -34,11 +34,11 @@ describe("canvas video config", () => {
         expect(settingsPopoverSource).toContain("videoSecondsLabel(config.videoSeconds)");
     });
 
-    test("locks only Seedance 2.5 frame requests to the adaptive ratio", () => {
-        expect(configPanelSource).toContain("forceAdaptiveRatio={isSeedance25Model(config.model) && hasSeedanceFrameMention");
-        expect(promptPanelSource).toContain("forceAdaptiveRatio={isSeedance25Model(config.model) && hasSeedanceFrameMention(prompt)}");
-        expect(configPanelSource).toContain("followFirstFrameRatio={isSeedanceVideoModel(config.model) && !isSeedance25Model(config.model)");
-        expect(promptPanelSource).toContain("followFirstFrameRatio={isSeedanceVideoModel(config.model) && !isSeedance25Model(config.model)");
+    test("locks every Seedance frame request to the adaptive ratio", () => {
+        expect(configPanelSource).toContain("forceAdaptiveRatio={isSeedanceVideoModel(config.model) && hasSeedanceFrameMention");
+        expect(promptPanelSource).toContain("forceAdaptiveRatio={isSeedanceVideoModel(config.model) && hasSeedanceFrameMention(prompt)}");
+        expect(configPanelSource).not.toContain("followFirstFrameRatio");
+        expect(promptPanelSource).not.toContain("followFirstFrameRatio");
         expect(settingsPopoverSource).toContain('videoSizeLabel(forceAdaptiveRatio ? "adaptive" : config.videoSize)');
         expect(settingsPopoverSource).toContain("forceAdaptiveRatio={forceAdaptiveRatio}");
     });
