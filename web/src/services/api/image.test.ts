@@ -54,6 +54,9 @@ describe("semantic image resolution mapping", () => {
         expect(source).toContain("async: true");
         expect(source).toContain('formData.set("async", "true")');
         expect(source).toContain("requestUpstreamImageTask");
+        expect(source).toContain("export async function recoverImageGeneration");
+        expect(source).toContain("proxyTaskImageUrls(task.response, taskId)");
+        expect(source).toContain("/content/${index}");
     });
 });
 

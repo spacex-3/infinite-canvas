@@ -35,6 +35,7 @@ type aiImageTask struct {
 	Progress  int             `json:"progress,omitempty"`
 	Msg       string          `json:"msg,omitempty"`
 	Response  json.RawMessage `json:"response,omitempty"`
+	OwnerID   string          `json:"-"`
 	CreatedAt time.Time       `json:"-"`
 	UpdatedAt time.Time       `json:"-"`
 }
@@ -54,11 +55,60 @@ func AIImagesEditsTask(w http.ResponseWriter, r *http.Request) {
 
 func AIImageTask(w http.ResponseWriter, r *http.Request, id string) {
 	task, ok := getAIImageTask(id)
-	if !ok {
+	if !ok || !ownsAIImageTask(r, task) {
 		Fail(w, "生成任务不存在或已过期")
 		return
 	}
 	OK(w, task)
+}
+
+func AIImageTaskContent(w http.ResponseWriter, r *http.Request, id string, index int) {
+	task, ok := getAIImageTask(id)
+	if !ok || !ownsAIImageTask(r, task) || task.Status != aiImageTaskSuccess {
+		Fail(w, "生成任务不存在、未完成或已过期")
+		return
+	}
+	var payload struct {
+		Data []struct {
+			URL string `json:"url"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(task.Response, &payload) != nil || index < 0 || index >= len(payload.Data) {
+		Fail(w, "图片制品不存在")
+		return
+	}
+	target, err := url.Parse(strings.TrimSpace(payload.Data[index].URL))
+	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
+		Fail(w, "图片制品地址无效")
+		return
+	}
+	response, err := service.OpenRemoteMedia(r.Context(), target.String())
+	if err != nil {
+		Fail(w, "图片制品读取失败，请重新下载")
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		Fail(w, "图片制品读取失败，请重新下载")
+		return
+	}
+	if response.ContentLength > 64<<20 {
+		Fail(w, "图片制品超过 64MiB，无法保存")
+		return
+	}
+	contentType := strings.TrimSpace(strings.Split(response.Header.Get("Content-Type"), ";")[0])
+	if !strings.HasPrefix(strings.ToLower(contentType), "image/") {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, io.LimitReader(response.Body, (64<<20)+1))
+}
+
+func ownsAIImageTask(r *http.Request, task aiImageTask) bool {
+	user, ok := service.UserFromContext(r.Context())
+	return ok && task.OwnerID == user.ID
 }
 
 func startAIImageTask(w http.ResponseWriter, r *http.Request, path string) {
@@ -87,7 +137,7 @@ func startAIImageTask(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	path = resolveAIProxyPath(channel, modelName, path)
-	task := newAIImageTask()
+	task := newAIImageTask(user.ID)
 	go runAIImageTask(task.ID, channel, modelName, path, body, contentType, user.ID, credits)
 	OK(w, task)
 }
@@ -318,10 +368,10 @@ func safeAIErrorMessage(err error, fallback string) string {
 	return fallback
 }
 
-func newAIImageTask() aiImageTask {
+func newAIImageTask(ownerID string) aiImageTask {
 	cleanupAIImageTasks()
 	now := time.Now()
-	task := aiImageTask{ID: "img-task-" + uuid.NewString(), Status: aiImageTaskPending, CreatedAt: now, UpdatedAt: now}
+	task := aiImageTask{ID: "img-task-" + uuid.NewString(), Status: aiImageTaskPending, OwnerID: ownerID, CreatedAt: now, UpdatedAt: now}
 	aiImageTasks.Lock()
 	if aiImageTasks.items == nil {
 		aiImageTasks.items = map[string]aiImageTask{}

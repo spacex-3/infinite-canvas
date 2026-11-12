@@ -37,7 +37,7 @@ func TestSafeUpstreamTextTruncates(t *testing.T) {
 }
 
 func TestAIImageTaskLifecycle(t *testing.T) {
-	task := newAIImageTask()
+	task := newAIImageTask("user-test")
 	defer deleteAIImageTask(task.ID)
 
 	if task.ID == "" || task.Status != aiImageTaskPending {

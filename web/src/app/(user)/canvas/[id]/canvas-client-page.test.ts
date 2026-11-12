@@ -41,6 +41,13 @@ describe("CanvasClientPage retry config", () => {
         expect(source).toContain("videoTaskId: recovery.taskId");
         expect(source).toContain('recovery.status === "completed" ? "页面刷新中断了视频取回，请重新下载。" : "页面刷新中断了任务查询，请继续查询。"');
     });
+
+    test("recovers a completed image task without submitting another paid generation", () => {
+        expect(source).toContain("const imageTaskRecovery = readImageTaskRecovery(node)");
+        expect(source).toContain("? await recoverImageGeneration(generationConfig, imageTaskRecovery, updateRetryProgress)");
+        expect(source).toContain("imageTaskId: recovery.taskId");
+        expect(source).toContain('imageRecovery.status === "completed" ? "页面刷新中断了图片取回，请重新下载。" : "页面刷新中断了任务查询，请继续查询。"');
+    });
 });
 
 describe("CanvasClientPage generation progress", () => {

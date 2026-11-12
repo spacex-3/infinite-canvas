@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { BookOpen, Home, ImageIcon, Images, List, Menu, MessageSquare, Music2, Plus, Redo2, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 
-import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
+import { recoverImageGeneration, requestEdit, requestGeneration, requestImageQuestion, type ImageTaskRecovery } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { recoverVideoGeneration, requestVideoGeneration, storeGeneratedVideo, type VideoTaskRecovery } from "@/services/api/video";
 import { DOCS_URL } from "@/constant/env";
@@ -1909,9 +1909,19 @@ function InfiniteCanvasPage() {
                     let hasFailure = false;
                     await mapWithConcurrency(targetIds, IMAGE_BATCH_CONCURRENCY, async (targetId) => {
                         try {
+                            const saveImageTaskRecovery = (recovery: ImageTaskRecovery) => {
+                                setNodes((prev) =>
+                                    prev.map((node) =>
+                                        node.id === targetId
+                                            ? { ...node, metadata: { ...node.metadata, imageTaskId: recovery.taskId, imageTaskProtocol: recovery.protocol, imageTaskPath: recovery.path, imageTaskStatus: recovery.status, imageResultUrl: recovery.resultUrl || node.metadata?.imageResultUrl } }
+                                            : node,
+                                    ),
+                                );
+                            };
                             const image = referenceImages.length
-                                ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages, undefined, (progress) => updateGenerationProgress(targetId, progress)).then((items) => items[0])
-                                : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt, (progress) => updateGenerationProgress(targetId, progress)).then((items) => items[0]);
+                                ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages, undefined, (progress) => updateGenerationProgress(targetId, progress), saveImageTaskRecovery).then((items) => items[0])
+                                : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt, (progress) => updateGenerationProgress(targetId, progress), saveImageTaskRecovery).then((items) => items[0]);
+                            updateGenerationProgress(targetId, 100, "downloading");
                             const uploaded = await storeGeneratedImage(image);
                             const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                             setNodes((prev) =>
@@ -2087,6 +2097,7 @@ function InfiniteCanvasPage() {
     const handleRetryNode = useCallback(
         async (node: CanvasNodeData) => {
             const videoTaskRecovery = readVideoTaskRecovery(node);
+            const imageTaskRecovery = readImageTaskRecovery(node);
             const sourceNode = findRetrySourceNode(node.id, nodesRef.current, connectionsRef.current) || node;
             const batchRoot = node.metadata?.batchRootId ? nodesRef.current.find((item) => item.id === node.metadata?.batchRootId) : null;
             const savedImageMetadata = node.type === CanvasNodeType.Image ? { ...batchRoot?.metadata, ...node.metadata } : undefined;
@@ -2108,17 +2119,17 @@ function InfiniteCanvasPage() {
                 return;
             }
 
-            const context = videoTaskRecovery ? null : hasSavedImageMetadata ? null : await hydrateNodeGenerationContext(buildNodeGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, sourceNode.metadata?.composerContent ?? sourceNode.metadata?.prompt ?? node.metadata?.prompt ?? ""));
+            const context = videoTaskRecovery || imageTaskRecovery ? null : hasSavedImageMetadata ? null : await hydrateNodeGenerationContext(buildNodeGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, sourceNode.metadata?.composerContent ?? sourceNode.metadata?.prompt ?? node.metadata?.prompt ?? ""));
             const prompt = (savedImageMetadata?.prompt || context?.prompt || "").trim();
-            if (!prompt && !videoTaskRecovery) {
+            if (!prompt && !videoTaskRecovery && !imageTaskRecovery) {
                 message.warning("找不到提示词，无法重试");
                 return;
             }
             const generationType = savedImageMetadata?.generationType;
             const useReferenceImages = generationType ? generationType === "edit" : Boolean(context?.referenceImages.length);
             const retryReferenceImages =
-                hasSavedImageMetadata && savedImageMetadata ? await resolveMetadataReferences(savedImageMetadata) : useReferenceImages ? (context?.referenceImages.length ? context.referenceImages : sourceNodeReferenceImages(batchRoot || sourceNode)) : [];
-            if (useReferenceImages && !retryReferenceImages) {
+                imageTaskRecovery ? [] : hasSavedImageMetadata && savedImageMetadata ? await resolveMetadataReferences(savedImageMetadata) : useReferenceImages ? (context?.referenceImages.length ? context.referenceImages : sourceNodeReferenceImages(batchRoot || sourceNode)) : [];
+            if (!imageTaskRecovery && useReferenceImages && !retryReferenceImages) {
                 message.error("参考图片已丢失，无法继续重试");
                 setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: "参考图片已丢失，无法继续重试" } } : item)));
                 return;
@@ -2159,7 +2170,21 @@ function InfiniteCanvasPage() {
                     return;
                 }
 
-                const image = useReferenceImages ? await requestEdit(generationConfig, prompt, retryImages, undefined, updateRetryProgress).then((items) => items[0]) : await requestGeneration(generationConfig, prompt, updateRetryProgress).then((items) => items[0]);
+                const saveImageTaskRecovery = (recovery: ImageTaskRecovery) => {
+                    setNodes((prev) =>
+                        prev.map((item) =>
+                            item.id === node.id
+                                ? { ...item, metadata: { ...item.metadata, imageTaskId: recovery.taskId, imageTaskProtocol: recovery.protocol, imageTaskPath: recovery.path, imageTaskStatus: recovery.status, imageResultUrl: recovery.resultUrl || item.metadata?.imageResultUrl } }
+                                : item,
+                        ),
+                    );
+                };
+                const image = imageTaskRecovery
+                    ? await recoverImageGeneration(generationConfig, imageTaskRecovery, updateRetryProgress).then((items) => items[0])
+                    : useReferenceImages
+                      ? await requestEdit(generationConfig, prompt, retryImages, undefined, updateRetryProgress, saveImageTaskRecovery).then((items) => items[0])
+                      : await requestGeneration(generationConfig, prompt, updateRetryProgress, saveImageTaskRecovery).then((items) => items[0]);
+                updateRetryProgress(100, "downloading");
                 const uploadedImage = await storeGeneratedImage(image);
                 const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                 const imageSize = fitNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
@@ -2875,6 +2900,12 @@ function readVideoTaskRecovery(node: CanvasNodeData): VideoTaskRecovery | null {
     return { taskId: metadata.videoTaskId, model: metadata.videoTaskModel, protocol: metadata.videoTaskProtocol, status: metadata.videoTaskStatus || "submitted", resultUrl: metadata.videoResultUrl };
 }
 
+function readImageTaskRecovery(node: CanvasNodeData): ImageTaskRecovery | null {
+    const metadata = node.metadata;
+    if (node.type !== CanvasNodeType.Image || !metadata?.imageTaskId || !metadata.imageTaskStatus || metadata.imageTaskStatus === "failed") return null;
+    return { taskId: metadata.imageTaskId, protocol: metadata.imageTaskProtocol, path: metadata.imageTaskPath, status: metadata.imageTaskStatus, resultUrl: metadata.imageResultUrl };
+}
+
 function audioMetadata(audio: UploadedFile): CanvasNodeMetadata {
     return { content: audio.url, storageKey: audio.storageKey, status: "success", bytes: audio.bytes, mimeType: audio.mimeType || "audio/mpeg", durationMs: audio.durationMs };
 }
@@ -3054,6 +3085,8 @@ function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
 }
 
 function interruptedGenerationMessage(node: CanvasNodeData) {
+    const imageRecovery = readImageTaskRecovery(node);
+    if (imageRecovery) return imageRecovery.status === "completed" ? "页面刷新中断了图片取回，请重新下载。" : "页面刷新中断了任务查询，请继续查询。";
     const recovery = readVideoTaskRecovery(node);
     if (!recovery) return "页面刷新后生成已中断，请重新生成。";
     return recovery.status === "completed" ? "页面刷新中断了视频取回，请重新下载。" : "页面刷新中断了任务查询，请继续查询。";

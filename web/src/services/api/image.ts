@@ -37,6 +37,14 @@ type ImageTaskResponse = {
     msg?: string;
     response?: ImageApiResponse;
 };
+export type ImageTaskRecovery = {
+    taskId: string;
+    protocol?: "canvas" | "upstream";
+    path?: "/images/generations" | "/images/edits";
+    status: "submitted" | "completed" | "failed";
+    resultUrl?: string;
+};
+export type ImageTaskRecoveryCallback = (recovery: ImageTaskRecovery) => void;
 type FpbrowserVideoImageResponse = {
     id: string;
     status?: string;
@@ -189,7 +197,7 @@ function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) 
     return systemPrompt ? [{ role: "system" as const, content: systemPrompt }, ...messages] : messages;
 }
 
-export async function requestGeneration(config: AiConfig, prompt: string, onProgress?: GenerationProgressCallback) {
+export async function requestGeneration(config: AiConfig, prompt: string, onProgress?: GenerationProgressCallback, onTaskRecovery?: ImageTaskRecoveryCallback) {
     config = resolveCustomChannelConfig(config, "image", (config.model || config.imageModel).trim());
     const requestedCount = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     if (config.channelMode === "local" && config.protocol === "gemini") return requestGeminiImage(config, prompt, [], requestedCount, onProgress);
@@ -216,8 +224,8 @@ export async function requestGeneration(config: AiConfig, prompt: string, onProg
         const payloads = await Promise.all(
             Array.from({ length: requestedCount }, async () =>
                 config.channelMode === "remote"
-                    ? requestRemoteImageTask(config, "/images/generations", payload, aiHeaders(config, "application/json"), onProgress)
-                    : requestUpstreamImageTask(config, "/images/generations", payload, aiHeaders(config, "application/json"), onProgress),
+                    ? requestRemoteImageTask(config, "/images/generations", payload, aiHeaders(config, "application/json"), onProgress, onTaskRecovery)
+                    : requestUpstreamImageTask(config, "/images/generations", payload, aiHeaders(config, "application/json"), onProgress, onTaskRecovery),
             ),
         );
         const images = payloads.flatMap((payloadData) => parseImagePayload(payloadData, outputFormat));
@@ -228,7 +236,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, onProg
     }
 }
 
-export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, onProgress?: GenerationProgressCallback) {
+export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, onProgress?: GenerationProgressCallback, onTaskRecovery?: ImageTaskRecoveryCallback) {
     config = resolveCustomChannelConfig(config, "image", (config.model || config.imageModel).trim());
     const requestedCount = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const requestPrompt = buildImageReferencePromptText(prompt, references);
@@ -271,8 +279,8 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         const payloads = await Promise.all(
             Array.from({ length: requestedCount }, async () =>
                 config.channelMode === "remote"
-                    ? requestRemoteImageTask(config, "/images/edits", formData, aiHeaders(config), onProgress)
-                    : requestUpstreamImageTask(config, "/images/edits", formData, aiHeaders(config), onProgress),
+                    ? requestRemoteImageTask(config, "/images/edits", formData, aiHeaders(config), onProgress, onTaskRecovery)
+                    : requestUpstreamImageTask(config, "/images/edits", formData, aiHeaders(config), onProgress, onTaskRecovery),
             ),
         );
         const images = payloads.flatMap((payloadData) => parseImagePayload(payloadData, outputFormat));
@@ -280,6 +288,18 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
+    }
+}
+
+export async function recoverImageGeneration(config: AiConfig, recovery: ImageTaskRecovery, onProgress?: GenerationProgressCallback) {
+    config = resolveCustomChannelConfig(config, "image", (config.model || config.imageModel).trim());
+    const outputFormat = getImageModelCapabilities(config.model).supportsGif && config.imageOutputFormat === "gif" ? "gif" : "png";
+    try {
+        if (!recovery.protocol && recovery.resultUrl) return [{ id: nanoid(), dataUrl: recovery.resultUrl }];
+        const payload = recovery.protocol === "upstream" && recovery.path ? await waitUpstreamImageTask(config, recovery.path, recovery.taskId, onProgress) : await waitRemoteImageTask(config, recovery.taskId, onProgress);
+        return parseImagePayload(payload, outputFormat);
+    } catch (error) {
+        throw new Error(readAxiosError(error, "图片制品读取失败"));
     }
 }
 
@@ -390,46 +410,102 @@ async function requestGeminiImage(config: AiConfig, prompt: string, references: 
     }
 }
 
-async function requestRemoteImageTask(config: AiConfig, path: "/images/generations" | "/images/edits", body: Record<string, unknown> | FormData, headers: ReturnType<typeof aiHeaders>, onProgress?: GenerationProgressCallback) {
-    const startedAt = Date.now();
+async function requestRemoteImageTask(
+    config: AiConfig,
+    path: "/images/generations" | "/images/edits",
+    body: Record<string, unknown> | FormData,
+    headers: ReturnType<typeof aiHeaders>,
+    onProgress?: GenerationProgressCallback,
+    onTaskRecovery?: ImageTaskRecoveryCallback,
+) {
     const created = unwrapEnvelope((await axios.post<ApiEnvelope<ImageTaskResponse>>(`/api/v1${path}/tasks`, body, { headers })).data, "生成任务创建失败");
     notifyGenerationProgress(onProgress, created);
-    let task = created;
+    onTaskRecovery?.({ taskId: created.id, protocol: "canvas", status: "submitted" });
+    return waitRemoteImageTask(config, created.id, onProgress, onTaskRecovery, created);
+}
+
+async function waitRemoteImageTask(config: AiConfig, taskId: string, onProgress?: GenerationProgressCallback, onTaskRecovery?: ImageTaskRecoveryCallback, initialTask?: ImageTaskResponse) {
+    const startedAt = Date.now();
+    let task = initialTask || unwrapEnvelope((await axios.get<ApiEnvelope<ImageTaskResponse>>(`/api/v1/images/tasks/${encodeURIComponent(taskId)}`, { headers: aiHeaders(config) })).data, "生成任务不存在");
 
     while (Date.now() - startedAt < IMAGE_TASK_TIMEOUT_MS) {
         if (task.status === "success") {
             if (!task.response) throw new Error("生成任务没有返回图片");
-            return task.response;
+            onTaskRecovery?.({ taskId, protocol: "canvas", status: "completed", resultUrl: firstImageUrl(task.response) });
+            return proxyTaskImageUrls(task.response, taskId);
         }
         if (task.status === "failed") {
+            onTaskRecovery?.({ taskId, protocol: "canvas", status: "failed" });
             refreshRemoteUser(config);
             throw new Error(task.msg || "生成失败");
         }
         await delay(IMAGE_TASK_POLL_MS);
-        task = unwrapEnvelope((await axios.get<ApiEnvelope<ImageTaskResponse>>(`/api/v1/images/tasks/${encodeURIComponent(created.id)}`, { headers: aiHeaders(config) })).data, "生成任务不存在");
+        task = unwrapEnvelope((await axios.get<ApiEnvelope<ImageTaskResponse>>(`/api/v1/images/tasks/${encodeURIComponent(taskId)}`, { headers: aiHeaders(config) })).data, "生成任务不存在");
         notifyGenerationProgress(onProgress, task);
     }
 
     throw new Error("生成任务仍在进行，请稍后重试或减少生成张数");
 }
 
-async function requestUpstreamImageTask(config: AiConfig, path: "/images/generations" | "/images/edits", body: Record<string, unknown> | FormData, headers: ReturnType<typeof aiHeaders>, onProgress?: GenerationProgressCallback) {
+function proxyTaskImageUrls(response: ImageApiResponse, taskId: string): ImageApiResponse {
+    if (!response.data?.length) return response;
+    return {
+        ...response,
+        data: response.data.map((item, index) => (typeof item.url === "string" && /^https?:\/\//i.test(item.url) ? { ...item, url: `/api/v1/images/tasks/${encodeURIComponent(taskId)}/content/${index}` } : item)),
+    };
+}
+
+async function requestUpstreamImageTask(
+    config: AiConfig,
+    path: "/images/generations" | "/images/edits",
+    body: Record<string, unknown> | FormData,
+    headers: ReturnType<typeof aiHeaders>,
+    onProgress?: GenerationProgressCallback,
+    onTaskRecovery?: ImageTaskRecoveryCallback,
+) {
     const created = (await axios.post<ImageApiResponse>(aiApiUrl(config, path), body, { headers })).data;
-    if (!created.id || !created.status || created.data?.length || created.candidates?.length) return created;
+    if (created.data?.length || created.candidates?.length) {
+        const resultUrl = firstImageUrl(created);
+        if (resultUrl) onTaskRecovery?.({ taskId: created.id || `result-${nanoid()}`, status: "completed", resultUrl });
+        return created;
+    }
+    if (!created.id || !created.status) return created;
     notifyGenerationProgress(onProgress, { progress: created.progress || 0 });
+    onTaskRecovery?.({ taskId: created.id, protocol: "upstream", path, status: "submitted" });
     const createdStatus = created.status.toLowerCase();
-    if (["completed", "success", "succeeded"].includes(createdStatus)) return created;
-    if (["failed", "failure", "error", "cancelled", "canceled"].includes(createdStatus)) throw new Error(created.error?.message || created.msg || "图片生成失败");
+    if (["completed", "success", "succeeded"].includes(createdStatus)) {
+        onTaskRecovery?.({ taskId: created.id, protocol: "upstream", path, status: "completed", resultUrl: firstImageUrl(created) });
+        return created;
+    }
+    if (["failed", "failure", "error", "cancelled", "canceled"].includes(createdStatus)) {
+        onTaskRecovery?.({ taskId: created.id, protocol: "upstream", path, status: "failed" });
+        throw new Error(created.error?.message || created.msg || "图片生成失败");
+    }
+    return waitUpstreamImageTask(config, path, created.id, onProgress, onTaskRecovery);
+}
+
+async function waitUpstreamImageTask(config: AiConfig, path: "/images/generations" | "/images/edits", taskId: string, onProgress?: GenerationProgressCallback, onTaskRecovery?: ImageTaskRecoveryCallback) {
     const startedAt = Date.now();
     while (Date.now() - startedAt < IMAGE_TASK_TIMEOUT_MS) {
         await delay(UPSTREAM_IMAGE_TASK_POLL_MS);
-        const task = (await axios.get<ImageApiResponse>(aiApiUrl(config, `${path}/${encodeURIComponent(created.id)}`), { headers: aiHeaders(config) })).data;
+        const task = (await axios.get<ImageApiResponse>(aiApiUrl(config, `${path}/${encodeURIComponent(taskId)}`), { headers: aiHeaders(config) })).data;
         notifyGenerationProgress(onProgress, { progress: task.progress || 0 });
         const taskStatus = String(task.status || "").toLowerCase();
-        if (["completed", "success", "succeeded"].includes(taskStatus)) return task;
-        if (["failed", "failure", "error", "cancelled", "canceled"].includes(taskStatus)) throw new Error(task.error?.message || task.msg || "图片生成失败");
+        if (["completed", "success", "succeeded"].includes(taskStatus)) {
+            onTaskRecovery?.({ taskId, protocol: "upstream", path, status: "completed", resultUrl: firstImageUrl(task) });
+            return task;
+        }
+        if (["failed", "failure", "error", "cancelled", "canceled"].includes(taskStatus)) {
+            onTaskRecovery?.({ taskId, protocol: "upstream", path, status: "failed" });
+            throw new Error(task.error?.message || task.msg || "图片生成失败");
+        }
     }
     throw new Error("图片任务仍在生成，请稍后到任务日志查看，不要重复提交");
+}
+
+function firstImageUrl(payload: ImageApiResponse) {
+    const value = payload.data?.find((item) => typeof item.url === "string" && item.url)?.url;
+    return typeof value === "string" ? value : undefined;
 }
 
 function isFpbrowserVideoImageModel(model: string) {

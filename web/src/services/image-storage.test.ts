@@ -10,5 +10,7 @@ describe("image storage generated-image helpers", () => {
         expect(source).toContain("export async function storeGeneratedImage");
         expect(source).toContain('if (!image?.dataUrl) throw new Error("接口没有返回图片")');
         expect(source).toContain("浏览器本地图片存储空间不足");
+        expect(source).toContain('fetch("/api/v1/media/proxy/image"');
+        expect(source).toContain("图片已生成，但制品读取失败，请点击重新下载");
     });
 });

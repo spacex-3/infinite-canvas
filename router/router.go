@@ -2,6 +2,7 @@ package router
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/basketikun/infinite-canvas/handler"
 	"github.com/basketikun/infinite-canvas/middleware"
@@ -43,10 +44,19 @@ func New() *gin.Engine {
 	v1.GET("/images/tasks/:id", func(c *gin.Context) {
 		handler.AIImageTask(c.Writer, c.Request, c.Param("id"))
 	})
+	v1.GET("/images/tasks/:id/content/:index", func(c *gin.Context) {
+		index, err := strconv.Atoi(c.Param("index"))
+		if err != nil {
+			handler.Fail(c.Writer, "图片制品不存在")
+			return
+		}
+		handler.AIImageTaskContent(c.Writer, c.Request, c.Param("id"), index)
+	})
 	v1.POST("/chat/completions", gin.WrapF(handler.AIChatCompletions))
 	v1.POST("/audio/speech", gin.WrapF(handler.AIAudioSpeech))
 	v1.POST("/videos", gin.WrapF(handler.AIVideos))
 	v1.POST("/media/references", gin.WrapF(handler.UploadReferenceMedia))
+	v1.POST("/media/proxy/image", gin.WrapF(handler.ProxyRemoteImage))
 	v1.POST("/media/cache/videos", gin.WrapF(handler.CreateRemoteVideoCache))
 	v1.GET("/media/cache/videos/:id", func(c *gin.Context) {
 		handler.RemoteVideoCache(c.Writer, c.Request, c.Param("id"))

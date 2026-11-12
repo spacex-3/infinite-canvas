@@ -22,6 +22,12 @@ describe("CanvasNodeHoverToolbar", () => {
         expect(source).toContain('canRedownloadVideo ? "重新下载" : "继续查询"');
     });
 
+    test("labels completed image recovery as a redownload", () => {
+        expect(source).toContain("const canRecoverImage = canRetry && isImage");
+        expect(source).toContain('node.metadata?.imageTaskStatus === "completed"');
+        expect(source).toContain('canRedownload ? "重新下载" : "继续查询"');
+    });
+
     test("uses a compact image toolbar by default and wraps customized tools", () => {
         expect(imageToolsSource).toContain('canvas-image-quick-tools-v6');
         expect(imageToolsSource).toContain('["delete", "saveAsset", "download", "edit"]');

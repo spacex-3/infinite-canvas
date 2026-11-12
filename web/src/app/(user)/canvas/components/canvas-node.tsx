@@ -356,19 +356,20 @@ function LoadingContent({ node, theme }: Pick<NodeContentRendererProps, "node" |
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.activeStroke }}>
             <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />
-            <span className="text-[10px] tracking-[0.2em]">{formatGenerationProgress(node.metadata?.progress, node.metadata?.progressStage)}</span>
+            <span className="text-[10px] tracking-[0.2em]">{formatGenerationProgress(node.metadata?.progress, node.metadata?.progressStage, node.type)}</span>
         </div>
     );
 }
 
-function formatGenerationProgress(progress: unknown, stage?: string) {
+function formatGenerationProgress(progress: unknown, stage?: string, nodeType?: CanvasNodeType) {
     if (stage === "caching") {
         if (typeof progress !== "number" || !Number.isFinite(progress)) return "服务器下载视频";
         return `服务器下载 ${Math.max(0, Math.min(100, Math.round(progress)))}%`;
     }
     if (stage === "downloading") {
-        if (typeof progress !== "number" || !Number.isFinite(progress)) return "正在下载视频";
-        return `正在下载 ${Math.max(0, Math.min(100, Math.round(progress)))}%`;
+        const media = nodeType === CanvasNodeType.Image ? "图片" : "视频";
+        if (typeof progress !== "number" || !Number.isFinite(progress)) return `正在下载${media}`;
+        return `正在下载${media} ${Math.max(0, Math.min(100, Math.round(progress)))}%`;
     }
     if (stage === "saving") return "正在保存视频";
     if (typeof progress !== "number" || !Number.isFinite(progress)) return "生成中";
@@ -379,7 +380,11 @@ function formatGenerationProgress(progress: unknown, stage?: string) {
 function ErrorContent({ node, theme, onRetry }: Pick<NodeContentRendererProps, "node" | "theme" | "onRetry">) {
     const canRecoverVideo = node.type === CanvasNodeType.Video && Boolean(node.metadata?.videoTaskId);
     const canRedownloadVideo = canRecoverVideo && node.metadata?.videoTaskStatus === "completed";
-    const retryLabel = canRecoverVideo ? (canRedownloadVideo ? "重新下载" : "继续查询") : "重试";
+    const canRecoverImage = node.type === CanvasNodeType.Image && Boolean(node.metadata?.imageTaskId) && node.metadata?.imageTaskStatus !== "failed";
+    const canRedownloadImage = canRecoverImage && node.metadata?.imageTaskStatus === "completed";
+    const canRecoverTask = canRecoverVideo || canRecoverImage;
+    const canRedownload = canRedownloadVideo || canRedownloadImage;
+    const retryLabel = canRecoverTask ? (canRedownload ? "重新下载" : "继续查询") : "重试";
     return (
         <div className="flex max-w-[260px] flex-col items-center gap-3 px-5 text-center">
             <div className="text-xs leading-5 text-red-300">{node.metadata?.errorDetails || "生成失败"}</div>
@@ -393,7 +398,7 @@ function ErrorContent({ node, theme, onRetry }: Pick<NodeContentRendererProps, "
                 }}
                 onMouseDown={(event) => event.stopPropagation()}
             >
-                {canRedownloadVideo ? <Download className="size-3.5" /> : <RefreshCw className="size-3.5" />}
+                {canRedownload ? <Download className="size-3.5" /> : <RefreshCw className="size-3.5" />}
                 {retryLabel}
             </button>
         </div>

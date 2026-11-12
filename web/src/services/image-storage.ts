@@ -4,6 +4,7 @@ import localforage from "localforage";
 
 import { nanoid } from "nanoid";
 import { dataUrlToBlob, inferImageMimeType, readImageMeta } from "@/lib/image-utils";
+import { useUserStore } from "@/stores/use-user-store";
 
 export type UploadedImage = {
     url: string;
@@ -21,9 +22,16 @@ async function toImageBlob(input: string | Blob) {
     if (typeof input !== "string") return input;
     if (input.startsWith("data:")) return dataUrlToBlob(input);
     try {
-        return await (await fetch(input)).blob();
+        const token = useUserStore.getState().token;
+        const isTaskContent = input.startsWith("/api/v1/images/tasks/");
+        const response = /^https?:\/\//i.test(input)
+            ? await fetch("/api/v1/media/proxy/image", { method: "POST", headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), "Content-Type": "application/json" }, body: JSON.stringify({ url: input }) })
+            : await fetch(input, { headers: isTaskContent && token ? { Authorization: `Bearer ${token}` } : undefined });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (response.headers.get("Content-Type")?.includes("application/json")) throw new Error("图片代理返回错误");
+        return await response.blob();
     } catch {
-        throw new Error("图片数据读取失败，请重试");
+        throw new Error("图片已生成，但制品读取失败，请点击重新下载");
     }
 }
 

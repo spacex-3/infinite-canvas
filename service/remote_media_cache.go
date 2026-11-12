@@ -267,6 +267,19 @@ func remoteMediaHTTPClient() *http.Client {
 	}
 }
 
+func OpenRemoteMedia(ctx context.Context, rawURL string) (*http.Response, error) {
+	parsed, err := validateRemoteMediaURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("User-Agent", "infinite-canvas-media-cache/1.0")
+	return remoteMediaHTTPClient().Do(request)
+}
+
 func validateRemoteMediaURL(rawURL string) (*url.URL, error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || parsed.Hostname() == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {

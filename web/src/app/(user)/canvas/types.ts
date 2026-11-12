@@ -29,6 +29,11 @@ export type CanvasNodeMetadata = {
     progress?: number;
     progressStage?: "generating" | "caching" | "downloading" | "saving";
     errorDetails?: string;
+    imageTaskId?: string;
+    imageTaskProtocol?: "canvas" | "upstream";
+    imageTaskPath?: "/images/generations" | "/images/edits";
+    imageTaskStatus?: "submitted" | "completed" | "failed";
+    imageResultUrl?: string;
     videoTaskId?: string;
     videoTaskModel?: string;
     videoTaskProtocol?: "seedance-v1" | "seedance-native";

@@ -114,8 +114,12 @@ export function CanvasNodeHoverToolbar({
     const canRetry = node.metadata?.status === "error";
     const canRecoverVideo = canRetry && isVideo && Boolean(node.metadata?.videoTaskId);
     const canRedownloadVideo = canRecoverVideo && node.metadata?.videoTaskStatus === "completed";
-    const retryTitle = canRecoverVideo ? (canRedownloadVideo ? "重新下载已有视频，不会重新生成" : "继续查询已有任务，不会重新生成") : "重新生成";
-    const retryLabel = canRecoverVideo ? (canRedownloadVideo ? "重新下载" : "继续查询") : "重试";
+    const canRecoverImage = canRetry && isImage && Boolean(node.metadata?.imageTaskId) && node.metadata?.imageTaskStatus !== "failed";
+    const canRedownloadImage = canRecoverImage && node.metadata?.imageTaskStatus === "completed";
+    const canRecoverTask = canRecoverVideo || canRecoverImage;
+    const canRedownload = canRedownloadVideo || canRedownloadImage;
+    const retryTitle = canRecoverTask ? (canRedownload ? "重新下载已有制品，不会重新生成" : "继续查询已有任务，不会重新生成") : "重新生成";
+    const retryLabel = canRecoverTask ? (canRedownload ? "重新下载" : "继续查询") : "重试";
     const isPromptEditableImage = isImage && canRetry && Boolean(node.metadata?.prompt?.trim());
     const canOpenDialog = isText || hasImage || isVideo || isPromptEditableImage;
     const quickImageToolIdSet = new Set(quickImageToolIds);
@@ -141,7 +145,7 @@ export function CanvasNodeHoverToolbar({
         { id: "delete", title: "移除节点", label: "删除", icon: <Trash2 className="size-4" />, onClick: () => onDelete(node), danger: true },
     ];
     const nodeToolbarTools: ToolbarTool[] = [
-        ...(canRetry ? [{ id: "retry", title: retryTitle, label: retryLabel, icon: canRedownloadVideo ? <Download className="size-4" /> : <RefreshCw className="size-4" />, onClick: () => onRetry(node) }] : []),
+        ...(canRetry ? [{ id: "retry", title: retryTitle, label: retryLabel, icon: canRedownload ? <Download className="size-4" /> : <RefreshCw className="size-4" />, onClick: () => onRetry(node) }] : []),
         ...(hasImage || hasVideo || isText ? [{ id: "saveAsset", title: "加入我的素材", label: "存素材", icon: <FolderPlus className="size-4" />, onClick: () => onSaveAsset(node) }] : []),
         ...(hasImage || hasVideo || hasAudio ? [{ id: "download", title: hasAudio ? "下载音频" : hasVideo ? "下载视频" : "下载图片", label: "下载", icon: <Download className="size-4" />, onClick: () => onDownload(node) }] : []),
         ...(canOpenDialog ? [{ id: "edit", title: "编辑", label: "编辑", icon: <MessageSquare className="size-4" />, onClick: () => onToggleDialog(node) }] : []),

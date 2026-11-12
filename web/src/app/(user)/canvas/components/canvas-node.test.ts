@@ -12,10 +12,10 @@ describe("CanvasNode text actions", () => {
     });
 
     test("shows loading progress when generation reports a percentage", () => {
-        expect(source).toContain("formatGenerationProgress(node.metadata?.progress, node.metadata?.progressStage)");
+        expect(source).toContain("formatGenerationProgress(node.metadata?.progress, node.metadata?.progressStage, node.type)");
         expect(source).toContain('return `生成中 ${clamped}%`;');
         expect(source).toContain('return `服务器下载 ${Math.max(0, Math.min(100, Math.round(progress)))}%`;');
-        expect(source).toContain('return `正在下载 ${Math.max(0, Math.min(100, Math.round(progress)))}%`;');
+        expect(source).toContain('return `正在下载${media} ${Math.max(0, Math.min(100, Math.round(progress)))}%`;');
         expect(source).toContain('if (stage === "saving") return "正在保存视频";');
     });
 
@@ -23,6 +23,12 @@ describe("CanvasNode text actions", () => {
         expect(source).toContain("const canRecoverVideo = node.type === CanvasNodeType.Video && Boolean(node.metadata?.videoTaskId)");
         expect(source).toContain('node.metadata?.videoTaskStatus === "completed"');
         expect(source).toContain('canRedownloadVideo ? "重新下载" : "继续查询"');
+    });
+
+    test("redownloads a completed image task instead of regenerating it", () => {
+        expect(source).toContain("const canRecoverImage = node.type === CanvasNodeType.Image");
+        expect(source).toContain('node.metadata?.imageTaskStatus === "completed"');
+        expect(source).toContain('canRedownload ? "重新下载" : "继续查询"');
     });
 
     test("only lets the native control bar start video playback", () => {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -91,6 +92,39 @@ func UploadReferenceMedia(w http.ResponseWriter, r *http.Request) {
 	OK(w, referenceMediaUploadResult{
 		ID: result.ID, URL: result.URL, MimeType: result.MimeType, Bytes: result.Bytes,
 	})
+}
+
+func ProxyRemoteImage(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		URL string `json:"url"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload) != nil {
+		Fail(w, "图片制品地址无效")
+		return
+	}
+	response, err := service.OpenRemoteMedia(r.Context(), payload.URL)
+	if err != nil {
+		Fail(w, "图片制品读取失败，请重新下载")
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		Fail(w, "图片制品读取失败，请重新下载")
+		return
+	}
+	if response.ContentLength > 64<<20 {
+		Fail(w, "图片制品超过 64MiB，无法保存")
+		return
+	}
+	contentType := strings.TrimSpace(strings.Split(response.Header.Get("Content-Type"), ";")[0])
+	if !strings.HasPrefix(strings.ToLower(contentType), "image/") {
+		Fail(w, "远程地址没有返回图片")
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, io.LimitReader(response.Body, (64<<20)+1))
 }
 
 func ReferenceMedia(w http.ResponseWriter, r *http.Request, id string) {
