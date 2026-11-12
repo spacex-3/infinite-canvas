@@ -586,7 +586,7 @@ export default function AdminSettingsPage() {
                                             <Form.Item
                                                 name={["private", "storage", "mediaRetentionDays"]}
                                                 label="服务器保存时间"
-                                                extra="超过该时间的参考素材和视频成品缓存会自动清理；服务启动时及之后每天检查，成品缓存总量上限为 5GB。"
+                                                extra="仅控制服务器本地回退文件：服务启动时及之后每天检查，本地成品缓存上限为 5GB。R2 临时素材固定保存 24 小时，不受此设置影响。"
                                             >
                                                 <Space.Compact style={{ width: "100%" }}>
                                                     <InputNumber min={1} max={3650} precision={0} className="!w-full" />

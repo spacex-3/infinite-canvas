@@ -31,3 +31,33 @@ func TestNormalizeDockerSQLiteDSNLeavesLocalPathWithoutMountedDataDir(t *testing
 		t.Fatalf("DatabaseDSN = %q, want relative local path", Cfg.DatabaseDSN)
 	}
 }
+
+func TestValidateMediaRequiresCompleteR2Configuration(t *testing.T) {
+	config := Config{MediaStorageDriver: "r2", MediaRetentionSeconds: 86400, MediaWorkerTimeoutSecs: 1800}
+	if err := config.ValidateMedia(); err == nil {
+		t.Fatal("expected incomplete R2 configuration to fail")
+	}
+	config.MediaR2Endpoint = "https://example.r2.cloudflarestorage.com"
+	config.MediaR2Bucket = "zpika-canvas"
+	config.MediaR2AccessKey = "access"
+	config.MediaR2SecretKey = "secret"
+	config.MediaR2ReferencePrefix = "canvas-references/v1"
+	config.MediaR2CachePrefix = "canvas-cache/v1"
+	config.MediaPublicBaseURL = "https://canvas-media.example.com"
+	config.MediaHMACSecret = "media-secret"
+	config.MediaWorkerURL = "https://canvas-media.example.com"
+	config.MediaWorkerHMACKeyID = "v1"
+	config.MediaWorkerHMACSecret = "worker-secret"
+	if err := config.ValidateMedia(); err != nil {
+		t.Fatalf("complete R2 configuration rejected: %v", err)
+	}
+}
+
+func TestValidateMediaRequiresPublicURLInLocalMode(t *testing.T) {
+	if err := (Config{MediaStorageDriver: "local"}).ValidateMedia(); err == nil {
+		t.Fatal("expected local mode without PUBLIC_BASE_URL to fail")
+	}
+	if err := (Config{MediaStorageDriver: "local", PublicBaseURL: "https://canvas.example.com"}).ValidateMedia(); err != nil {
+		t.Fatalf("valid local media configuration rejected: %v", err)
+	}
+}

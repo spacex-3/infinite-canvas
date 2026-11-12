@@ -14,8 +14,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 const (
@@ -48,8 +46,12 @@ func CreateRemoteVideoCache(rawURL string) (RemoteVideoCacheTask, error) {
 	if _, err := validateRemoteMediaURL(rawURL); err != nil {
 		return RemoteVideoCacheTask{}, err
 	}
-	if usage, err := mediaCacheUsage(); err != nil || usage >= mediaCacheMaxBytes {
-		return RemoteVideoCacheTask{}, errors.New("视频缓存空间不足")
+	store, err := currentMediaStore()
+	if err != nil {
+		return RemoteVideoCacheTask{}, err
+	}
+	if err := store.CheckCacheCapacity(); err != nil {
+		return RemoteVideoCacheTask{}, err
 	}
 	remoteVideoMu.Lock()
 	pruneRemoteVideoTasksLocked(time.Now())
@@ -63,7 +65,12 @@ func CreateRemoteVideoCache(rawURL string) (RemoteVideoCacheTask, error) {
 		remoteVideoMu.Unlock()
 		return RemoteVideoCacheTask{}, errors.New("视频缓存队列已满")
 	}
-	task := RemoteVideoCacheTask{ID: uuid.NewString(), Status: "queued", updated: time.Now()}
+	taskID, err := randomOpaqueID()
+	if err != nil {
+		remoteVideoMu.Unlock()
+		return RemoteVideoCacheTask{}, err
+	}
+	task := RemoteVideoCacheTask{ID: taskID, Status: "queued", updated: time.Now()}
 	remoteVideoTasks[task.ID] = task
 	remoteVideoMu.Unlock()
 	go runRemoteVideoCache(task.ID, rawURL)
@@ -113,7 +120,20 @@ func runRemoteVideoCache(id string, rawURL string) {
 	updateRemoteVideoTask(id, func(task *RemoteVideoCacheTask) {
 		task.Status = "downloading"
 	})
-	if err := downloadRemoteVideo(id, rawURL); err != nil {
+	store, err := currentMediaStore()
+	if err != nil {
+		updateRemoteVideoTask(id, func(task *RemoteVideoCacheTask) {
+			task.Status = "failed"
+			task.Error = "视频缓存服务不可用"
+		})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	mediaURL, err := store.CacheRemoteVideo(ctx, rawURL, func(progress int) {
+		updateRemoteVideoTask(id, func(task *RemoteVideoCacheTask) { task.Progress = min(99, max(0, progress)) })
+	})
+	if err != nil {
 		log.Printf("remote video cache failed task=%s err=%v", id, err)
 		updateRemoteVideoTask(id, func(task *RemoteVideoCacheTask) {
 			task.Status = "failed"
@@ -124,11 +144,11 @@ func runRemoteVideoCache(id string, rawURL string) {
 	updateRemoteVideoTask(id, func(task *RemoteVideoCacheTask) {
 		task.Status = "completed"
 		task.Progress = 100
-		task.URL = "/api/media/cache/" + id + ".mp4"
+		task.URL = mediaURL
 	})
 }
 
-func downloadRemoteVideo(id string, rawURL string) error {
+func downloadRemoteVideo(ctx context.Context, id string, rawURL string, progress func(int)) error {
 	parsed, err := validateRemoteMediaURL(rawURL)
 	if err != nil {
 		return err
@@ -139,8 +159,6 @@ func downloadRemoteVideo(id string, rawURL string) error {
 	targetPath := filepath.Join(MediaCacheDir(), id+".mp4")
 	tempPath := targetPath + ".part"
 	defer os.Remove(tempPath)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
 		return err
@@ -174,8 +192,7 @@ func downloadRemoteVideo(id string, rawURL string) error {
 				return errors.New("write cached video failed")
 			}
 			if response.ContentLength > 0 {
-				progress := min(99, int(written*100/response.ContentLength))
-				updateRemoteVideoTask(id, func(task *RemoteVideoCacheTask) { task.Progress = progress })
+				progress(min(99, int(written*100/response.ContentLength)))
 			}
 		}
 		if readErr == io.EOF {
@@ -240,6 +257,9 @@ func remoteMediaHTTPClient() *http.Client {
 		CheckRedirect: func(request *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return errors.New("too many remote media redirects")
+			}
+			if len(via) > 0 && strings.EqualFold(via[len(via)-1].URL.Scheme, "https") && !strings.EqualFold(request.URL.Scheme, "https") {
+				return errors.New("remote media redirect downgraded HTTPS")
 			}
 			_, err := validateRemoteMediaURL(request.URL.String())
 			return err

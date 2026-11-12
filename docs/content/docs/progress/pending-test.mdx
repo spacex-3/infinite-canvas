@@ -5,6 +5,8 @@ description: 当前版本已实现但仍需人工验证的变更项
 
 # 待测试
 
+- 临时参考素材和远程视频缓存新增独立的 `MEDIA_STORAGE_DRIVER`，支持保留原本地文件模式或切换到画布专用 Cloudflare R2；参考图片、视频、音频会经过类型和大小校验后流式上传，远程视频由画布专用 Worker 拉取并写入 R2，返回的私有签名地址固定 24 小时有效。切换 R2 前需在独立测试环境验证桶生命周期、Worker 签名鉴权、跨域、Range 下载、超限/中断清理和 `MEDIA_STORAGE_DRIVER=local` 回滚；浏览器本地画布、“我的素材”和 New API 媒体资源不在本次迁移范围内。
+
 - 图片接口已按模型能力适配新的同步 OpenAI Images 渠道，同时保留 Gemini 原生 `generateContent`：同一个 Gemini 模型可分别绑定“图片接口（OpenAI 格式）”和“Gemini 画图（原生）”，最终按用户选择的渠道决定协议。Gemini Preview 发送 `1k/2k/4k`；GPT 网页档不发送 `quality`；固定 K 档锁定分辨率；Flare/Sunburst 显示 `low/medium/high/xhigh/max` 五个质量值，并将前三个归入 std、后两个归入 xhigh 计费价位。画布还会按模型限制 9/16 张参考图，仅为网页档显示透明背景，仅为 2.6 系列显示 GIF，并按真实 MIME 下载扩展名。需要逐类验证文生图、参考图编辑、`gpt-image-2` 蒙版、透明 PNG、GIF 动图、模型切换后的参数归一和同步等待状态。
 
 - 普通用户自定义渠道严格使用当前 Key 的模型列表：更换 Key 会清空旧选择；“图片接口（OpenAI 格式）”允许 GPT Image 与 Gemini 图片模型并存，“Gemini 画图（原生）”只显示 Gemini 图片模型，视频分组只显示 Seedance；需要验证两个图片协议可以分别拉取、绑定和生成，Seedance Key 不再被内置 Veo 模型污染。

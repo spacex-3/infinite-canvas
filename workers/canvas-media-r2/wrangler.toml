@@ -1,0 +1,17 @@
+name = "infinite-canvas-media-r2"
+main = "src/index.js"
+compatibility_date = "2026-11-12"
+routes = [{ pattern = "canvas-media.zpika.com", custom_domain = true }]
+
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "zpika-canvas"
+
+[vars]
+INGEST_HMAC_KEY_ID = "v1"
+MAX_MEDIA_BYTES = "209715200"
+ALLOWED_ORIGINS = "https://canvas.zpika.com,http://localhost:3020,http://127.0.0.1:3020"
+
+# Set with `wrangler secret put`; never commit their values:
+# INGEST_HMAC_SECRET
+# MEDIA_HMAC_SECRET

@@ -1,0 +1,12 @@
+{
+  "name": "infinite-canvas-media-r2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.86.0"
+  }
+}

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"path/filepath"
 	"testing"
 
@@ -30,6 +31,21 @@ func TestNormalizeReferenceMediaTypeSupportsAudio(t *testing.T) {
 				t.Fatalf("got (%q, %q), want (%q, %q)", mimeType, ext, tt.wantMime, tt.wantExt)
 			}
 		})
+	}
+}
+
+func TestDetectReferenceMediaTypeRejectsMismatches(t *testing.T) {
+	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0}, 32)...)
+	mimeType, ext, ok := detectReferenceMediaType(png, "image/png", ".png")
+	if !ok || mimeType != "image/png" || ext != ".png" {
+		t.Fatalf("valid PNG rejected: mime=%q ext=%q ok=%v", mimeType, ext, ok)
+	}
+	if _, _, ok := detectReferenceMediaType(png, "image/jpeg", ".jpg"); ok {
+		t.Fatal("mismatched PNG payload should be rejected")
+	}
+	mp4 := []byte{0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'}
+	if mimeType, ext, ok := detectReferenceMediaType(mp4, "video/mp4", ".mp4"); !ok || mimeType != "video/mp4" || ext != ".mp4" {
+		t.Fatalf("valid MP4 rejected: mime=%q ext=%q ok=%v", mimeType, ext, ok)
 	}
 }
 

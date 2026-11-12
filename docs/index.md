@@ -20,6 +20,7 @@
 - [系统配置数据结构](/docs/backend/system-settings)
 - [后端数据库说明](/docs/backend/backend-database)
 - [画布数据结构](/docs/backend/canvas-data-structure)
+- [R2 临时媒体存储实施计划](./r2-media-storage-plan.md)
 
 ## 商务合作
 
