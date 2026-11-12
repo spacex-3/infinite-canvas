@@ -18,6 +18,9 @@ export type ChatCompletionMessage = {
 };
 
 type ImageApiResponse = {
+    id?: string;
+    status?: string;
+    progress?: number;
     data?: Array<Record<string, unknown>>;
     candidates?: unknown[];
     error?: { message?: string };
@@ -49,6 +52,7 @@ type ReferenceMediaUploadResponse = { id: string; url: string; mimeType: string;
 const IMAGE_SIZE_STEP = 16;
 const IMAGE_MAX_RATIO = 3;
 const IMAGE_TASK_POLL_MS = 2000;
+const UPSTREAM_IMAGE_TASK_POLL_MS = 5000;
 const IMAGE_TASK_TIMEOUT_MS = 20 * 60 * 1000;
 const FPBROWSER_VIDEO_IMAGE_MODELS = new Set(["nana-banana-2", "nana-banana-pro", "nana-banana-2-4k", "nana-banana-pro-4k", "gpt-image2-1k", "gpt-image2-2k", "gpt-image2-4k"]);
 const EXTENDED_IMAGE_LIMITS: ImageResolutionLimits = { maxEdge: 4096, minPixels: 262144, maxPixels: 16777216 };
@@ -73,7 +77,7 @@ export function resolveImageRequestSize(config: Pick<AiConfig, "channelMode" | "
     const value = size.trim();
     if (!value || value.toLowerCase() === "auto") return undefined;
     const capabilities = config.model ? getImageModelCapabilities(config.model) : null;
-    if (capabilities?.lockedResolution === "最高约 1.5K" && parseImageDimensions(value)) return undefined;
+    if (capabilities && !capabilities.supportsExplicitDimensions && parseImageDimensions(value)) return undefined;
     if (capabilities?.usesRatioSize && /^\d+(?:\.\d+)?:\d+(?:\.\d+)?$/.test(value)) return value;
     const limits = isOfficialOpenAIImageEndpoint(config) ? OPENAI_IMAGE_LIMITS : EXTENDED_IMAGE_LIMITS;
     const dimensions = resolveSemanticImageDimensions(quality, value, limits);
@@ -201,18 +205,19 @@ export async function requestGeneration(config: AiConfig, prompt: string, onProg
         model: config.model,
         prompt: withSystemPrompt(config, prompt),
         n: 1,
+        async: true,
         ...(quality ? { quality } : {}),
         ...(requestSize ? { size: requestSize } : {}),
         ...(background ? { background } : {}),
         response_format: outputFormat === "gif" ? "url" : "b64_json",
-        output_format: outputFormat,
+        ...(capabilities.supportsOutputFormat ? { output_format: outputFormat } : {}),
     };
     try {
         const payloads = await Promise.all(
             Array.from({ length: requestedCount }, async () =>
                 config.channelMode === "remote"
                     ? requestRemoteImageTask(config, "/images/generations", payload, aiHeaders(config, "application/json"), onProgress)
-                    : (await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/generations"), payload, { headers: aiHeaders(config, "application/json") })).data,
+                    : requestUpstreamImageTask(config, "/images/generations", payload, aiHeaders(config, "application/json"), onProgress),
             ),
         );
         const images = payloads.flatMap((payloadData) => parseImagePayload(payloadData, outputFormat));
@@ -246,8 +251,9 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     formData.set("model", config.model);
     formData.set("prompt", withSystemPrompt(config, requestPrompt));
     formData.set("n", "1");
+    formData.set("async", "true");
     formData.set("response_format", outputFormat === "gif" ? "url" : "b64_json");
-    formData.set("output_format", outputFormat);
+    if (capabilities.supportsOutputFormat) formData.set("output_format", outputFormat);
     if (quality) {
         formData.set("quality", quality);
     }
@@ -266,7 +272,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
             Array.from({ length: requestedCount }, async () =>
                 config.channelMode === "remote"
                     ? requestRemoteImageTask(config, "/images/edits", formData, aiHeaders(config), onProgress)
-                    : (await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config) })).data,
+                    : requestUpstreamImageTask(config, "/images/edits", formData, aiHeaders(config), onProgress),
             ),
         );
         const images = payloads.flatMap((payloadData) => parseImagePayload(payloadData, outputFormat));
@@ -405,6 +411,25 @@ async function requestRemoteImageTask(config: AiConfig, path: "/images/generatio
     }
 
     throw new Error("生成任务仍在进行，请稍后重试或减少生成张数");
+}
+
+async function requestUpstreamImageTask(config: AiConfig, path: "/images/generations" | "/images/edits", body: Record<string, unknown> | FormData, headers: ReturnType<typeof aiHeaders>, onProgress?: GenerationProgressCallback) {
+    const created = (await axios.post<ImageApiResponse>(aiApiUrl(config, path), body, { headers })).data;
+    if (!created.id || !created.status || created.data?.length || created.candidates?.length) return created;
+    notifyGenerationProgress(onProgress, { progress: created.progress || 0 });
+    const createdStatus = created.status.toLowerCase();
+    if (["completed", "success", "succeeded"].includes(createdStatus)) return created;
+    if (["failed", "failure", "error", "cancelled", "canceled"].includes(createdStatus)) throw new Error(created.error?.message || created.msg || "图片生成失败");
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < IMAGE_TASK_TIMEOUT_MS) {
+        await delay(UPSTREAM_IMAGE_TASK_POLL_MS);
+        const task = (await axios.get<ImageApiResponse>(aiApiUrl(config, `${path}/${encodeURIComponent(created.id)}`), { headers: aiHeaders(config) })).data;
+        notifyGenerationProgress(onProgress, { progress: task.progress || 0 });
+        const taskStatus = String(task.status || "").toLowerCase();
+        if (["completed", "success", "succeeded"].includes(taskStatus)) return task;
+        if (["failed", "failure", "error", "cancelled", "canceled"].includes(taskStatus)) throw new Error(task.error?.message || task.msg || "图片生成失败");
+    }
+    throw new Error("图片任务仍在生成，请稍后到任务日志查看，不要重复提交");
 }
 
 function isFpbrowserVideoImageModel(model: string) {

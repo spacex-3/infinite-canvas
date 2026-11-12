@@ -92,6 +92,8 @@ export const ZPIKA_OPENAI_IMAGE_MODELS = [
     "gpt-image-2.5-flare",
     "gpt-image-2.5-sunburst",
     "gpt-image-2.6",
+    "gpt-image-2.6-flare",
+    "gpt-image-2.6-sunburst",
     "gpt-image-2-1k",
     "gpt-image-2-2k",
     "gpt-image-2-4k",

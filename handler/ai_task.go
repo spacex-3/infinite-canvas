@@ -8,6 +8,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +32,7 @@ var aiImageTaskSlots = make(chan struct{}, 2)
 type aiImageTask struct {
 	ID        string          `json:"id"`
 	Status    string          `json:"status"`
+	Progress  int             `json:"progress,omitempty"`
 	Msg       string          `json:"msg,omitempty"`
 	Response  json.RawMessage `json:"response,omitempty"`
 	CreatedAt time.Time       `json:"-"`
@@ -146,7 +149,106 @@ func runAIImageTask(id string, channel model.ModelChannel, modelName string, pat
 		finishAIImageTaskFailed(id, "AI 接口返回格式不正确")
 		return
 	}
+	responseBody, err = waitForUpstreamImageTask(ctx, channel, path, responseBody, id)
+	if err != nil {
+		refundAIImageTaskCredits(userID, modelName, credits, path)
+		finishAIImageTaskFailed(id, safeAIErrorMessage(err, "图片任务查询失败"))
+		return
+	}
 	finishAIImageTaskSuccess(id, json.RawMessage(responseBody))
+}
+
+type upstreamImageTask struct {
+	ID       string `json:"id"`
+	Status   string `json:"status"`
+	Progress any    `json:"progress"`
+	Error    struct {
+		Message string `json:"message"`
+	} `json:"error"`
+	Msg string `json:"msg"`
+}
+
+type upstreamImageTaskError string
+
+func (err upstreamImageTaskError) Error() string       { return string(err) }
+func (err upstreamImageTaskError) SafeMessage() string { return string(err) }
+
+func waitForUpstreamImageTask(ctx context.Context, channel model.ModelChannel, path string, responseBody []byte, localTaskID string) ([]byte, error) {
+	var task upstreamImageTask
+	if json.Unmarshal(responseBody, &task) != nil || task.ID == "" || task.Status == "" {
+		return responseBody, nil
+	}
+	for {
+		status := strings.ToLower(strings.TrimSpace(task.Status))
+		updateAIImageTaskProgress(localTaskID, normalizeUpstreamImageProgress(task.Progress))
+		if status == "completed" || status == "success" || status == "succeeded" {
+			return responseBody, nil
+		}
+		if status == "failed" || status == "failure" || status == "error" || status == "cancelled" || status == "canceled" {
+			message := strings.TrimSpace(task.Error.Message)
+			if message == "" {
+				message = strings.TrimSpace(task.Msg)
+			}
+			if message == "" {
+				message = "图片生成失败"
+			}
+			return nil, upstreamImageTaskError(message)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
+
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, service.BuildModelChannelURL(channel, path+"/"+url.PathEscape(task.ID)), nil)
+		if err != nil {
+			return nil, err
+		}
+		request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			return nil, err
+		}
+		body, readErr := io.ReadAll(response.Body)
+		response.Body.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		if response.StatusCode >= http.StatusBadRequest {
+			return nil, upstreamImageTaskError(aiUpstreamStatusMessage(response.StatusCode, body))
+		}
+		if !json.Valid(body) || json.Unmarshal(body, &task) != nil {
+			return nil, upstreamImageTaskError("图片任务返回格式不正确")
+		}
+		responseBody = body
+	}
+}
+
+func normalizeUpstreamImageProgress(value any) int {
+	var progress float64
+	switch typed := value.(type) {
+	case float64:
+		progress = typed
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(typed, "%")), 64)
+		if err != nil {
+			return 0
+		}
+		progress = parsed
+	default:
+		return 0
+	}
+	if progress > 0 && progress <= 1 {
+		progress *= 100
+	}
+	if progress < 0 {
+		return 0
+	}
+	if progress > 100 {
+		return 100
+	}
+	return int(progress + 0.5)
 }
 
 func refundAIImageTaskCredits(userID string, modelName string, credits int, path string) {
@@ -250,6 +352,13 @@ func finishAIImageTaskFailed(id string, msg string) {
 		task.Status = aiImageTaskFailed
 		task.Msg = msg
 		task.Response = nil
+		return task
+	})
+}
+
+func updateAIImageTaskProgress(id string, progress int) {
+	updateAIImageTask(id, func(task aiImageTask) aiImageTask {
+		task.Progress = progress
 		return task
 	})
 }

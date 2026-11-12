@@ -46,7 +46,14 @@ describe("semantic image resolution mapping", () => {
         const resolveImageRequestSize = imageApi.resolveImageRequestSize!;
         expect(resolveImageRequestSize({ channelMode: "local", baseUrl: "https://vip.zpika.com", model: "gemini-3.1-flash-image-preview" }, "2k", "16:9")).toBe("16:9");
         expect(resolveImageRequestSize({ channelMode: "local", baseUrl: "https://vip.zpika.com", model: "gpt-image-2.6-flare-2k" }, "xhigh", "1:1")).toBe("1:1");
+        expect(resolveImageRequestSize({ channelMode: "local", baseUrl: "https://vip.zpika.com", model: "gpt-image-2.6-flare-2k" }, "xhigh", "2048x2048")).toBeUndefined();
         expect(resolveImageRequestSize({ channelMode: "local", baseUrl: "https://vip.zpika.com", model: "gpt-image-2.6" }, undefined, "2048x2048")).toBeUndefined();
+    });
+
+    test("submits OpenAI-format images as upstream async tasks", () => {
+        expect(source).toContain("async: true");
+        expect(source).toContain('formData.set("async", "true")');
+        expect(source).toContain("requestUpstreamImageTask");
     });
 });
 

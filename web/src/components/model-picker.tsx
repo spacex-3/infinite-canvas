@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { Cpu } from "lucide-react";
 
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { imageModelFamilies, imageModelFamily, selectImageModelFamily } from "@/lib/image-model-capabilities";
 import { cn } from "@/lib/utils";
 import { selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
@@ -21,8 +22,12 @@ type ModelPickerProps = {
 export function ModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder = "选择模型", onMissingConfig }: ModelPickerProps) {
     const pickerId = useId();
     const [open, setOpen] = useState(false);
-    const options = useMemo(() => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability)].filter((model): model is string => Boolean(model)))), [capability, config, value]);
-    const current = value || "";
+    const availableModels = useMemo(() => selectableModelsByCapability(config, capability), [capability, config]);
+    const options = useMemo(() => {
+        const models = Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...availableModels].filter((model): model is string => Boolean(model))));
+        return capability === "image" ? imageModelFamilies(models) : models;
+    }, [availableModels, capability, config.channelMode, value]);
+    const current = capability === "image" ? imageModelFamily(value || "") : value || "";
 
     useEffect(() => {
         const closeOtherPicker = (event: Event) => {
@@ -41,7 +46,7 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                 if (nextOpen) window.dispatchEvent(new CustomEvent("model-picker-open", { detail: pickerId }));
                 setOpen(nextOpen);
             }}
-            onValueChange={onChange}
+            onValueChange={(model) => onChange(capability === "image" ? selectImageModelFamily(model, availableModels, value) : model)}
         >
             <SelectTrigger
                 className={cn(

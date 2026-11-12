@@ -2,7 +2,7 @@ export type GenerationProgressStage = "generating" | "caching" | "downloading" |
 export type GenerationProgressCallback = (progress: number, stage?: GenerationProgressStage) => void;
 
 export function normalizeGenerationProgress(value: unknown) {
-    const raw = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
+    const raw = typeof value === "string" ? Number(value.trim().replace(/%$/, "")) : typeof value === "number" ? value : NaN;
     if (!Number.isFinite(raw)) return undefined;
     const percent = raw > 0 && raw <= 1 ? raw * 100 : raw;
     return Math.max(0, Math.min(100, Math.round(percent)));

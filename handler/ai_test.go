@@ -61,6 +61,15 @@ func TestAIImageTaskLifecycle(t *testing.T) {
 	}
 }
 
+func TestNormalizeUpstreamImageProgress(t *testing.T) {
+	if got := normalizeUpstreamImageProgress("20%"); got != 20 {
+		t.Fatalf("progress = %d, want 20", got)
+	}
+	if got := normalizeUpstreamImageProgress(0.75); got != 75 {
+		t.Fatalf("fraction progress = %d, want 75", got)
+	}
+}
+
 func TestAIUpstreamStatusMessageExplainsGatewayTimeout(t *testing.T) {
 	got := aiUpstreamStatusMessage(504, nil)
 	if !strings.Contains(got, "耗时过长") {

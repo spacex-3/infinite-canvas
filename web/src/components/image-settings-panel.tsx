@@ -4,7 +4,7 @@ import { type ReactNode, useState } from "react";
 import { ConfigProvider, Switch } from "antd";
 
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { getImageModelCapabilities, imageQualityLabelForModel, normalizeImageQualityForModel } from "@/lib/image-model-capabilities";
+import { getImageModelCapabilities, imageModelTier, imageModelTierOptions, imageQualityLabelForModel, normalizeImageQualityForModel } from "@/lib/image-model-capabilities";
 import { resolveSemanticImageDimensions } from "@/lib/image-resolution";
 import type { AiConfig } from "@/stores/use-config-store";
 
@@ -16,8 +16,12 @@ const aspectOptions = [
     { value: "2:3", label: "2:3", width: 1024, height: 1536, icon: "portrait" },
     { value: "4:3", label: "4:3", width: 1360, height: 1024, icon: "landscape" },
     { value: "3:4", label: "3:4", width: 1024, height: 1360, icon: "portrait" },
+    { value: "5:4", label: "5:4", width: 1280, height: 1024, icon: "landscape" },
+    { value: "4:5", label: "4:5", width: 1024, height: 1280, icon: "portrait" },
     { value: "16:9", label: "16:9", width: 1824, height: 1024, icon: "landscape" },
     { value: "9:16", label: "9:16", width: 1024, height: 1824, icon: "portrait" },
+    { value: "21:9", label: "21:9", width: 1792, height: 768, icon: "landscape" },
+    { value: "9:21", label: "9:21", width: 768, height: 1792, icon: "portrait" },
     { value: "auto", label: "auto", width: 0, height: 0, icon: "auto" },
 ];
 
@@ -25,6 +29,7 @@ type ImageSettingsPanelProps = {
     config: AiConfig;
     model?: string;
     onConfigChange: (key: "quality" | "size" | "count" | "imageOutputFormat" | "imageBackground", value: string) => void;
+    onModelChange?: (model: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -32,19 +37,22 @@ type ImageSettingsPanelProps = {
     quickCount?: number;
 };
 
-export function ImageSettingsPanel({ config, model = config.model || config.imageModel, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
+export function ImageSettingsPanel({ config, model = config.model || config.imageModel, onConfigChange, onModelChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
     const capabilities = getImageModelCapabilities(model);
+    const availableAspectOptions = capabilities.supportsAutoSize ? aspectOptions : aspectOptions.filter((item) => item.value !== "auto");
+    const tierOptions = imageModelTierOptions(model, config.imageModels);
+    const activeTier = imageModelTier(model);
     const quality = normalizeImageQualityForModel(model, config.quality) || config.quality || "auto";
     const dimensionQuality = resolutionQuality(capabilities.lockedResolution) || quality;
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
     const outputFormat = capabilities.supportsGif && config.imageOutputFormat === "gif" ? "gif" : "png";
     const background = ["opaque", "transparent"].includes(config.imageBackground) ? config.imageBackground : "auto";
-    const selectedAspect = aspectOptions.find((item) => item.value === activeSize);
-    const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0], dimensionQuality);
+    const selectedAspect = availableAspectOptions.find((item) => item.value === activeSize);
+    const dimensions = readSizeDimensions(activeSize, selectedAspect || availableAspectOptions[0], dimensionQuality);
     const selectAspect = (value: string) => {
-        const option = aspectOptions.find((item) => item.value === value);
+        const option = availableAspectOptions.find((item) => item.value === value);
         onConfigChange("size", option?.value || "auto");
     };
     const updateDimension = (key: "width" | "height", value: number | null) => {
@@ -66,10 +74,27 @@ export function ImageSettingsPanel({ config, model = config.model || config.imag
                 }}
             >
                 {showTitle ? <div className="text-lg font-semibold">图像设置</div> : null}
-                <div className="space-y-2.5">
-                    <SettingTitle color={theme.node.muted}>{capabilities.qualityOptions.length ? "质量 / 分辨率" : "分辨率"}</SettingTitle>
+                {tierOptions.length ? (
+                    <div className="space-y-2.5">
+                        <SettingTitle color={theme.node.muted}>档位</SettingTitle>
+                        <div className="grid grid-cols-2 gap-2.5">
+                            {tierOptions.map((item) => (
+                                <OptionPill key={item.value} selected={activeTier === item.value} theme={theme} onClick={() => onModelChange?.(item.model)}>
+                                    {imageTierLabel(item.value)}
+                                </OptionPill>
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
+                {capabilities.qualityOptions.length || !tierOptions.length ? <div className="space-y-2.5">
+                    <SettingTitle color={theme.node.muted}>{capabilities.lockedResolution && capabilities.qualityOptions.length ? "质量" : "分辨率"}</SettingTitle>
                     {capabilities.qualityOptions.length ? (
                         <>
+                            {capabilities.lockedResolution ? (
+                                <div className="rounded-xl px-3 py-2 text-sm" style={{ background: theme.node.fill, color: theme.node.text }}>
+                                    模型名已锁定 {capabilities.lockedResolution}
+                                </div>
+                            ) : null}
                             <div className="grid grid-cols-3 gap-2.5">
                                 {capabilities.qualityOptions.map((item) => (
                                     <OptionPill key={item.value} selected={quality === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
@@ -88,8 +113,8 @@ export function ImageSettingsPanel({ config, model = config.model || config.imag
                             {capabilities.lockedResolution || "由模型决定"}
                         </div>
                     )}
-                </div>
-                {capabilities.lockedResolution !== "最高约 1.5K" ? (
+                </div> : null}
+                {capabilities.supportsExplicitDimensions ? (
                     <div className="space-y-2.5">
                         <div className="flex items-center justify-between gap-3">
                             <SettingTitle color={theme.node.muted}>尺寸</SettingTitle>
@@ -112,7 +137,7 @@ export function ImageSettingsPanel({ config, model = config.model || config.imag
                 <div className="space-y-2.5">
                     <SettingTitle color={theme.node.muted}>宽高比</SettingTitle>
                     <div className="grid grid-cols-4 gap-2.5">
-                        {aspectOptions.map((item) => (
+                        {availableAspectOptions.map((item) => (
                             <button
                                 key={item.value}
                                 type="button"
@@ -284,4 +309,10 @@ function resolutionQuality(resolution?: string) {
     if (resolution === "2K") return "medium";
     if (resolution === "1K") return "low";
     return "";
+}
+
+function imageTierLabel(value: string) {
+    if (value === "web") return "Web · 最高约 1.5K";
+    if (value === "super-resolution") return "超分";
+    return value.toUpperCase();
 }
