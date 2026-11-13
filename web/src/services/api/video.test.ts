@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 
-import { buildOmniFlashPayload, buildSeedanceV1Payload, buildVeoOmniFlashEditPayload, buildVeoOmniPayload, isVeoOmniVideoModel, readVideoResultUrl, requestVideoGeneration, resolveVideoRequestProtocol, usesSeedanceNativeApi } from "./video";
+import { buildOmniFlashPayload, buildSeedanceContent, buildSeedanceV1Payload, buildVeoOmniFlashEditPayload, buildVeoOmniPayload, isVeoOmniVideoModel, readVideoResultUrl, requestVideoGeneration, resolveVideoRequestProtocol, safeVideoErrorText, usesSeedanceNativeApi } from "./video";
 import { defaultConfig } from "@/stores/use-config-store";
 
 const videoSource = readFileSync(new URL("./video.ts", import.meta.url), "utf8");
@@ -46,9 +46,11 @@ describe("Seedance new-api compatibility", () => {
     });
 
     test("does not silently truncate Seedance reference arrays", () => {
-        const builder = videoSource.match(/async function buildSeedanceContent[\s\S]*?\n}\n\nasync function resolveSeedanceImageUrl/)?.[0] || "";
+        const builder = videoSource.match(/export async function buildSeedanceContent[\s\S]*?\n}\n\nasync function resolveSeedanceImageUrl/)?.[0] || "";
         expect(builder).not.toContain(".slice(");
-        expect(videoSource).toContain("seedanceReferenceCountError(model");
+        expect(videoSource).not.toContain("assertSeedanceReferences");
+        expect(videoSource).not.toContain("assertSeedanceVideoReferences");
+        expect(videoSource).not.toContain("assertSeedanceAudioReferences");
     });
 
     test("uses native transport only for a direct Ark Plan channel", () => {
@@ -98,7 +100,7 @@ describe("Seedance new-api compatibility", () => {
         });
     });
 
-    test("preserves verified Seedance 2.5 frame roles with adaptive ratio", () => {
+    test("preserves frame roles with adaptive ratio for every New API Seedance model", () => {
         const content = [
             { type: "text", text: "从图片1过渡到图片2" },
             { type: "image_url", image_url: { url: "https://example.com/first.png" }, role: "first_frame" },
@@ -107,8 +109,27 @@ describe("Seedance new-api compatibility", () => {
         const payload = buildSeedanceV1Payload({ videoSize: "16:9", vquality: "480p", videoSeconds: "5", videoGenerateAudio: "true", videoWatermark: "false" }, "doubao-seedance-2-5-260628", "从图片1过渡到图片2", content, "adaptive");
         expect(payload.metadata.ratio).toBe("adaptive");
         expect(payload.metadata.content?.map((item) => item.role)).toEqual(["first_frame", "last_frame"]);
-        expect(videoSource).toContain("当前站点链路仅验证 Seedance 2.5 首尾帧");
-        expect(videoSource).toContain("Seedance 首尾帧模式不能与普通参考图、参考视频或参考音频混用");
+        const miniPayload = buildSeedanceV1Payload({ videoSize: "16:9", vquality: "480p", videoSeconds: "5", videoGenerateAudio: "true", videoWatermark: "false" }, "doubao-seedance-2-0-mini-260615", "单首帧", content.slice(0, 2), "adaptive");
+        expect(miniPayload.metadata.ratio).toBe("adaptive");
+        expect(videoSource).not.toContain("当前站点链路仅验证 Seedance 2.5 首尾帧");
+    });
+
+    test("preserves mixed reference roles in original mention order", async () => {
+        const content = await buildSeedanceContent(
+            "按引用顺序生成",
+            [
+                { id: "first", name: "first.png", type: "image/png", dataUrl: "https://media.example.com/first.png", seedanceRole: "first_frame", seedanceOrder: 20 },
+                { id: "last", name: "last.png", type: "image/png", dataUrl: "https://media.example.com/last.png", seedanceRole: "last_frame", seedanceOrder: 40 },
+            ],
+            [{ id: "video", name: "video.mp4", type: "video/mp4", url: "https://media.example.com/ref.mp4", seedanceOrder: 10 }],
+            [{ id: "audio", name: "audio.mp3", type: "audio/mpeg", url: "https://media.example.com/ref.mp3", seedanceOrder: 30 }],
+        );
+        expect(content.slice(1).map((item) => item.role)).toEqual(["reference_video", "first_frame", "reference_audio", "last_frame"]);
+    });
+
+    test("keeps useful upstream errors while removing every address", () => {
+        expect(safeVideoErrorText("InvalidParameter ratio failed at https:\\/\\/api.vendor.example/v1/videos?id=1#x")).toBe("InvalidParameter ratio failed at ***");
+        expect(safeVideoErrorText("字段 duration 超出范围，详情 vendor.example/docs/video")).toBe("字段 duration 超出范围，详情 ***");
     });
 
     test("shows a download stage after a completed task returns a video URL", () => {
@@ -126,6 +147,10 @@ describe("Seedance new-api compatibility", () => {
         expect(videoSource).toContain('status: "completed", resultUrl: task.content?.video_url');
         expect(videoSource).toContain("isRetryableVideoPollError(error)");
         expect(videoSource).toContain("export async function recoverVideoGeneration");
+        const v1RecoverySource = videoSource.match(/async function recoverSeedanceV1Generation[\s\S]*?async function recoverSeedanceNativeGeneration/)?.[0] || "";
+        const nativeRecoverySource = videoSource.match(/async function recoverSeedanceNativeGeneration[\s\S]*?\/\*\* ZeroFall/)?.[0] || "";
+        expect(v1RecoverySource).not.toContain("axios.post");
+        expect(nativeRecoverySource).not.toContain("axios.post");
     });
 });
 

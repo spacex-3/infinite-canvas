@@ -66,6 +66,7 @@ description: 当前画布节点的主要用途与操作流程
 - 使用火山方舟 Agent Plan / Seedance 2.0 时，Base URL 配置为 `https://ark.cn-beijing.volces.com/api/plan/v3`，模型名使用 Seedance 2.0 对应模型；系统会改用 `POST /contents/generations/tasks` 创建异步任务，并轮询 `GET /contents/generations/tasks/{id}`。
 - Agent Plan 专属 `/api/plan/v3` 当前未提供 OpenAI `/models` 模型列表接口，后台不会伪造模型列表；请手动填写 `doubao-seedance-2.0` 或文档列出的其他可用模型。
 - Seedance 参考视频必须是公网可访问 URL，或由本项目后端在配置 `PUBLIC_BASE_URL` 后上传并暴露的参考素材 URL。本地/内网地址无法被火山服务器拉取。
+- Seedance 的参考数量、时长、首尾帧配对、尺寸和混用规则属于线路能力提示，不会阻止提交；画布会保持 `@` 引用的素材角色与顺序，由实际上游完成最终校验。失败提示会保留错误码和字段原因，同时隐藏上游 URL、域名与接口地址。
 
 ### 推荐流程
 

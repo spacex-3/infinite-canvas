@@ -22,6 +22,60 @@ func TestAIUpstreamErrorDetail(t *testing.T) {
 	}
 }
 
+func TestAIUpstreamErrorDetailRedactsAddresses(t *testing.T) {
+	got := aiUpstreamErrorDetail([]byte(`{"error":{"code":"InvalidParameter","message":"ratio failed at https:\/\/api.vendor.example/v1/videos?id=1#detail; retry 140.245.45.32:8080/internal"}}`))
+	if !strings.Contains(got, "InvalidParameter") || !strings.Contains(got, "ratio") || !strings.Contains(got, "***") {
+		t.Fatalf("detail lost useful context: %q", got)
+	}
+	for _, secret := range []string{"vendor.example", "140.245.45.32", "/v1/videos", "id=1"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("detail leaked %q: %q", secret, got)
+		}
+	}
+}
+
+func TestAIUpstreamStatusMessageKeepsValidationReason(t *testing.T) {
+	got := aiUpstreamStatusMessage(422, []byte(`{"error":{"code":"InvalidParameter","message":"metadata.content[0].role is invalid at https://api.vendor.example/docs"}}`))
+	if !strings.Contains(got, "InvalidParameter") || !strings.Contains(got, "metadata.content[0].role") || strings.Contains(got, "vendor.example") {
+		t.Fatalf("status message = %q", got)
+	}
+}
+
+func TestSafeUpstreamTextRedactsProtocolRelativeAndBareHosts(t *testing.T) {
+	got := safeUpstreamText("POST //relay.example.com/tasks failed; see api.example.net/docs and localhost:3020/debug")
+	if got != "POST *** failed; see *** and ***" {
+		t.Fatalf("safe text = %q", got)
+	}
+}
+
+func TestSafeUpstreamTextKeepsPlainErrors(t *testing.T) {
+	want := "InvalidParameter duration must be between 4 and 15"
+	if got := safeUpstreamText(want); got != want {
+		t.Fatalf("safe text = %q", got)
+	}
+}
+
+func TestCopyAIResponseKeepsSuccessfulMediaURL(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":{"video_url":"https://media.vendor.example/result.mp4"}}`))
+	}))
+	defer upstream.Close()
+	request, _ := http.NewRequest(http.MethodGet, upstream.URL, nil)
+	recorder := httptest.NewRecorder()
+	copyAIResponse(recorder, request, nil, nil)
+	if !strings.Contains(recorder.Body.String(), "https://media.vendor.example/result.mp4") {
+		t.Fatalf("successful media URL was changed: %q", recorder.Body.String())
+	}
+}
+
+func TestAsyncTaskSafeMessageRedactsUpstreamAddress(t *testing.T) {
+	got := safeAIErrorMessage(upstreamImageTaskError("download failed at https://cdn.vendor.example/result.png?token=secret"), "fallback")
+	if got != "download failed at ***" {
+		t.Fatalf("safe task message = %q", got)
+	}
+}
+
 func TestAIUpstreamErrorDetailExplainsSensitiveVideo(t *testing.T) {
 	got := aiUpstreamErrorDetail([]byte(`{"error":{"code":"InputVideoSensitiveContentDetected.PrivacyInformation","message":"The request failed because the input video may contain real person."}}`))
 	if !strings.Contains(got, "参考视频疑似包含真人") || !strings.Contains(got, "asset://") {

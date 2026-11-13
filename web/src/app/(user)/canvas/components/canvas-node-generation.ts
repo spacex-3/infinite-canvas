@@ -61,8 +61,8 @@ function hasNodeMention(prompt: string) {
 function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: string): NodeGenerationContext {
     const inputByNodeId = new Map(inputs.map((input) => [input.nodeId, input]));
     const selectedInputs: NodeGenerationInput[] = [];
+    const selectedKeys = new Set<string>();
     const labelByNodeId = new Map<string, string>();
-    const imageRoleByNodeId = new Map<string, SeedanceImageRole>();
     const textBlocks: string[] = [];
     const counts = { image: 0, video: 0, audio: 0, text: 0 };
     let hasToken = false;
@@ -77,19 +77,19 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
         if (!input) throw new Error("引用素材已删除、断开或内容丢失，请删除失效的 @ 标签后重新选择");
         const tokenRole = match[2] as SeedanceImageRole | undefined;
         if (tokenRole && input.type !== "image") throw new Error("只有图片可以设置为普通参考图、首帧或尾帧");
-        if (input.type === "image") {
-            const role = tokenRole || "reference_image";
-            const previousRole = imageRoleByNodeId.get(input.nodeId);
-            if (previousRole && previousRole !== role) throw new Error(`同一张图片不能同时用作 ${imageRoleLabel(previousRole)}和${imageRoleLabel(role)}`);
-            imageRoleByNodeId.set(input.nodeId, role);
-        }
         let label = labelByNodeId.get(input.nodeId);
         if (!label) {
             label = generationLabel(input.type, counts[input.type]++);
             labelByNodeId.set(input.nodeId, label);
             if (input.type === "text") textBlocks.push(`【${label}】\n${input.text || ""}`);
-            else if (input.type === "image" && input.image) selectedInputs.push({ ...input, image: { ...input.image, seedanceRole: tokenRole || "reference_image" } });
-            else selectedInputs.push(input);
+        }
+        const role = tokenRole || "reference_image";
+        const selectionKey = input.type === "image" ? `${input.nodeId}:${role}` : input.nodeId;
+        if (input.type !== "text" && !selectedKeys.has(selectionKey)) {
+            selectedKeys.add(selectionKey);
+            if (input.type === "image" && input.image) selectedInputs.push({ ...input, image: { ...input.image, seedanceRole: role, seedanceOrder: match.index } });
+            else if (input.type === "video" && input.video) selectedInputs.push({ ...input, video: { ...input.video, seedanceOrder: match.index } });
+            else if (input.type === "audio" && input.audio) selectedInputs.push({ ...input, audio: { ...input.audio, seedanceOrder: match.index } });
         }
         nextPrompt += input.type === "text" ? `【${label}】` : label;
         lastIndex = match.index + match[0].length;
@@ -124,12 +124,6 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
         videoCount: referenceVideos.length,
         audioCount: referenceAudios.length,
     };
-}
-
-function imageRoleLabel(role: SeedanceImageRole) {
-    if (role === "first_frame") return "首帧";
-    if (role === "last_frame") return "尾帧";
-    return "普通参考图";
 }
 
 export function buildNodeGenerationInputs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): NodeGenerationInput[] {

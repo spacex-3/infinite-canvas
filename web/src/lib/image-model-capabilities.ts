@@ -128,3 +128,15 @@ export function imageQualityLabelForModel(model: string, quality: string) {
     const normalized = normalizeImageQualityForModel(model, quality) || quality;
     return capabilities.qualityOptions.find((option) => option.value === normalized)?.label || normalized;
 }
+
+export function imageSettingsSummaryParts(model: string, quality: string) {
+    const capabilities = getImageModelCapabilities(model);
+    const value = model.trim().toLowerCase();
+    const tier = imageModelTier(model);
+    if (GPT_WEB_MODELS.has(value)) return { tier: "web", resolution: "最高约 1.5K", quality: "默认" };
+    if (/^gpt-image-2\.6-(?:flare|sunburst)$/.test(value)) return { tier: "超分", resolution: "自身尺寸", quality: "默认" };
+    if (tier === "1k" || tier === "2k" || tier === "4k") {
+        return { tier: "", resolution: tier.toUpperCase(), quality: imageQualityLabelForModel(model, quality) };
+    }
+    return { tier: "", resolution: imageQualityLabelForModel(model, quality), quality: "默认" };
+}

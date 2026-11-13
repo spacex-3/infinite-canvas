@@ -189,19 +189,19 @@ export function seedanceFrameRatio(model: string, images: ReferenceImage[], fall
     return firstFrame.width && firstFrame.height ? closestSeedanceFrameRatio(firstFrame.width, firstFrame.height) || normalizeSeedanceRatio(fallback) : normalizeSeedanceRatio(fallback);
 }
 
-export function seedanceFrameReferenceError(images: ReferenceImage[], model = "") {
+export function seedanceFrameReferenceWarning(images: ReferenceImage[], model = "") {
     const firstFrame = images.find((image) => image.seedanceRole === "first_frame");
     const lastFrame = images.find((image) => image.seedanceRole === "last_frame");
     if (!firstFrame) return "";
-    if (!firstFrame.width || !firstFrame.height) return "无法读取 Seedance 首帧尺寸，请重新上传图片后再试";
+    if (!firstFrame.width || !firstFrame.height) return "无法读取首帧尺寸，当前组合仍可提交并由上游判断";
     const ratio = closestSeedanceFrameRatio(firstFrame.width, firstFrame.height);
-    if (!isSeedance25Model(model) && !ratio) return `Seedance 2.0 系列首帧尺寸 ${firstFrame.width}x${firstFrame.height} 不属于支持的比例，请先使用图片节点的“裁剪”生成 16:9、9:16、1:1、4:3、3:4 或 21:9 图片`;
+    if (!isSeedance25Model(model) && !ratio) return `首帧尺寸 ${firstFrame.width}x${firstFrame.height} 超出当前线路已验证比例，仍可提交并由上游判断`;
     if (!lastFrame) return "";
-    if (!lastFrame.width || !lastFrame.height) return "无法读取 Seedance 尾帧尺寸，请重新上传图片后再试";
+    if (!lastFrame.width || !lastFrame.height) return "无法读取尾帧尺寸，当前组合仍可提交并由上游判断";
     if (firstFrame.width !== lastFrame.width || firstFrame.height !== lastFrame.height) {
-        return `Seedance 首尾帧尺寸必须一致，当前为 ${firstFrame.width}x${firstFrame.height} 和 ${lastFrame.width}x${lastFrame.height}；请先使用图片节点的“裁剪”生成相同尺寸的新图片`;
+        return `首尾帧尺寸分别为 ${firstFrame.width}x${firstFrame.height} 和 ${lastFrame.width}x${lastFrame.height}，当前组合未验证，仍可提交并由上游判断`;
     }
-    if (!isSeedance25Model(model) && closestSeedanceFrameRatio(lastFrame.width, lastFrame.height) !== ratio) return "Seedance 首尾帧比例必须一致，请先裁剪为相同比例";
+    if (!isSeedance25Model(model) && closestSeedanceFrameRatio(lastFrame.width, lastFrame.height) !== ratio) return "首尾帧比例不同，当前组合未验证，仍可提交并由上游判断";
     return "";
 }
 
@@ -232,9 +232,9 @@ export function seedanceReferenceLabel(kind: "image" | "video" | "audio", index:
 
 export function buildSeedancePromptText(prompt: string, images: ReferenceImage[], videos: ReferenceVideo[], audios: ReferenceAudio[]) {
     const labels = [
-        ...images.map((_, index) => seedanceReferenceLabel("image", index)),
-        ...videos.map((_, index) => seedanceReferenceLabel("video", index)),
-        ...audios.map((_, index) => seedanceReferenceLabel("audio", index)),
+        ...Array.from(new Set(images.map((item) => item.id))).map((_, index) => seedanceReferenceLabel("image", index)),
+        ...Array.from(new Set(videos.map((item) => item.id))).map((_, index) => seedanceReferenceLabel("video", index)),
+        ...Array.from(new Set(audios.map((item) => item.id))).map((_, index) => seedanceReferenceLabel("audio", index)),
     ];
     const text = prompt.trim();
     if (!labels.length) return text;
@@ -263,4 +263,4 @@ export function seedanceVideoReferenceError(videos: ReferenceVideo[]) {
     return "";
 }
 
-export const seedanceVideoReferenceHint = "参考视频需为 mp4/mov，H.264/H.265，FPS 24-60；含真人人脸素材请使用火山授权 asset:// 素材。";
+export const seedanceVideoReferenceHint = "参考视频需为 mp4/mov，H.264/H.265，FPS 24-60；含真人人脸素材请使用上游授权的 asset:// 素材。";

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptionsForModel, seedanceFrameRatio, seedanceFrameReferenceError, seedanceReferenceCountError, seedanceReferenceLimitsForModel, seedanceResolutionOptionsForModel } from "./seedance-video";
+import { buildSeedancePromptText, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptionsForModel, seedanceFrameRatio, seedanceFrameReferenceWarning, seedanceReferenceCountError, seedanceReferenceLimitsForModel, seedanceResolutionOptionsForModel } from "./seedance-video";
 
 describe("Seedance video defaults", () => {
     test("uses landscape and 5 seconds when values are empty", () => {
@@ -33,7 +33,7 @@ describe("Seedance video defaults", () => {
         expect(seedanceReferenceCountError("doubao-seedance-2-5-260628", { images: 30, videos: 10, audios: 11 })).toContain("最多支持 10 个参考音频");
     });
 
-    test("uses fixed first-frame ratios for 2.0 and adaptive for 2.5", () => {
+    test("keeps native-protocol first-frame ratios for 2.0 and adaptive for 2.5", () => {
         const frames = [
             { id: "first", name: "first.png", type: "image/png", dataUrl: "first", seedanceRole: "first_frame" as const, width: 1080, height: 1920 },
             { id: "last", name: "last.png", type: "image/png", dataUrl: "last", seedanceRole: "last_frame" as const, width: 1080, height: 1920 },
@@ -42,13 +42,18 @@ describe("Seedance video defaults", () => {
         expect(seedanceFrameRatio("doubao-seedance-2-0-fast-260128", frames, "16:9")).toBe("9:16");
         expect(seedanceFrameRatio("doubao-seedance-2-0-260128", frames, "16:9")).toBe("9:16");
         expect(seedanceFrameRatio("doubao-seedance-2-5-260628", frames, "16:9")).toBe("adaptive");
-        expect(seedanceFrameReferenceError(frames, "doubao-seedance-2-0-fast-260128")).toBe("");
+        expect(seedanceFrameReferenceWarning(frames, "doubao-seedance-2-0-fast-260128")).toBe("");
     });
 
-    test("allows arbitrary 2.5 frames but validates 2.0 ratios and paired dimensions", () => {
+    test("describes unverified frame dimensions without treating them as submission errors", () => {
         const first = { id: "first", name: "first.png", type: "image/png", dataUrl: "first", seedanceRole: "first_frame" as const, width: 1080, height: 1920 };
-        expect(seedanceFrameReferenceError([first, { ...first, id: "last", seedanceRole: "last_frame", width: 1280 }], "doubao-seedance-2-5-260628")).toContain("尺寸必须一致");
-        expect(seedanceFrameReferenceError([{ ...first, width: 1280 }], "doubao-seedance-2-0-fast-260128")).toContain("不属于支持的比例");
-        expect(seedanceFrameReferenceError([{ ...first, width: 1280 }], "doubao-seedance-2-5-260628")).toBe("");
+        expect(seedanceFrameReferenceWarning([first, { ...first, id: "last", seedanceRole: "last_frame", width: 1280 }], "doubao-seedance-2-5-260628")).toContain("仍可提交");
+        expect(seedanceFrameReferenceWarning([{ ...first, width: 1280 }], "doubao-seedance-2-0-fast-260128")).toContain("仍可提交");
+        expect(seedanceFrameReferenceWarning([{ ...first, width: 1280 }], "doubao-seedance-2-5-260628")).toBe("");
+    });
+
+    test("keeps one visible number when the same image has multiple roles", () => {
+        const image = { id: "frame", name: "frame.png", type: "image/png", dataUrl: "https://example.com/frame.png" };
+        expect(buildSeedancePromptText("从图片1开始并以图片1结束", [{ ...image, seedanceRole: "first_frame" }, { ...image, seedanceRole: "last_frame" }], [], [])).toContain("参考素材编号：图片1。");
     });
 });

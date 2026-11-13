@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { canvasResourceMentionLabels, canvasResourceMentionToken, canonicalizeCanvasResourceMentionText, hasSeedanceFrameMention, renderCanvasResourceMentionText, seedanceMentionResourceDisabledReason, seedanceMentionRoleDisabledReason } from "./canvas-resource-mention-format";
+import { canvasResourceMentionLabels, canvasResourceMentionToken, canonicalizeCanvasResourceMentionText, hasSeedanceFrameMention, renderCanvasResourceMentionText, seedanceMentionResourceDisabledReason, seedanceMentionResourceWarning, seedanceMentionRoleDisabledReason, seedanceMentionRoleWarning } from "./canvas-resource-mention-format";
 import type { CanvasResourceReference } from "./canvas-resource-references";
 
 const references: CanvasResourceReference[] = [
@@ -41,7 +41,7 @@ describe("canvas resource mention formatting", () => {
         ]);
     });
 
-    test("disables invalid frame combinations and model overflows", () => {
+    test("keeps unverified frame combinations selectable and explains the risk", () => {
         const resources = [
             ...references.map((reference) => ({ nodeId: reference.nodeId, kind: reference.kind })),
             { nodeId: "image-2", kind: "image" as const },
@@ -49,9 +49,21 @@ describe("canvas resource mention formatting", () => {
             { nodeId: "video-3", kind: "video" as const },
             { nodeId: "video-4", kind: "video" as const },
         ];
-        expect(seedanceMentionRoleDisabledReason("", resources, resources[2], "first_frame", "doubao-seedance-2-0-mini-260615")).toContain("仅验证 Seedance 2.5");
-        expect(seedanceMentionRoleDisabledReason("", resources, resources[2], "last_frame", "doubao-seedance-2-5-260628")).toContain("请先设置首帧");
-        expect(seedanceMentionResourceDisabledReason("@[node:image-1;role:first_frame]", resources, resources[1], "doubao-seedance-2-0-mini-260615")).toContain("首尾帧模式");
-        expect(seedanceMentionResourceDisabledReason("@[node:video-1] @[node:video-2] @[node:video-3]", resources, resources[5], "doubao-seedance-2-0-mini-260615")).toContain("最多支持 3 个");
+        expect(seedanceMentionRoleDisabledReason("", resources, resources[2], "first_frame", "doubao-seedance-2-0-mini-260615")).toBe("");
+        expect(seedanceMentionRoleWarning("", resources, resources[2], "first_frame", "doubao-seedance-2-0-mini-260615")).toContain("未验证");
+        expect(seedanceMentionRoleDisabledReason("", resources, resources[2], "first_frame", "doubao-seedance-2-0-260128")).toBe("");
+        expect(seedanceMentionRoleWarning("", resources, resources[2], "first_frame", "doubao-seedance-2-0-fast-260128")).toContain("未验证");
+        expect(seedanceMentionRoleDisabledReason("", resources, resources[2], "last_frame", "doubao-seedance-2-5-260628")).toBe("");
+        expect(seedanceMentionRoleWarning("", resources, resources[2], "last_frame", "doubao-seedance-2-5-260628")).toContain("单独尾帧");
+        expect(seedanceMentionResourceDisabledReason("@[node:image-1;role:first_frame]", resources, resources[1], "doubao-seedance-2-0-mini-260615")).toBe("");
+        expect(seedanceMentionResourceWarning("@[node:image-1;role:first_frame]", resources, resources[1], "doubao-seedance-2-0-mini-260615")).toContain("仍可提交");
+        expect(seedanceMentionResourceDisabledReason("@[node:video-1] @[node:video-2] @[node:video-3]", resources, resources[5], "doubao-seedance-2-0-mini-260615")).toBe("");
+        expect(seedanceMentionResourceWarning("@[node:video-1] @[node:video-2] @[node:video-3]", resources, resources[5], "doubao-seedance-2-0-mini-260615")).toContain("仍可提交");
+        const sizedResources = [
+            { nodeId: "image-1", kind: "image" as const, width: 1080, height: 1920 },
+            { nodeId: "image-2", kind: "image" as const, width: 1280, height: 720 },
+        ];
+        expect(seedanceMentionRoleWarning("@[node:image-1;role:first_frame]", sizedResources, sizedResources[1], "last_frame", "doubao-seedance-2-5-260628")).toContain("尺寸不同");
+        expect(seedanceMentionResourceWarning("", [{ nodeId: "video-long", kind: "video", durationMs: 20000 }], { nodeId: "video-long", kind: "video", durationMs: 20000 }, "doubao-seedance-2-5-260628")).toContain("仍可提交");
     });
 });

@@ -11,7 +11,7 @@ import {
     OMNI_FLASH_REFERENCE_LIMITS,
     resolveOmniFlashModel,
 } from "@/lib/omni-flash-video";
-import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedance25Model, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceFrameRatio, seedanceFrameReferenceError, seedanceReferenceCountError, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { boolConfig, buildSeedancePromptText, isArkPlanBaseUrl, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceFrameRatio, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { getImageBlob, imageToDataUrl } from "@/services/image-storage";
 import { assertChannelSupportsCapability, buildApiUrl, resolveCustomChannelConfig, type AiConfig } from "@/stores/use-config-store";
@@ -20,7 +20,7 @@ import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import { notifyGenerationProgress, type GenerationProgressCallback, type GenerationProgressStage } from "./progress";
 
-type VideoResponse = { id: string; status?: string; progress?: number; error?: { message?: string } };
+type VideoResponse = { id: string; status?: string; progress?: number; code?: string; msg?: string; message?: string; detail?: string; fail_reason?: string; error?: { code?: string; message?: string } };
 type ApiVideoResponse = VideoResponse | { code?: number; data?: VideoResponse | null; msg?: string };
 type VeoOmniFlashEditPayload = {
     model: string;
@@ -46,6 +46,11 @@ type VideoStatusPayload = VideoResponse & {
 type SeedanceTask = {
     id: string;
     status?: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "expired";
+    code?: string;
+    msg?: string;
+    message?: string;
+    detail?: string;
+    fail_reason?: string;
     error?: { code?: string; message?: string } | null;
     content?: { video_url?: string; last_frame_url?: string } | null;
 };
@@ -329,15 +334,9 @@ async function requestSeedanceGeneration(
     onProgress?: GenerationProgressCallback,
     onTaskRecovery?: VideoTaskRecoveryCallback,
 ) {
-    assertSeedanceReferences(model, references, videoReferences, audioReferences);
-    if (audioReferences.length && !references.length && !videoReferences.length) {
-        throw new Error("Seedance 参考音频不能单独使用，请同时添加参考图或参考视频");
-    }
-    assertSeedanceVideoReferences(videoReferences);
-    assertSeedanceAudioReferences(audioReferences);
     const usesNativeApi = usesSeedanceNativeApi(config);
-    const frameRatio = seedanceFrameRatio(model, references, config.videoSize);
-    const content = await buildSeedanceContent(config, prompt, references, videoReferences, audioReferences);
+    const frameRatio = usesNativeApi ? seedanceFrameRatio(model, references, config.videoSize) : hasSeedanceFrameReferences(references) ? "adaptive" : normalizeSeedanceRatio(config.videoSize);
+    const content = await buildSeedanceContent(prompt, references, videoReferences, audioReferences);
     if (!content.length) throw new Error("请输入视频提示词，或连接参考图片/视频/音频");
     if (!usesNativeApi) {
         return requestSeedanceV1Generation(config, buildSeedanceV1Payload(config, model, buildSeedancePromptText(prompt, references, videoReferences, audioReferences), content, frameRatio), onProgress, onTaskRecovery);
@@ -374,7 +373,7 @@ async function requestSeedanceGeneration(
                 refreshRemoteUser(config);
                 return videoResultFromUrl(url, onProgress);
             }
-            if (task.status === "failed" || task.status === "cancelled" || task.status === "expired") throw new Error(task.error?.message || `Seedance 视频生成${task.status === "expired" ? "超时" : "失败"}`);
+            if (task.status === "failed" || task.status === "cancelled" || task.status === "expired") throw new Error(seedanceTaskFailure(task, `Seedance 视频生成${task.status === "expired" ? "超时" : "失败"}`));
             if (attempt === 119) throw new Error("Seedance 视频生成超时，请稍后重试");
             await delay(5000);
         }
@@ -444,7 +443,7 @@ async function requestSeedanceV1Generation(config: AiConfig, payload: SeedanceV1
                 refreshRemoteUser(config);
                 return { blob: content.data };
             }
-            if (status === "failed" || status === "cancelled" || status === "expired") throw new Error(task.error?.message || `Seedance 视频生成${status === "expired" ? "超时" : "失败"}`);
+            if (status === "failed" || status === "cancelled" || status === "expired") throw new Error(seedanceTaskFailure(task, `Seedance 视频生成${status === "expired" ? "超时" : "失败"}`));
             if (attempt === 119) throw new Error("Seedance 视频生成超时，请稍后重试");
             await delay(5000);
         }
@@ -483,7 +482,7 @@ async function recoverSeedanceV1Generation(config: AiConfig, recovery: VideoTask
             await assertVideoBlob(content.data);
             return { blob: content.data };
         }
-        if (status === "failed" || status === "cancelled" || status === "expired") throw new Error(task.error?.message || `Seedance 视频生成${status === "expired" ? "超时" : "失败"}`);
+        if (status === "failed" || status === "cancelled" || status === "expired") throw new Error(seedanceTaskFailure(task, `Seedance 视频生成${status === "expired" ? "超时" : "失败"}`));
         if (attempt === 119) throw new Error("Seedance 视频生成超时，请稍后重新取回");
         await delay(5000);
     }
@@ -509,7 +508,7 @@ async function recoverSeedanceNativeGeneration(config: AiConfig, recovery: Video
             refreshRemoteUser(config);
             return videoResultFromUrl(resultUrl, onProgress);
         }
-        if (task.status === "failed" || task.status === "cancelled" || task.status === "expired") throw new Error(task.error?.message || `Seedance 视频生成${task.status === "expired" ? "超时" : "失败"}`);
+        if (task.status === "failed" || task.status === "cancelled" || task.status === "expired") throw new Error(seedanceTaskFailure(task, `Seedance 视频生成${task.status === "expired" ? "超时" : "失败"}`));
         if (attempt === 119) throw new Error("Seedance 视频生成超时，请稍后重新取回");
         await delay(5000);
     }
@@ -792,63 +791,8 @@ function parseVeoOmniSizeDimensions(size: string) {
     return normalizePositiveDimensions(Number(match[1]), Number(match[2]));
 }
 
-function assertSeedanceVideoReferences(videoReferences: ReferenceVideo[]) {
-    const error = seedanceVideoReferenceError(videoReferences);
-    if (error) throw new Error(error);
-    let total = 0;
-    for (const video of videoReferences) {
-        if (!video.durationMs) continue;
-        if (video.durationMs < 2000 || video.durationMs > 15000) throw new Error("Seedance 参考视频单个时长需要在 2-15 秒之间");
-        total += video.durationMs;
-    }
-    if (total > 15000) throw new Error("Seedance 参考视频总时长不能超过 15 秒");
-}
-
-function assertSeedanceAudioReferences(audioReferences: ReferenceAudio[]) {
-    let total = 0;
-    for (const audio of audioReferences) {
-        if (!audio.durationMs) continue;
-        if (audio.durationMs < 2000 || audio.durationMs > 15000) throw new Error("Seedance 参考音频单个时长需要在 2-15 秒之间");
-        total += audio.durationMs;
-    }
-    if (total > 15000) throw new Error("Seedance 参考音频总时长不能超过 15 秒");
-}
-
 function hasSeedanceFrameReferences(references: ReferenceImage[]) {
     return references.some((image) => image.seedanceRole === "first_frame" || image.seedanceRole === "last_frame");
-}
-
-function assertSeedanceReferences(model: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
-    const countError = seedanceReferenceCountError(model, { images: references.length, videos: videoReferences.length, audios: audioReferences.length });
-    if (countError) throw new Error(countError);
-    const rolesByImageId = new Map<string, string>();
-    for (const image of references) {
-        const role = image.seedanceRole || "reference_image";
-        const previousRole = rolesByImageId.get(image.id);
-        if (previousRole && previousRole !== role) throw new Error(`同一张图片不能同时用作 ${seedanceRoleName(previousRole)}和${seedanceRoleName(role)}`);
-        rolesByImageId.set(image.id, role);
-    }
-    const firstFrames = references.filter((image) => image.seedanceRole === "first_frame");
-    const lastFrames = references.filter((image) => image.seedanceRole === "last_frame");
-    if ((firstFrames.length || lastFrames.length) && !isSeedance25Model(model)) {
-        throw new Error("当前站点链路仅验证 Seedance 2.5 首尾帧，请改用 2.5 或选择普通参考图");
-    }
-    if (firstFrames.length > 1) throw new Error("Seedance 首帧最多只能设置 1 张图片");
-    if (lastFrames.length > 1) throw new Error("Seedance 尾帧最多只能设置 1 张图片");
-    if (lastFrames.length && !firstFrames.length) throw new Error("Seedance 尾帧必须和首帧一起使用，请先添加首帧图片");
-    const frameError = seedanceFrameReferenceError(references, model);
-    if (frameError) throw new Error(frameError);
-    if (!firstFrames.length && !lastFrames.length) return;
-    const ordinaryImages = references.filter((image) => !image.seedanceRole || image.seedanceRole === "reference_image");
-    if (ordinaryImages.length || videoReferences.length || audioReferences.length) {
-        throw new Error("Seedance 首尾帧模式不能与普通参考图、参考视频或参考音频混用");
-    }
-}
-
-function seedanceRoleName(role: string) {
-    if (role === "first_frame") return "首帧";
-    if (role === "last_frame") return "尾帧";
-    return "普通参考图";
 }
 
 function seedanceApiUrl(config: AiConfig, taskId?: string) {
@@ -856,18 +800,20 @@ function seedanceApiUrl(config: AiConfig, taskId?: string) {
     return buildApiUrl(config.baseUrl, `/contents/generations/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}`);
 }
 
-async function buildSeedanceContent(config: AiConfig, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
+export async function buildSeedanceContent(prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
     const content: Array<Record<string, unknown>> = [];
     const text = buildSeedancePromptText(prompt, references, videoReferences, audioReferences);
     if (text) content.push({ type: "text", text });
-    for (const image of references) {
-        content.push({ type: "image_url", image_url: { url: await resolveSeedanceImageUrl(image) }, role: image.seedanceRole || "reference_image" });
-    }
-    for (const video of videoReferences) {
-        content.push({ type: "video_url", video_url: { url: await resolveSeedanceVideoUrl(video) }, role: "reference_video" });
-    }
-    for (const audio of audioReferences) {
-        content.push({ type: "audio_url", audio_url: { url: await resolveSeedanceAudioUrl(audio) }, role: "reference_audio" });
+    const fallbackOrder = references.length + videoReferences.length + audioReferences.length;
+    const media = [
+        ...references.map((item, index) => ({ kind: "image" as const, item, order: item.seedanceOrder ?? index })),
+        ...videoReferences.map((item, index) => ({ kind: "video" as const, item, order: item.seedanceOrder ?? fallbackOrder + index })),
+        ...audioReferences.map((item, index) => ({ kind: "audio" as const, item, order: item.seedanceOrder ?? fallbackOrder * 2 + index })),
+    ].sort((left, right) => left.order - right.order);
+    for (const entry of media) {
+        if (entry.kind === "image") content.push({ type: "image_url", image_url: { url: await resolveSeedanceImageUrl(entry.item) }, role: entry.item.seedanceRole || "reference_image" });
+        if (entry.kind === "video") content.push({ type: "video_url", video_url: { url: await resolveSeedanceVideoUrl(entry.item) }, role: "reference_video" });
+        if (entry.kind === "audio") content.push({ type: "audio_url", audio_url: { url: await resolveSeedanceAudioUrl(entry.item) }, role: "reference_audio" });
     }
     return content;
 }
@@ -890,6 +836,7 @@ async function resolveSeedanceVideoUrl(video: ReferenceVideo) {
     if (!blob && video.url?.startsWith("blob:")) blob = await (await fetch(video.url)).blob();
     if (!blob) throw new Error("参考视频必须是公网 URL、素材 ID，或本地已保存的视频");
     const file = new File([blob], video.name || "reference-video.mp4", { type: video.type || blob.type || "video/mp4" });
+    if (file.size > SEEDANCE_REFERENCE_LIMITS.videoMaxBytes) throw new Error("Seedance 参考视频不能超过 50MiB");
     return uploadReferenceMedia(file);
 }
 
@@ -900,6 +847,7 @@ async function resolveSeedanceAudioUrl(audio: ReferenceAudio) {
     if (!blob && audio.url?.startsWith("blob:")) blob = await (await fetch(audio.url)).blob();
     if (!blob) throw new Error("参考音频必须是公网 URL、素材 ID，或本地已保存的音频");
     const file = new File([blob], audio.name || "reference-audio.mp3", { type: audio.type || blob.type || "audio/mpeg" });
+    if (file.size > SEEDANCE_REFERENCE_LIMITS.audioMaxBytes) throw new Error("Seedance 参考音频不能超过 15MiB");
     return uploadReferenceMedia(file);
 }
 
@@ -1101,12 +1049,33 @@ function unwrapEnvelope<T>(payload: ApiEnvelope<T>, emptyMessage: string): T {
     return payload as T;
 }
 
+function seedanceTaskFailure(task: { code?: string; msg?: string; message?: string; detail?: string; fail_reason?: string; error?: { code?: string; message?: string } | null }, fallback: string) {
+    const code = task.error?.code || task.code;
+    const message = task.error?.message || task.detail || task.msg || task.message || task.fail_reason;
+    return safeVideoErrorText([code, message].filter(Boolean).join(" ") || fallback);
+}
+
+export function safeVideoErrorText(value: string) {
+    const text = value
+        .replace(/\\\//g, "/")
+        .replace(/https?:\/\/[^\s"'<>，。；、,;）)\]}]+/gi, "***")
+        .replace(/\/\/(?:localhost|\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9-]+(?:\.[a-z0-9-]+)+)(?::\d+)?[^\s"'<>，。；、,;）)\]}]*/gi, "***")
+        .replace(/\b(?:localhost|\d{1,3}(?:\.\d{1,3}){3}|(?:[a-z0-9-]+\.)+[a-z]{2,})(?::\d+)?(?:\/[^\s"'<>，。；、,;）)\]}]*)?/gi, "***")
+        .replace(/\s+/g, " ")
+        .trim();
+    const characters = Array.from(text);
+    return characters.length > 300 ? `${characters.slice(0, 300).join("")}...` : text;
+}
+
 function readAxiosError(error: unknown, fallback: string) {
-    if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; detail?: string; code?: number }>(error)) {
+    if (axios.isAxiosError<{ error?: { code?: string; message?: string }; msg?: string; message?: string; detail?: string; code?: number | string }>(error)) {
         const responseData = error.response?.data;
-        return responseData?.msg || responseData?.detail || responseData?.error?.message || statusMessage(error.response?.status, fallback);
+        const message = typeof responseData === "string" ? responseData : responseData?.msg || responseData?.detail || responseData?.error?.message || responseData?.message;
+        const code = typeof responseData === "string" ? "" : responseData?.error?.code || (typeof responseData?.code === "string" ? responseData.code : "");
+        const status = error.response?.status;
+        return safeVideoErrorText([status ? `HTTP ${status}` : "", code, message].filter(Boolean).join(" ") || statusMessage(status, fallback));
     }
-    return error instanceof Error ? error.message : fallback;
+    return safeVideoErrorText(error instanceof Error ? error.message : fallback);
 }
 
 function statusMessage(status: number | undefined, fallback: string) {

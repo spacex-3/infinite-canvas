@@ -213,15 +213,18 @@ type upstreamImageTask struct {
 	Status   string `json:"status"`
 	Progress any    `json:"progress"`
 	Error    struct {
+		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
-	Msg string `json:"msg"`
+	Msg     string `json:"msg"`
+	Message string `json:"message"`
+	Detail  string `json:"detail"`
 }
 
 type upstreamImageTaskError string
 
 func (err upstreamImageTaskError) Error() string       { return string(err) }
-func (err upstreamImageTaskError) SafeMessage() string { return string(err) }
+func (err upstreamImageTaskError) SafeMessage() string { return safeUpstreamText(string(err)) }
 
 func waitForUpstreamImageTask(ctx context.Context, channel model.ModelChannel, path string, responseBody []byte, localTaskID string) ([]byte, error) {
 	var task upstreamImageTask
@@ -235,9 +238,15 @@ func waitForUpstreamImageTask(ctx context.Context, channel model.ModelChannel, p
 			return responseBody, nil
 		}
 		if status == "failed" || status == "failure" || status == "error" || status == "cancelled" || status == "canceled" {
-			message := strings.TrimSpace(task.Error.Message)
+			message := strings.TrimSpace(strings.TrimSpace(task.Error.Code) + " " + strings.TrimSpace(task.Error.Message))
+			if message == "" {
+				message = strings.TrimSpace(task.Detail)
+			}
 			if message == "" {
 				message = strings.TrimSpace(task.Msg)
+			}
+			if message == "" {
+				message = strings.TrimSpace(task.Message)
 			}
 			if message == "" {
 				message = "图片生成失败"
@@ -363,7 +372,7 @@ func aiProxyRequestErrorMessage(err error) string {
 
 func safeAIErrorMessage(err error, fallback string) string {
 	if safe, ok := err.(interface{ SafeMessage() string }); ok {
-		return safe.SafeMessage()
+		return safeUpstreamText(safe.SafeMessage())
 	}
 	return fallback
 }

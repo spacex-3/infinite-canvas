@@ -9,6 +9,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/basketikun/infinite-canvas/model"
@@ -300,13 +301,13 @@ func isOmniFlashVideo(modelName string) bool {
 func aiStatusMessage(statusCode int) string {
 	switch statusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return "AI 接口鉴权失败，请检查 API Key、套餐权限或模型权限"
+		return fmt.Sprintf("AI 接口鉴权失败（%d），请检查 API Key、套餐权限或模型权限", statusCode)
 	case http.StatusTooManyRequests:
-		return "AI 接口限流或额度不足，请稍后重试或检查额度"
+		return fmt.Sprintf("AI 接口限流或额度不足（%d），请稍后重试或检查额度", statusCode)
 	case http.StatusGatewayTimeout:
-		return "AI 接口请求耗时过长，上游或反代已中断连接"
+		return fmt.Sprintf("AI 接口请求耗时过长（%d），上游或反代已中断连接", statusCode)
 	default:
-		return "AI 接口请求失败"
+		return fmt.Sprintf("AI 接口请求失败（%d）", statusCode)
 	}
 }
 
@@ -327,6 +328,7 @@ func aiUpstreamErrorDetail(body []byte) string {
 	var payload struct {
 		Msg     string `json:"msg"`
 		Message string `json:"message"`
+		Detail  string `json:"detail"`
 		Error   struct {
 			Code    string `json:"code"`
 			Message string `json:"message"`
@@ -348,6 +350,9 @@ func aiUpstreamErrorDetail(body []byte) string {
 		if payload.Message != "" {
 			return safeUpstreamText(payload.Message)
 		}
+		if payload.Detail != "" {
+			return safeUpstreamText(payload.Detail)
+		}
 	}
 	return safeUpstreamText(text)
 }
@@ -355,12 +360,20 @@ func aiUpstreamErrorDetail(body []byte) string {
 func friendlyUpstreamError(code string, message string) string {
 	lowerCode := strings.ToLower(strings.TrimSpace(code))
 	if strings.Contains(lowerCode, "inputvideosensitivecontentdetected") || strings.Contains(lowerCode, "privacyinformation") {
-		return strings.TrimSpace(code + " 参考视频疑似包含真人或隐私信息，火山方舟拒绝使用普通 URL 作为真人视频参考；请改用不含真人的视频、官方允许的模型产物，或已授权的 asset:// 素材。原始错误：" + message)
+		return strings.TrimSpace(code + " 参考视频疑似包含真人或隐私信息，当前上游线路拒绝使用普通 URL 作为真人视频参考；请改用不含真人的视频、上游允许的模型产物，或已授权的 asset:// 素材。原始错误：" + message)
 	}
 	return ""
 }
 
+var upstreamErrorURLPattern = regexp.MustCompile(`(?i)\bhttps?://[^\s"'<>，。；、,;）)\]}]+`)
+var upstreamErrorProtocolRelativePattern = regexp.MustCompile(`(?i)//(?:localhost|\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9-]+(?:\.[a-z0-9-]+)+)(?::\d+)?[^\s"'<>，。；、,;）)\]}]*`)
+var upstreamErrorHostPattern = regexp.MustCompile(`(?i)\b(?:localhost|\d{1,3}(?:\.\d{1,3}){3}|(?:[a-z0-9-]+\.)+[a-z]{2,})(?::\d+)?(?:/[^\s"'<>，。；、,;）)\]}]*)?`)
+
 func safeUpstreamText(text string) string {
+	text = strings.ReplaceAll(text, `\/`, "/")
+	text = upstreamErrorURLPattern.ReplaceAllString(text, "***")
+	text = upstreamErrorProtocolRelativePattern.ReplaceAllString(text, "***")
+	text = upstreamErrorHostPattern.ReplaceAllString(text, "***")
 	text = strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
 	runes := []rune(text)
 	if len(runes) > 300 {

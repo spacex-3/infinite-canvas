@@ -128,7 +128,7 @@ export default function VideoPage() {
         if (selectedFiles.some((file) => file.type.startsWith("video/") && file.size > SEEDANCE_REFERENCE_LIMITS.videoMaxBytes)) return message.error("参考视频不能超过 50MiB");
         if (selectedFiles.some((file) => isSupportedAudioFile(file) && file.size > SEEDANCE_REFERENCE_LIMITS.audioMaxBytes)) return message.error("参考音频不能超过 15MiB");
         const countError = seedanceReferenceCountError(model, { images: references.length + imageFiles.length, videos: videoReferences.length + videoFiles.length, audios: audioReferences.length + audioFiles.length });
-        if (countError) return message.error(countError);
+        if (countError) message.warning(`${countError}；当前线路能力仅供参考，仍可提交`);
         const nextReferences = await Promise.all(
             imageFiles.map(async (file) => {
                 const image = await uploadImage(file);
@@ -166,7 +166,7 @@ export default function VideoPage() {
             }
             if (blobs.some((blob) => blob.size > SEEDANCE_REFERENCE_LIMITS.imageMaxBytes)) return message.error("参考图片不能超过 30MiB");
             const countError = seedanceReferenceCountError(model, { images: references.length + blobs.length, videos: videoReferences.length, audios: audioReferences.length });
-            if (countError) return message.error(countError);
+            if (countError) message.warning(`${countError}；当前线路能力仅供参考，仍可提交`);
             const nextReferences = await Promise.all(
                 blobs.map(async (blob, index) => {
                     const image = await uploadImage(blob);
@@ -225,15 +225,9 @@ export default function VideoPage() {
             return null;
         }
         const videoReferenceError = seedanceVideoReferenceError(videoReferences);
-        if (videoReferenceError) {
-            message.error(`${videoReferenceError}。${seedanceVideoReferenceHint}`);
-            return null;
-        }
+        if (videoReferenceError) message.warning(`${videoReferenceError}。${seedanceVideoReferenceHint} 当前组合仍可提交，实际以上游返回为准`);
         const countError = seedanceReferenceCountError(model, { images: references.length, videos: videoReferences.length, audios: audioReferences.length });
-        if (countError) {
-            message.error(countError);
-            return null;
-        }
+        if (countError) message.warning(`${countError}；当前线路能力仅供参考，仍可提交`);
         return { text, config: buildVideoConfig(effectiveConfig, model), references: [...references], videoReferences: [...videoReferences], audioReferences: [...audioReferences] };
     };
 
@@ -262,11 +256,11 @@ export default function VideoPage() {
         if (payload.kind === "text") {
             setPrompt(payload.content);
         } else if (payload.kind === "image") {
-            if (references.length >= referenceLimits.images || references.length + videoReferences.length + audioReferences.length >= referenceLimits.total) return message.error(`当前模型最多支持 ${referenceLimits.images} 张图片、合计 ${referenceLimits.total} 项参考素材`);
+            if (references.length >= referenceLimits.images || references.length + videoReferences.length + audioReferences.length >= referenceLimits.total) message.warning(`已超过当前线路验证的 ${referenceLimits.images} 张图片或合计 ${referenceLimits.total} 项参考素材，仍可提交`);
             const stored = await uploadImage(payload.dataUrl);
             setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height }]);
         } else if (payload.kind === "video") {
-            if (videoReferences.length >= referenceLimits.videos || references.length + videoReferences.length + audioReferences.length >= referenceLimits.total) return message.error(`当前模型最多支持 ${referenceLimits.videos} 个视频、合计 ${referenceLimits.total} 项参考素材`);
+            if (videoReferences.length >= referenceLimits.videos || references.length + videoReferences.length + audioReferences.length >= referenceLimits.total) message.warning(`已超过当前线路验证的 ${referenceLimits.videos} 个视频或合计 ${referenceLimits.total} 项参考素材，仍可提交`);
             setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }]);
         }
         setAssetPickerOpen(false);
@@ -380,7 +374,7 @@ export default function VideoPage() {
                                             </button>
                                         </div>
                                     ))}
-                                    {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图，最多 {referenceLimits.images} 张</div> : null}
+                                    {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图，当前线路已验证 {referenceLimits.images} 张</div> : null}
                                 </div>
                             </div>
 
@@ -402,7 +396,7 @@ export default function VideoPage() {
                                             </button>
                                         </div>
                                     ))}
-                                    {!videoReferences.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考视频，最多 {referenceLimits.videos} 个</div> : null}
+                                    {!videoReferences.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考视频，当前线路已验证 {referenceLimits.videos} 个</div> : null}
                                 </div>
                             </div>
 
@@ -428,7 +422,7 @@ export default function VideoPage() {
                                             </button>
                                         </div>
                                     ))}
-                                    {!audioReferences.length ? <div className="flex min-w-full items-center justify-center text-center text-sm text-stone-500">暂无参考音频，最多 {referenceLimits.audios} 个，mp3/wav，单个 15MB 内</div> : null}
+                                    {!audioReferences.length ? <div className="flex min-w-full items-center justify-center text-center text-sm text-stone-500">暂无参考音频，当前线路已验证 {referenceLimits.audios} 个，mp3/wav，单个 15MB 内</div> : null}
                                 </div>
                             </div>
 
@@ -723,22 +717,18 @@ function isSupportedAudioFile(file: File) {
 
 function filterAudioReferencesByDuration(existing: ReferenceAudio[], next: ReferenceAudio[], warn: (content: string) => void) {
     let total = existing.reduce((sum, item) => sum + (item.durationMs || 0), 0);
-    const accepted: ReferenceAudio[] = [];
-    let skipped = false;
+    let unverified = false;
     for (const item of next) {
         if (item.durationMs && (item.durationMs < 2000 || item.durationMs > 15000)) {
-            skipped = true;
-            continue;
+            unverified = true;
         }
         if (item.durationMs && total + item.durationMs > 15000) {
-            skipped = true;
-            continue;
+            unverified = true;
         }
         total += item.durationMs || 0;
-        accepted.push(item);
     }
-    if (skipped) warn("已忽略不符合时长要求的参考音频：单个 2-15 秒，总时长不超过 15 秒");
-    return accepted;
+    if (unverified) warn("参考音频超出当前线路已验证的单个 2-15 秒或总计 15 秒范围；素材仍会保留并提交，实际以上游返回为准");
+    return next;
 }
 
 function moveListItem<T>(items: T[], index: number, offset: number) {

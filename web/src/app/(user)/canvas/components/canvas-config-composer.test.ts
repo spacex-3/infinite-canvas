@@ -8,6 +8,7 @@ describe("canvas config composer references", () => {
         expect(source).toContain('text.textContent = `@${label}${roleLabel ? ` · ${roleLabel}` : ""}`');
         expect(source).toContain("background: theme.toolbar.activeBg");
         expect(source).toContain("seedanceMentionRoleDisabledReason");
+        expect(source).toContain("seedanceMentionRoleWarning");
         expect(source).toContain("refreshReferenceChipLabels");
     });
 });

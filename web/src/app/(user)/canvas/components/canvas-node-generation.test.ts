@@ -112,12 +112,16 @@ describe("buildNodeGenerationContext", () => {
         expect(context.referenceVideos.map((video) => video.id)).toEqual(["video-2", "video-1"]);
     });
 
-    test("rejects conflicting roles for the same image", () => {
+    test("preserves multiple roles for the same image in mention order", () => {
         const configNode: CanvasNodeData = { id: "config-1", type: CanvasNodeType.Config, title: "Config", position: { x: 0, y: 0 }, width: 240, height: 160, metadata: {} };
         const imageNode: CanvasNodeData = { id: "image-1", type: CanvasNodeType.Image, title: "Image", position: { x: 0, y: 0 }, width: 180, height: 180, metadata: { content: "data:image/png;base64,abc" } };
         const connections = [{ id: "conn-1", fromNodeId: imageNode.id, toNodeId: configNode.id }];
 
-        expect(() => buildNodeGenerationContext(configNode.id, [configNode, imageNode], connections, "@[node:image-1;role:first_frame] @[node:image-1;role:last_frame]")).toThrow("同一张图片不能同时用作");
+        const context = buildNodeGenerationContext(configNode.id, [configNode, imageNode], connections, "@[node:image-1;role:first_frame] @[node:image-1;role:last_frame]");
+        expect(context.referenceImages.map((image) => [image.id, image.seedanceRole])).toEqual([
+            ["image-1", "first_frame"],
+            ["image-1", "last_frame"],
+        ]);
     });
 
     test("rejects stale mention tokens instead of silently dropping them", () => {

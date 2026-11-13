@@ -8,7 +8,7 @@ import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { SeedanceImageRole } from "@/types/image";
-import { CANVAS_RESOURCE_MENTION_TOKEN_PATTERN, CANVAS_SEEDANCE_IMAGE_ROLES, canvasResourceMentionLabels, canvasResourceMentionRoleLabel, seedanceMentionResourceDisabledReason, seedanceMentionRoleDisabledReason } from "../utils/canvas-resource-mention-format";
+import { CANVAS_RESOURCE_MENTION_TOKEN_PATTERN, CANVAS_SEEDANCE_IMAGE_ROLES, canvasResourceMentionLabels, canvasResourceMentionRoleLabel, seedanceMentionResourceDisabledReason, seedanceMentionResourceWarning, seedanceMentionRoleDisabledReason, seedanceMentionRoleWarning } from "../utils/canvas-resource-mention-format";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 import { matchesCanvasReferenceQuery, readCanvasReferenceMention, shouldResetCanvasReferenceSelection } from "../utils/canvas-resource-query";
 
@@ -35,7 +35,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLDivElement, Props>(f
     const [roleReference, setRoleReference] = useState<CanvasResourceReference | null>(null);
     const referenceByNodeId = useMemo(() => new Map(references.map((reference) => [reference.nodeId, reference])), [references]);
     const activeReferences = useMemo(() => references.filter((reference) => reference.active), [references]);
-    const mentionResources = useMemo(() => activeReferences.map((reference) => ({ nodeId: reference.nodeId, kind: reference.kind })), [activeReferences]);
+    const mentionResources = useMemo(() => activeReferences.map((reference) => ({ nodeId: reference.nodeId, kind: reference.kind, width: reference.width, height: reference.height, durationMs: reference.durationMs })), [activeReferences]);
     const candidates = useMemo(() => {
         if (!mention) return [];
         const query = mention.query.trim().toLowerCase();
@@ -116,9 +116,9 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLDivElement, Props>(f
     const mergedStyle = { ...(style || {}), color: style?.color || theme.node.text, caretColor: style?.color || theme.node.text } as CSSProperties;
     const menu = mention && editorRef.current
         ? roleReference
-            ? <RoleMenu editor={editorRef.current} reference={roleReference} activeIndex={Math.min(activeIndex, CANVAS_SEEDANCE_IMAGE_ROLES.length - 1)} theme={theme} disabledReason={(role) => seedanceMentionRoleDisabledReason(value, mentionResources, { nodeId: roleReference.nodeId, kind: roleReference.kind }, role, seedanceModel)} onSelect={(role) => insertReference(roleReference, role)} />
+            ? <RoleMenu editor={editorRef.current} reference={roleReference} activeIndex={Math.min(activeIndex, CANVAS_SEEDANCE_IMAGE_ROLES.length - 1)} theme={theme} disabledReason={(role) => seedanceMentionRoleDisabledReason(value, mentionResources, { nodeId: roleReference.nodeId, kind: roleReference.kind }, role, seedanceModel)} warning={(role) => seedanceMentionRoleWarning(value, mentionResources, { nodeId: roleReference.nodeId, kind: roleReference.kind }, role, seedanceModel)} onSelect={(role) => insertReference(roleReference, role)} />
             : candidates.length
-              ? <MentionMenu editor={editorRef.current} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} disabledReason={(reference) => seedanceModel ? seedanceMentionResourceDisabledReason(value, mentionResources, { nodeId: reference.nodeId, kind: reference.kind }, seedanceModel) : ""} onSelect={selectReference} />
+              ? <MentionMenu editor={editorRef.current} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} disabledReason={(reference) => seedanceModel ? seedanceMentionResourceDisabledReason(value, mentionResources, { nodeId: reference.nodeId, kind: reference.kind }, seedanceModel) : ""} warning={(reference) => seedanceModel ? seedanceMentionResourceWarning(value, mentionResources, { nodeId: reference.nodeId, kind: reference.kind }, seedanceModel) : ""} onSelect={selectReference} />
               : null
         : null;
 
@@ -213,7 +213,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLDivElement, Props>(f
     );
 });
 
-function RoleMenu({ editor, reference, activeIndex, theme, disabledReason, onSelect }: { editor: HTMLDivElement; reference: CanvasResourceReference; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; disabledReason: (role: SeedanceImageRole) => string; onSelect: (role: SeedanceImageRole) => void }) {
+function RoleMenu({ editor, reference, activeIndex, theme, disabledReason, warning, onSelect }: { editor: HTMLDivElement; reference: CanvasResourceReference; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; disabledReason: (role: SeedanceImageRole) => string; warning: (role: SeedanceImageRole) => string; onSelect: (role: SeedanceImageRole) => void }) {
     const selectedRef = useRef(false);
     const rect = editor.getBoundingClientRect();
     const boundary = editor.closest(".ant-modal-content")?.getBoundingClientRect() || { left: 8, top: 8, right: window.innerWidth - 8, bottom: window.innerHeight - 8 };
@@ -232,10 +232,11 @@ function RoleMenu({ editor, reference, activeIndex, theme, disabledReason, onSel
             <div className="px-2 py-1 text-[11px] opacity-55">@{reference.label} 用作</div>
             {CANVAS_SEEDANCE_IMAGE_ROLES.map((role, index) => {
                 const reason = disabledReason(role.value);
+                const hint = warning(role.value);
                 return (
-                    <button key={role.value} type="button" disabled={Boolean(reason)} className="block w-full rounded-lg px-2 py-1.5 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-40" style={{ background: !reason && index === activeIndex ? theme.toolbar.activeBg : "transparent", color: !reason && index === activeIndex ? theme.toolbar.activeText : theme.node.text }} title={reason} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); selectRole(role.value); }}>
+                    <button key={role.value} type="button" disabled={Boolean(reason)} className="block w-full rounded-lg px-2 py-1.5 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-40" style={{ background: !reason && index === activeIndex ? theme.toolbar.activeBg : "transparent", color: !reason && index === activeIndex ? theme.toolbar.activeText : theme.node.text }} title={reason || hint} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); selectRole(role.value); }}>
                         <span className="block font-medium">{role.label}</span>
-                        <span className="block opacity-60">{reason || role.description}</span>
+                        <span className="block opacity-60">{reason || hint || role.description}</span>
                     </button>
                 );
             })}
@@ -244,7 +245,7 @@ function RoleMenu({ editor, reference, activeIndex, theme, disabledReason, onSel
     );
 }
 
-function MentionMenu({ editor, references, activeIndex, theme, disabledReason, onSelect }: { editor: HTMLDivElement; references: CanvasResourceReference[]; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; disabledReason: (reference: CanvasResourceReference) => string; onSelect: (reference: CanvasResourceReference) => void }) {
+function MentionMenu({ editor, references, activeIndex, theme, disabledReason, warning, onSelect }: { editor: HTMLDivElement; references: CanvasResourceReference[]; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; disabledReason: (reference: CanvasResourceReference) => string; warning: (reference: CanvasResourceReference) => string; onSelect: (reference: CanvasResourceReference) => void }) {
     const selectedRef = useRef(false);
     const rect = editor.getBoundingClientRect();
     const boundary = editor.closest(".ant-modal-content")?.getBoundingClientRect() || { left: 8, top: 8, right: window.innerWidth - 8, bottom: window.innerHeight - 8 };
@@ -265,13 +266,14 @@ function MentionMenu({ editor, references, activeIndex, theme, disabledReason, o
         <div data-canvas-resource-mention-menu="true" className="fixed z-[120] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl backdrop-blur-md" style={{ left, top, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }} onPointerDown={stopCanvasInteraction} onMouseDown={stopCanvasInteraction} onClick={(event) => event.stopPropagation()}>
             {references.map((reference, index) => {
                 const reason = disabledReason(reference);
+                const hint = warning(reference);
                 return <button
                     key={reference.id}
                     type="button"
                     disabled={Boolean(reason)}
                     className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-40"
                     style={{ background: !reason && index === activeIndex ? theme.toolbar.activeBg : "transparent", color: !reason && index === activeIndex ? theme.toolbar.activeText : theme.node.text }}
-                    title={reason}
+                    title={reason || hint}
                     onPointerDown={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -284,7 +286,7 @@ function MentionMenu({ editor, references, activeIndex, theme, disabledReason, o
                     }}
                 >
                     <ReferencePreview reference={reference} />
-                    <span className="min-w-0 flex-1"><span className="block font-medium">@{reference.label}</span><span className="block truncate opacity-65">{reason || reference.text || reference.title}</span></span>
+                    <span className="min-w-0 flex-1"><span className="block font-medium">@{reference.label}</span><span className="block truncate opacity-65">{reason || hint || reference.text || reference.title}</span></span>
                 </button>
             })}
         </div>,

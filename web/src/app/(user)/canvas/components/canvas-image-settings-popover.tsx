@@ -5,8 +5,9 @@ import { createPortal } from "react-dom";
 import { Settings2 } from "lucide-react";
 import { Button } from "antd";
 
-import { ImageSettingsPanel, imageQualityLabel, imageSizeLabel } from "@/components/image-settings-panel";
+import { ImageSettingsPanel, imageSizeLabel } from "@/components/image-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { imageSettingsSummaryParts } from "@/lib/image-model-capabilities";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
 
@@ -33,6 +34,8 @@ export function CanvasImageSettingsPopover({ config, model: selectedModel, onCon
     const model = selectedModel || config.imageModel || config.model;
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
+    const summaryParts = imageSettingsSummaryParts(model, quality);
+    const summary = [summaryParts.tier, summaryParts.resolution, summaryParts.quality, imageSizeLabel(activeSize), `${count} 张`, config.imageOutputFormat === "gif" ? "GIF" : ""].filter(Boolean).join(" · ");
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
         onOpenChange?.(nextOpen);
@@ -66,10 +69,8 @@ export function CanvasImageSettingsPopover({ config, model: selectedModel, onCon
     return (
         <>
             <span ref={buttonRef} className="inline-flex min-w-0">
-                <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[180px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => updateOpen(!open)}>
-                    <span className="truncate">
-                        {imageQualityLabel(quality, model)} · {imageSizeLabel(activeSize)} · {count} 张{config.imageOutputFormat === "gif" ? " · GIF" : ""}
-                    </span>
+                <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[min(300px,calc(100vw-80px))] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => updateOpen(!open)} title={summary}>
+                    <span className="truncate">{summary}</span>
                 </Button>
             </span>
             {panel}

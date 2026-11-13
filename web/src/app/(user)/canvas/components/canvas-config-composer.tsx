@@ -9,7 +9,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { SeedanceImageRole } from "@/types/image";
 import type { NodeGenerationInput } from "./canvas-node-generation";
-import { CANVAS_RESOURCE_MENTION_TOKEN_PATTERN, CANVAS_SEEDANCE_IMAGE_ROLES, canvasResourceMentionLabels, canvasResourceMentionRoleLabel, seedanceMentionResourceDisabledReason, seedanceMentionRoleDisabledReason } from "../utils/canvas-resource-mention-format";
+import { CANVAS_RESOURCE_MENTION_TOKEN_PATTERN, CANVAS_SEEDANCE_IMAGE_ROLES, canvasResourceMentionLabels, canvasResourceMentionRoleLabel, seedanceMentionResourceDisabledReason, seedanceMentionResourceWarning, seedanceMentionRoleDisabledReason, seedanceMentionRoleWarning } from "../utils/canvas-resource-mention-format";
 import { matchesCanvasReferenceQuery, readCanvasReferenceMention, shouldResetCanvasReferenceSelection } from "../utils/canvas-resource-query";
 
 type CanvasConfigComposerProps = {
@@ -41,7 +41,7 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose, seedanc
     const [roleReference, setRoleReference] = useState<NodeGenerationInput | null>(null);
     const tokens = useMemo(() => parseComposerTokens(value), [value]);
     const referenceById = useMemo(() => new Map(inputs.map((input) => [input.nodeId, input])), [inputs]);
-    const mentionResources = useMemo(() => inputs.map((input) => ({ nodeId: input.nodeId, kind: input.type })), [inputs]);
+    const mentionResources = useMemo(() => inputs.map((input) => ({ nodeId: input.nodeId, kind: input.type, width: input.image?.width, height: input.image?.height, durationMs: input.video?.durationMs || input.audio?.durationMs })), [inputs]);
     const labelsByNodeId = useMemo(() => canvasResourceMentionLabels(value, mentionResources), [mentionResources, value]);
     const candidates = useMemo(() => {
         if (!mention) return [];
@@ -222,7 +222,7 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose, seedanc
                     onMouseUp={syncMention}
                     onBlur={() => window.setTimeout(closeMention, 120)}
                 />
-                {mention && roleReference ? <RoleMenu input={roleReference} activeIndex={Math.min(activeIndex, CANVAS_SEEDANCE_IMAGE_ROLES.length - 1)} theme={theme} disabledReason={(role) => seedanceMentionRoleDisabledReason(value, mentionResources, { nodeId: roleReference.nodeId, kind: roleReference.type }, role, seedanceModel)} onSelect={(role) => insertReference(roleReference, role)} /> : mention && candidates.length ? <MentionMenu inputs={candidates} allInputs={inputs} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} disabledReason={(input) => seedanceModel ? seedanceMentionResourceDisabledReason(value, mentionResources, { nodeId: input.nodeId, kind: input.type }, seedanceModel) : ""} onSelect={selectReference} /> : null}
+                {mention && roleReference ? <RoleMenu input={roleReference} activeIndex={Math.min(activeIndex, CANVAS_SEEDANCE_IMAGE_ROLES.length - 1)} theme={theme} disabledReason={(role) => seedanceMentionRoleDisabledReason(value, mentionResources, { nodeId: roleReference.nodeId, kind: roleReference.type }, role, seedanceModel)} warning={(role) => seedanceMentionRoleWarning(value, mentionResources, { nodeId: roleReference.nodeId, kind: roleReference.type }, role, seedanceModel)} onSelect={(role) => insertReference(roleReference, role)} /> : mention && candidates.length ? <MentionMenu inputs={candidates} allInputs={inputs} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} disabledReason={(input) => seedanceModel ? seedanceMentionResourceDisabledReason(value, mentionResources, { nodeId: input.nodeId, kind: input.type }, seedanceModel) : ""} warning={(input) => seedanceModel ? seedanceMentionResourceWarning(value, mentionResources, { nodeId: input.nodeId, kind: input.type }, seedanceModel) : ""} onSelect={selectReference} /> : null}
             </div>
             {imagePreview ? <Image src={imagePreview} alt="引用图片预览" style={{ display: "none" }} preview={{ visible: true, src: imagePreview, onVisibleChange: (visible) => !visible && setImagePreview(null) }} /> : null}
         </div>
@@ -230,7 +230,7 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose, seedanc
 
 }
 
-function RoleMenu({ input, activeIndex, theme, disabledReason, onSelect }: { input: NodeGenerationInput; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; disabledReason: (role: SeedanceImageRole) => string; onSelect: (role: SeedanceImageRole) => void }) {
+function RoleMenu({ input, activeIndex, theme, disabledReason, warning, onSelect }: { input: NodeGenerationInput; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; disabledReason: (role: SeedanceImageRole) => string; warning: (role: SeedanceImageRole) => string; onSelect: (role: SeedanceImageRole) => void }) {
     const selectedRef = useRef(false);
     const selectRole = (role: SeedanceImageRole) => {
         if (selectedRef.current || disabledReason(role)) return;
@@ -243,10 +243,11 @@ function RoleMenu({ input, activeIndex, theme, disabledReason, onSelect }: { inp
             <div className="px-2 py-1 text-[11px] opacity-55">{input.title} 用作</div>
             {CANVAS_SEEDANCE_IMAGE_ROLES.map((role, index) => {
                 const reason = disabledReason(role.value);
+                const hint = warning(role.value);
                 return (
-                    <button key={role.value} type="button" disabled={Boolean(reason)} className="block w-full rounded-lg px-2 py-1.5 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-40" style={{ background: !reason && index === activeIndex ? theme.toolbar.activeBg : "transparent", color: !reason && index === activeIndex ? theme.toolbar.activeText : theme.node.text }} title={reason} onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); selectRole(role.value); }}>
+                    <button key={role.value} type="button" disabled={Boolean(reason)} className="block w-full rounded-lg px-2 py-1.5 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-40" style={{ background: !reason && index === activeIndex ? theme.toolbar.activeBg : "transparent", color: !reason && index === activeIndex ? theme.toolbar.activeText : theme.node.text }} title={reason || hint} onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); selectRole(role.value); }}>
                         <span className="block font-medium">{role.label}</span>
-                        <span className="block opacity-60">{reason || role.description}</span>
+                        <span className="block opacity-60">{reason || hint || role.description}</span>
                     </button>
                 );
             })}
@@ -254,7 +255,7 @@ function RoleMenu({ input, activeIndex, theme, disabledReason, onSelect }: { inp
     );
 }
 
-function MentionMenu({ inputs, allInputs, activeIndex, theme, disabledReason, onSelect }: { inputs: NodeGenerationInput[]; allInputs: NodeGenerationInput[]; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; disabledReason: (input: NodeGenerationInput) => string; onSelect: (input: NodeGenerationInput) => void }) {
+function MentionMenu({ inputs, allInputs, activeIndex, theme, disabledReason, warning, onSelect }: { inputs: NodeGenerationInput[]; allInputs: NodeGenerationInput[]; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; disabledReason: (input: NodeGenerationInput) => string; warning: (input: NodeGenerationInput) => string; onSelect: (input: NodeGenerationInput) => void }) {
     const selectedRef = useRef(false);
     const selectInput = (input: NodeGenerationInput) => {
         if (selectedRef.current || disabledReason(input)) return;
@@ -266,13 +267,14 @@ function MentionMenu({ inputs, allInputs, activeIndex, theme, disabledReason, on
         <div className="absolute left-2 top-[calc(100%+6px)] z-[90] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }}>
             {inputs.map((input, index) => {
                 const reason = disabledReason(input);
+                const hint = warning(input);
                 return <button
                     key={input.nodeId}
                     type="button"
                     disabled={Boolean(reason)}
                     className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-40"
                     style={{ background: !reason && index === activeIndex ? theme.toolbar.activeBg : "transparent", color: !reason && index === activeIndex ? theme.toolbar.activeText : theme.node.text }}
-                    title={reason}
+                    title={reason || hint}
                     onMouseDown={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -282,7 +284,7 @@ function MentionMenu({ inputs, allInputs, activeIndex, theme, disabledReason, on
                     <ResourcePreview input={input} />
                     <span className="min-w-0 flex-1">
                         <span className="block font-medium">{resourceLabel(input, allInputs)}</span>
-                        <span className="block truncate opacity-65">{reason || input.text || input.title}</span>
+                        <span className="block truncate opacity-65">{reason || hint || input.text || input.title}</span>
                     </span>
                 </button>
             })}

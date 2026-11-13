@@ -29,6 +29,7 @@ describe("canvas prompt keyboard behavior", () => {
         expect(textareaSource).toContain('result += `@[node:${nodeId}${role ? `;role:${role}` : ""}]`');
         expect(textareaSource).toContain("CANVAS_SEEDANCE_IMAGE_ROLES");
         expect(textareaSource).toContain("seedanceMentionRoleDisabledReason");
+        expect(textareaSource).toContain("seedanceMentionRoleWarning");
         expect(textareaSource).toContain("refreshReferenceChipLabels");
     });
 
