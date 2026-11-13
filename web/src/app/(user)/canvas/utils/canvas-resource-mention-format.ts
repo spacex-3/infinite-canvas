@@ -23,13 +23,15 @@ export function hasSeedanceFrameMention(value: string) {
 }
 
 export function canvasResourceMentionLabels(value: string, resources: CanvasMentionResource[]) {
-    const resourceByNodeId = new Map(resources.map((resource) => [resource.nodeId, resource]));
+    const mentionedNodeIds = new Set(parseCanvasResourceMentionTokens(value).map((token) => token.nodeId));
     const labels = new Map<string, string>();
+    const seenNodeIds = new Set<string>();
     const counts: Record<CanvasResourceKind, number> = { image: 0, video: 0, audio: 0, text: 0 };
-    for (const token of parseCanvasResourceMentionTokens(value)) {
-        const resource = resourceByNodeId.get(token.nodeId);
-        if (!resource || labels.has(token.nodeId)) continue;
-        labels.set(token.nodeId, canvasMentionLabel(resource.kind, counts[resource.kind]++));
+    for (const resource of resources) {
+        if (seenNodeIds.has(resource.nodeId)) continue;
+        seenNodeIds.add(resource.nodeId);
+        const label = canvasMentionLabel(resource.kind, counts[resource.kind]++);
+        if (mentionedNodeIds.has(resource.nodeId)) labels.set(resource.nodeId, label);
     }
     return labels;
 }

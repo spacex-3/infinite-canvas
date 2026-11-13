@@ -8,7 +8,7 @@ import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { SeedanceImageRole } from "@/types/image";
-import { CANVAS_RESOURCE_MENTION_TOKEN_PATTERN, CANVAS_SEEDANCE_IMAGE_ROLES, canvasResourceMentionLabels, canvasResourceMentionRoleLabel, seedanceMentionResourceDisabledReason, seedanceMentionResourceWarning, seedanceMentionRoleDisabledReason, seedanceMentionRoleWarning } from "../utils/canvas-resource-mention-format";
+import { CANVAS_RESOURCE_MENTION_TOKEN_PATTERN, CANVAS_SEEDANCE_IMAGE_ROLES, canvasResourceMentionRoleLabel, seedanceMentionResourceDisabledReason, seedanceMentionResourceWarning, seedanceMentionRoleDisabledReason, seedanceMentionRoleWarning } from "../utils/canvas-resource-mention-format";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 import { matchesCanvasReferenceQuery, readCanvasReferenceMention, shouldResetCanvasReferenceSelection } from "../utils/canvas-resource-query";
 
@@ -303,13 +303,12 @@ function ReferencePreview({ reference }: { reference: CanvasResourceReference })
 
 function renderEditorValue(editor: HTMLElement, value: string, referenceByNodeId: Map<string, CanvasResourceReference>, theme: (typeof canvasThemes)[keyof typeof canvasThemes]) {
     editor.textContent = "";
-    const labels = canvasResourceMentionLabels(value, Array.from(referenceByNodeId.values()).map((reference) => ({ nodeId: reference.nodeId, kind: reference.kind })));
     let lastIndex = 0;
     for (const match of value.matchAll(CANVAS_RESOURCE_MENTION_TOKEN_PATTERN)) {
         if (match.index === undefined) continue;
         if (match.index > lastIndex) editor.append(document.createTextNode(value.slice(lastIndex, match.index)));
         const reference = referenceByNodeId.get(match[1]);
-        editor.append(reference ? createReferenceChip(reference, theme, match[2] as SeedanceImageRole | undefined, labels.get(reference.nodeId) || reference.label) : document.createTextNode(match[0]));
+        editor.append(reference ? createReferenceChip(reference, theme, match[2] as SeedanceImageRole | undefined, reference.label) : document.createTextNode(match[0]));
         lastIndex = match.index + match[0].length;
     }
     if (lastIndex < value.length) editor.append(document.createTextNode(value.slice(lastIndex)));
@@ -330,20 +329,12 @@ function createReferenceChip(reference: CanvasResourceReference, theme: (typeof 
 }
 
 function refreshReferenceChipLabels(editor: HTMLElement, referenceByNodeId: Map<string, CanvasResourceReference>) {
-    const labels = new Map<string, string>();
-    const counts = { image: 0, video: 0, audio: 0, text: 0 };
     editor.querySelectorAll<HTMLElement>("[data-reference-node-id]").forEach((chip) => {
         const nodeId = chip.dataset.referenceNodeId || "";
         const reference = referenceByNodeId.get(nodeId);
         if (!reference) return;
-        let label = labels.get(nodeId);
-        if (!label) {
-            const index = counts[reference.kind]++;
-            label = reference.kind === "image" ? `图片${index + 1}` : reference.kind === "video" ? `视频${index + 1}` : reference.kind === "audio" ? `音频${index + 1}` : `文本${index + 1}`;
-            labels.set(nodeId, label);
-        }
         const roleLabel = canvasResourceMentionRoleLabel(chip.dataset.referenceRole as SeedanceImageRole | undefined);
-        chip.textContent = `@${label}${roleLabel ? ` · ${roleLabel}` : ""}`;
+        chip.textContent = `@${reference.label}${roleLabel ? ` · ${roleLabel}` : ""}`;
     });
 }
 

@@ -143,7 +143,7 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose, seedanc
             <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-baseline gap-2">
                     <div className="shrink-0 text-xs font-semibold">组装提示词</div>
-                    <div className="truncate text-[11px] opacity-55">@ 引用已连接素材，发送前按当前连接重新编号</div>
+                    <div className="truncate text-[11px] opacity-55">@ 引用已连接素材，编号按当前连接顺序固定</div>
                 </div>
                 <Button size="small" type="text" className="!h-7 !w-7 !min-w-7 !p-0" icon={<X className="size-3.5" />} onClick={onClose} />
             </div>
@@ -334,18 +334,13 @@ function createReferenceChip(input: NodeGenerationInput, theme: (typeof canvasTh
 }
 
 function refreshReferenceChipLabels(editor: HTMLElement, referenceById: Map<string, NodeGenerationInput>) {
-    const labels = new Map<string, string>();
-    const counts = { image: 0, video: 0, audio: 0, text: 0 };
+    const inputs = Array.from(referenceById.values());
+    const labels = canvasResourceMentionLabels(serializeEditor(editor), inputs.map((input) => ({ nodeId: input.nodeId, kind: input.type })));
     editor.querySelectorAll<HTMLElement>("[data-reference-node-id]").forEach((chip) => {
         const nodeId = chip.dataset.referenceNodeId || "";
         const input = referenceById.get(nodeId);
         if (!input) return;
-        let label = labels.get(nodeId);
-        if (!label) {
-            const index = counts[input.type]++;
-            label = input.type === "image" ? `图片${index + 1}` : input.type === "video" ? `视频${index + 1}` : input.type === "audio" ? `音频${index + 1}` : `文本${index + 1}`;
-            labels.set(nodeId, label);
-        }
+        const label = labels.get(nodeId) || resourceLabel(input, inputs);
         const text = chip.querySelector<HTMLElement>("[data-reference-label]");
         const roleLabel = canvasResourceMentionRoleLabel(chip.dataset.referenceRole as SeedanceImageRole | undefined);
         if (text) text.textContent = `@${label}${roleLabel ? ` · ${roleLabel}` : ""}`;

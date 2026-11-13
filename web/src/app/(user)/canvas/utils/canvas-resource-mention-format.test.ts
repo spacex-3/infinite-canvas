@@ -28,17 +28,15 @@ describe("canvas resource mention formatting", () => {
         expect(canonicalizeCanvasResourceMentionText("把 图片1 的车换进 视频1", references)).toBe("把 @[node:image-1] 的车换进 @[node:video-1]");
     });
 
-    test("numbers only selected resources by first mention order", () => {
+    test("keeps connected resource numbers when the second image is mentioned first", () => {
         const resources = [
             ...references,
             { id: "image-2", nodeId: "image-2", kind: "image" as const, label: "图片2", title: "Lake", active: true },
         ];
         const labels = canvasResourceMentionLabels("@[node:image-2] @[node:video-1] @[node:image-1]", resources);
-        expect(Array.from(labels.entries())).toEqual([
-            ["image-2", "图片1"],
-            ["video-1", "视频1"],
-            ["image-1", "图片2"],
-        ]);
+        expect(labels.get("image-1")).toBe("图片1");
+        expect(labels.get("image-2")).toBe("图片2");
+        expect(labels.get("video-1")).toBe("视频1");
     });
 
     test("keeps unverified frame combinations selectable and explains the risk", () => {
