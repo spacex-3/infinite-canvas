@@ -1,5 +1,6 @@
 import type { CanvasResourceReference } from "./canvas-resource-references";
 import { isSeedance25Model, seedanceReferenceLimitsForModel } from "@/lib/seedance-video";
+import { isMiniMaxH3VideoModel, MINIMAX_H3_REFERENCE_LIMITS } from "@/lib/minimax-h3-video";
 import type { SeedanceImageRole } from "@/types/image";
 import type { CanvasResourceKind } from "./canvas-resource-references";
 
@@ -52,7 +53,7 @@ export function seedanceMentionResourceWarning(value: string, resources: CanvasM
     if ((resource.kind === "video" || resource.kind === "audio") && resource.durationMs && (resource.durationMs < 2000 || resource.durationMs > 15000)) return "素材时长超出当前线路已验证的 2-15 秒，仍可提交";
     if (resource.kind === "video" && resource.durationMs && state.videoDurationMs + resource.durationMs > 15000) return "参考视频总时长超出当前线路已验证的 15 秒，仍可提交";
     if (resource.kind === "audio" && resource.durationMs && state.audioDurationMs + resource.durationMs > 15000) return "参考音频总时长超出当前线路已验证的 15 秒，仍可提交";
-    const limits = seedanceReferenceLimitsForModel(model);
+    const limits = referenceLimitsForModel(model);
     const nextKindCount = resource.kind === "video" ? state.videos + 1 : state.audios + 1;
     const kindLimit = resource.kind === "video" ? limits.videos : limits.audios;
     if (nextKindCount > kindLimit) return `已超过当前线路验证的 ${kindLimit} 个参考${resource.kind === "video" ? "视频" : "音频"}，仍可提交`;
@@ -84,12 +85,16 @@ export function seedanceMentionRoleWarning(value: string, resources: CanvasMenti
         return `首尾帧尺寸不同（${resource.width}x${resource.height} / ${pairedFrame.width}x${pairedFrame.height}），仍可提交`;
     }
     if (state.nodeIds.has(resource.nodeId)) return "";
-    const limits = seedanceReferenceLimitsForModel(model);
+    const limits = referenceLimitsForModel(model);
     if (state.images + 1 > limits.images) return `已超过当前线路验证的 ${limits.images} 张参考图片，仍可提交`;
     if (state.images + state.videos + state.audios + 1 > limits.total) return `已超过当前线路验证的 ${limits.total} 项参考素材，仍可提交`;
-    if (role !== "reference_image" && !isSeedance25Model(model)) return "当前线路未验证该模型的首尾帧能力，实际以上游返回为准";
+    if (role !== "reference_image" && !isSeedance25Model(model) && !isMiniMaxH3VideoModel(model)) return "当前线路未验证该模型的首尾帧能力，实际以上游返回为准";
     if (role !== "reference_image") return "当前线路已有首尾帧成功记录；当前组合仍以上游返回为准";
     return "";
+}
+
+function referenceLimitsForModel(model: string) {
+    return isMiniMaxH3VideoModel(model) ? MINIMAX_H3_REFERENCE_LIMITS : seedanceReferenceLimitsForModel(model);
 }
 
 function seedanceMentionState(value: string, resources: CanvasMentionResource[]) {

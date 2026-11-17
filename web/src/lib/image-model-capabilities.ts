@@ -40,7 +40,7 @@ export function getImageModelCapabilities(model: string): ImageModelCapabilities
     const nativeVariant = value.match(/^gpt-image-(?:2\.5|2\.6)-(?:flare|sunburst)-(1k|2k|4k)$/);
     const fixedVariant = value.match(/^gpt-image-2-(1k|2k|4k)$/);
     const supersampling = /^gpt-image-2\.6-(?:flare|sunburst)$/.test(value);
-    const isGeminiPreview = GEMINI_PREVIEW_MODELS.has(value);
+    const isGeminiPreview = isGeminiPreviewImageModel(value);
     const isWeb = GPT_WEB_MODELS.has(value);
     const lockedResolution = nativeVariant?.[1]?.toUpperCase() || fixedVariant?.[1]?.toUpperCase();
 
@@ -104,7 +104,7 @@ export function normalizeImageQualityForModel(model: string, quality: string) {
     const capabilities = getImageModelCapabilities(model);
     if (!capabilities.qualityOptions.length) return undefined;
     const value = quality.trim().toLowerCase();
-    if (GEMINI_PREVIEW_MODELS.has(model.trim().toLowerCase())) {
+    if (isGeminiPreviewImageModel(model)) {
         if (value === "4k" || value === "high") return "4k";
         if (value === "2k" || value === "medium" || value === "hd") return "2k";
         return "1k";
@@ -120,6 +120,11 @@ export function normalizeImageQualityForModel(model: string, quality: string) {
     if (value === "2k") return "medium";
     if (value === "4k") return "high";
     return undefined;
+}
+
+function isGeminiPreviewImageModel(model: string) {
+    const value = model.trim().toLowerCase();
+    return GEMINI_PREVIEW_MODELS.has(value) || (value.includes("gemini") && value.includes("image") && value.endsWith("-preview"));
 }
 
 export function imageQualityLabelForModel(model: string, quality: string) {

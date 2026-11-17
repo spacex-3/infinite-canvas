@@ -48,7 +48,8 @@ const groupCapabilityLabel: Record<string, string> = {
     [ZPIKA_GROUP_IDS.text]: "文字 / 音频",
     [ZPIKA_GROUP_IDS.openaiImage]: "图片接口（OpenAI 格式）",
     [ZPIKA_GROUP_IDS.geminiImage]: "Gemini 画图（原生）",
-    [ZPIKA_GROUP_IDS.video]: "视频",
+    [ZPIKA_GROUP_IDS.video]: "Seedance 视频",
+    [ZPIKA_GROUP_IDS.minimaxVideo]: "MiniMax 视频",
 };
 
 const directHostTooltip = "当前画布已配置直连域名，可直接使用。如有需要请单独联系站长获取";
@@ -137,7 +138,7 @@ export function AppConfigModal() {
             updateConfig("imageModel", model);
             return;
         }
-        if (channel.id === ZPIKA_GROUP_IDS.video) {
+        if (channel.id === ZPIKA_GROUP_IDS.video || channel.id === ZPIKA_GROUP_IDS.minimaxVideo) {
             if (!channel.videoModels.length) return;
             if (config.videoChannelId && config.videoChannelId !== channelId && config.videoModel) return;
             const model = channel.videoModels.includes(preferred) ? preferred : channel.videoModels[0];
@@ -169,7 +170,7 @@ export function AppConfigModal() {
             patch.videoModels = [];
             patch.textModels = [];
             patch.audioModels = [];
-        } else if (selectedChannel.id === ZPIKA_GROUP_IDS.video) {
+        } else if (selectedChannel.id === ZPIKA_GROUP_IDS.video || selectedChannel.id === ZPIKA_GROUP_IDS.minimaxVideo) {
             patch.models = next;
             patch.videoModels = next;
             patch.imageModels = [];

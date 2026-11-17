@@ -199,6 +199,7 @@ function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) 
 
 export async function requestGeneration(config: AiConfig, prompt: string, onProgress?: GenerationProgressCallback, onTaskRecovery?: ImageTaskRecoveryCallback) {
     config = resolveCustomChannelConfig(config, "image", (config.model || config.imageModel).trim());
+    assertImageProtocolModel(config);
     const requestedCount = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     if (config.channelMode === "local" && config.protocol === "gemini") return requestGeminiImage(config, prompt, [], requestedCount, onProgress);
     const capabilities = getImageModelCapabilities(config.model);
@@ -238,6 +239,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, onProg
 
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, onProgress?: GenerationProgressCallback, onTaskRecovery?: ImageTaskRecoveryCallback) {
     config = resolveCustomChannelConfig(config, "image", (config.model || config.imageModel).trim());
+    assertImageProtocolModel(config);
     const requestedCount = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const requestPrompt = buildImageReferencePromptText(prompt, references);
     const capabilities = getImageModelCapabilities(config.model);
@@ -289,6 +291,13 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
     }
+}
+
+function assertImageProtocolModel(config: Pick<AiConfig, "channelMode" | "protocol" | "model">) {
+    if (config.channelMode !== "local" || !config.model.toLowerCase().includes("gemini") || !config.model.toLowerCase().includes("image")) return;
+    const preview = config.model.toLowerCase().endsWith("-preview");
+    if (config.protocol === "gemini" && preview) throw new Error("带 -preview 的 Gemini 图片模型请放在 OpenAI 图片分组使用");
+    if (config.protocol !== "gemini" && !preview) throw new Error("不带 -preview 的 Gemini 图片模型请放在 Gemini 原生分组使用");
 }
 
 export async function recoverImageGeneration(config: AiConfig, recovery: ImageTaskRecovery, onProgress?: GenerationProgressCallback) {

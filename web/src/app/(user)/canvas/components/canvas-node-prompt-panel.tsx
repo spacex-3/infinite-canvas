@@ -8,6 +8,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, isModelAvailableForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { CreditSymbol, requestCreditCost, shouldShowRequestCreditCost } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { isMiniMaxH3VideoModel, normalizeMiniMaxH3Resolution } from "@/lib/minimax-h3-video";
 import { isSeedance25Model, isSeedanceVideoModel, normalizeSeedanceResolution } from "@/lib/seedance-video";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
@@ -124,7 +125,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
             <CanvasResourceMentionTextarea
                 value={prompt}
                 references={mentionReferences}
-                seedanceModel={mode === "video" && isSeedanceVideoModel(config.model) ? config.model : undefined}
+                seedanceModel={mode === "video" && (isSeedanceVideoModel(config.model) || isMiniMaxH3VideoModel(config.model)) ? config.model : undefined}
                 onChange={updatePrompt}
                 className="thin-scrollbar w-full resize-none overflow-y-auto rounded-xl border px-3 py-2 text-sm leading-5 outline-none"
                 style={{ height: textareaHeight, minHeight: MIN_TEXTAREA_HEIGHT, background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}
@@ -245,6 +246,7 @@ function videoConfigPatch(key: keyof AiConfig, value: string) {
 }
 
 function videoModelPatch(config: AiConfig, model: string) {
+    if (isMiniMaxH3VideoModel(model)) return { model, vquality: normalizeMiniMaxH3Resolution(config.vquality) };
     return isSeedanceVideoModel(model) ? { model, vquality: normalizeSeedanceResolution(config.vquality, model) } : { model };
 }
 

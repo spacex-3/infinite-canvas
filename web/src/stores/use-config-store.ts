@@ -69,7 +69,7 @@ export type AiConfig = {
 };
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
-export const CONFIG_STORE_VERSION = 10;
+export const CONFIG_STORE_VERSION = 11;
 
 export const ZPIKA_BASE_URL = "https://vip.zpika.com";
 export const ZPIKA_DIRECT_BASE_URL = "https://aivideo.zpika.com";
@@ -79,10 +79,12 @@ export const ZPIKA_GROUP_IDS = {
     openaiImage: "zpika-openai-image",
     geminiImage: "zpika-gemini-image",
     video: "zpika-video",
+    minimaxVideo: "zpika-minimax-video",
 } as const;
 
 export const ZPIKA_SEEDANCE_MODELS = ["doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-0-mini-260615", "doubao-seedance-2-5-260628"] as const;
 export const ZPIKA_VIDEO_MODELS = [ZPIKA_SEEDANCE_MODELS[2], ZPIKA_SEEDANCE_MODELS[0], ZPIKA_SEEDANCE_MODELS[1], ZPIKA_SEEDANCE_MODELS[3], "veo-omni-flash", "veo-omni-flash-video-edit"] as const;
+export const ZPIKA_MINIMAX_VIDEO_MODELS = ["MiniMax-H3"] as const;
 export const ZPIKA_TEXT_MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const;
 export const ZPIKA_OPENAI_IMAGE_MODELS = [
     "gemini-3.1-flash-image-preview",
@@ -110,16 +112,17 @@ export const ZPIKA_OPENAI_IMAGE_MODELS = [
     "gpt-image-2.6-sunburst-2k",
     "gpt-image-2.6-sunburst-4k",
 ] as const;
-export const ZPIKA_GEMINI_IMAGE_MODELS = ["gemini-3.1-flash-image", "gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview", "gemini-3.0-pro-image"] as const;
+export const ZPIKA_GEMINI_IMAGE_MODELS = ["gemini-3.1-flash-image", "gemini-3.0-pro-image"] as const;
 export const ZPIKA_IMAGE_MODELS = [...ZPIKA_OPENAI_IMAGE_MODELS, ...ZPIKA_GEMINI_IMAGE_MODELS] as const;
-export const ZPIKA_BUILTIN_MODELS = [...ZPIKA_TEXT_MODELS, ...ZPIKA_IMAGE_MODELS, ...ZPIKA_VIDEO_MODELS] as const;
+export const ZPIKA_BUILTIN_MODELS = [...ZPIKA_TEXT_MODELS, ...ZPIKA_IMAGE_MODELS, ...ZPIKA_VIDEO_MODELS, ...ZPIKA_MINIMAX_VIDEO_MODELS] as const;
 const REMOVED_ZPIKA_IMAGE_ALIASES = new Set(["nana-banana-2", "nana-banana-pro"]);
 
 export const ZPIKA_PREFERRED_MODELS = {
     text: ZPIKA_TEXT_MODELS,
     openaiImage: [ZPIKA_OPENAI_IMAGE_MODELS[0], ZPIKA_OPENAI_IMAGE_MODELS[1], ZPIKA_OPENAI_IMAGE_MODELS[2], ZPIKA_OPENAI_IMAGE_MODELS[6]],
-    geminiImage: ZPIKA_GEMINI_IMAGE_MODELS,
+    geminiImage: [],
     video: ZPIKA_SEEDANCE_MODELS,
+    minimaxVideo: ZPIKA_MINIMAX_VIDEO_MODELS,
 } as const;
 
 export const ZPIKA_DEFAULT_MODELS = {
@@ -127,6 +130,7 @@ export const ZPIKA_DEFAULT_MODELS = {
     openaiImage: ZPIKA_OPENAI_IMAGE_MODELS[0],
     geminiImage: ZPIKA_GEMINI_IMAGE_MODELS[0],
     video: ZPIKA_SEEDANCE_MODELS[2],
+    minimaxVideo: ZPIKA_MINIMAX_VIDEO_MODELS[0],
 } as const;
 
 const defaultCustomChannels: CustomAiChannel[] = [
@@ -177,7 +181,7 @@ const defaultCustomChannels: CustomAiChannel[] = [
     },
     {
         id: ZPIKA_GROUP_IDS.video,
-        name: "视频",
+        name: "Seedance 视频",
         protocol: "fpbrowser2api",
         baseUrl: ZPIKA_DIRECT_BASE_URL,
         apiKey: "",
@@ -187,6 +191,21 @@ const defaultCustomChannels: CustomAiChannel[] = [
         textModels: [],
         audioModels: [],
         preferredModels: [...ZPIKA_PREFERRED_MODELS.video],
+        hostMode: "direct",
+        locked: true,
+    },
+    {
+        id: ZPIKA_GROUP_IDS.minimaxVideo,
+        name: "MiniMax 视频",
+        protocol: "openai",
+        baseUrl: ZPIKA_DIRECT_BASE_URL,
+        apiKey: "",
+        models: [],
+        imageModels: [],
+        videoModels: [],
+        textModels: [],
+        audioModels: [],
+        preferredModels: [...ZPIKA_PREFERRED_MODELS.minimaxVideo],
         hostMode: "direct",
         locked: true,
     },
@@ -363,7 +382,7 @@ function preferredModel(models: string[], predicate: (model: string) => boolean)
 
 function isVideoModelName(model: string) {
     const value = model.toLowerCase();
-    return value.includes("seedance") || value.includes("video") || value.includes("sora") || value.includes("veo") || value.includes("kling") || value.includes("wan") || value.includes("hailuo") || value.includes("omni-flash");
+    return value === "minimax-h3" || value.includes("seedance") || value.includes("video") || value.includes("sora") || value.includes("veo") || value.includes("kling") || value.includes("wan") || value.includes("hailuo") || value.includes("omni-flash");
 }
 
 function isImageModelName(model: string) {
@@ -419,9 +438,10 @@ export function filterModelsByCapability(models: string[], capability?: ModelCap
 
 export function filterModelsForZpikaChannel(channelId: string, models: string[]) {
     const normalized = normalizeModelList(models);
-    if (channelId === ZPIKA_GROUP_IDS.openaiImage) return normalized.filter((model) => isOpenAiImageModelName(model) || isGeminiImageModelName(model));
-    if (channelId === ZPIKA_GROUP_IDS.geminiImage) return normalized.filter(isGeminiImageModelName);
+    if (channelId === ZPIKA_GROUP_IDS.openaiImage) return normalized.filter((model) => isOpenAiImageModelName(model) || (isGeminiImageModelName(model) && model.toLowerCase().endsWith("-preview")));
+    if (channelId === ZPIKA_GROUP_IDS.geminiImage) return normalized.filter((model) => isGeminiImageModelName(model) && !model.toLowerCase().endsWith("-preview"));
     if (channelId === ZPIKA_GROUP_IDS.video) return normalized.filter((model) => model.toLowerCase().includes("seedance"));
+    if (channelId === ZPIKA_GROUP_IDS.minimaxVideo) return normalized.filter((model) => model.toLowerCase() === "minimax-h3");
     if (channelId === ZPIKA_GROUP_IDS.text) return normalized.filter((model) => isTextModelName(model) || isAudioModelName(model));
     return [];
 }
@@ -543,13 +563,13 @@ export function createZpikaPresetChannels(seed: Partial<CustomAiChannel>[] = [])
     return defaultCustomChannels.map((template) => {
         const existing = byId.get(template.id);
         const models = filterModelsForZpikaChannel(template.id, existing?.models || []).filter((model) => !REMOVED_ZPIKA_IMAGE_ALIASES.has(model));
-        const preferredModels = normalizeModelList([...(template.preferredModels || []), ...(existing?.preferredModels || [])]);
+        const preferredModels = template.id === ZPIKA_GROUP_IDS.geminiImage ? [] : normalizeModelList([...(template.preferredModels || []), ...(existing?.preferredModels || [])]);
         const capabilityModels = (raw: string[] | undefined) => {
             const selected = normalizeModelList(raw || []).filter((model) => models.includes(model));
             return selected.length ? selected : models;
         };
         const isImageGroup = template.id === ZPIKA_GROUP_IDS.openaiImage || template.id === ZPIKA_GROUP_IDS.geminiImage;
-        const isVideoGroup = template.id === ZPIKA_GROUP_IDS.video;
+        const isVideoGroup = template.id === ZPIKA_GROUP_IDS.video || template.id === ZPIKA_GROUP_IDS.minimaxVideo;
         const isTextGroup = template.id === ZPIKA_GROUP_IDS.text;
         return {
             ...template,
@@ -572,9 +592,19 @@ export function migrateConfigToZpikaPreset(config: Partial<AiConfig>, persistedV
     const legacyChannels = Array.isArray(config.customChannels) ? config.customChannels : [];
     const hasPresetChannels = legacyChannels.some((channel) => channel.locked || Object.values(ZPIKA_GROUP_IDS).includes(channel.id as (typeof ZPIKA_GROUP_IDS)[keyof typeof ZPIKA_GROUP_IDS]));
     const mapped = hasPresetChannels ? legacyChannels : mapLegacyChannelsToZpikaGroups(legacyChannels, config);
-    const customChannels = createZpikaPresetChannels(mapped);
+    let customChannels = createZpikaPresetChannels(mapped);
     const upgradeProductDefaults = persistedVersion < CONFIG_STORE_VERSION;
-    const upgradeImageDefault = upgradeProductDefaults && (!config.imageModel || REMOVED_ZPIKA_IMAGE_ALIASES.has(config.imageModel));
+    if (persistedVersion < 11) {
+        customChannels = customChannels.map((channel) =>
+            channel.id === ZPIKA_GROUP_IDS.geminiImage ? { ...channel, models: [], imageModels: [], preferredModels: [] } : channel,
+        );
+    }
+    const legacyImageChannel = legacyChannels.find((channel) => channel.id === config.imageChannelId);
+    const imageModel = config.imageModel || "";
+    const legacyGeminiDefault =
+        isGeminiImageModelName(imageModel) &&
+        (!imageModel.toLowerCase().endsWith("-preview") || config.imageChannelId === ZPIKA_GROUP_IDS.geminiImage || normalizeCustomChannelProtocol(legacyImageChannel?.protocol) === "gemini");
+    const upgradeImageDefault = upgradeProductDefaults && (!config.imageModel || REMOVED_ZPIKA_IMAGE_ALIASES.has(config.imageModel) || legacyGeminiDefault);
     const next: AiConfig = {
         ...base,
         baseUrl: ZPIKA_BASE_URL,
@@ -603,6 +633,7 @@ function mapLegacyChannelsToZpikaGroups(legacyChannels: CustomAiChannel[], confi
         [ZPIKA_GROUP_IDS.openaiImage]: { id: ZPIKA_GROUP_IDS.openaiImage, models: [], imageModels: [], preferredModels: [...ZPIKA_PREFERRED_MODELS.openaiImage] },
         [ZPIKA_GROUP_IDS.geminiImage]: { id: ZPIKA_GROUP_IDS.geminiImage, models: [], imageModels: [], preferredModels: [...ZPIKA_PREFERRED_MODELS.geminiImage] },
         [ZPIKA_GROUP_IDS.video]: { id: ZPIKA_GROUP_IDS.video, models: [], videoModels: [], preferredModels: [...ZPIKA_PREFERRED_MODELS.video] },
+        [ZPIKA_GROUP_IDS.minimaxVideo]: { id: ZPIKA_GROUP_IDS.minimaxVideo, models: [], videoModels: [], preferredModels: [...ZPIKA_PREFERRED_MODELS.minimaxVideo] },
     };
 
     const pushModels = (targetId: string, models: string[], capability: ModelCapability, apiKey?: string) => {
@@ -632,7 +663,9 @@ function mapLegacyChannelsToZpikaGroups(legacyChannels: CustomAiChannel[], confi
             pushModels(ZPIKA_GROUP_IDS.openaiImage, imageModels, "image", apiKey);
         }
         if (videoModels.length || protocol === "fpbrowser2api" || protocol === "zerofall") {
-            pushModels(ZPIKA_GROUP_IDS.video, videoModels.length ? videoModels : protocol === "fpbrowser2api" || protocol === "zerofall" ? normalizeModelList(channel.models) : [], "video", apiKey);
+            const resolvedVideoModels = videoModels.length ? videoModels : protocol === "fpbrowser2api" || protocol === "zerofall" ? normalizeModelList(channel.models) : [];
+            pushModels(ZPIKA_GROUP_IDS.video, resolvedVideoModels.filter((model) => model.toLowerCase() !== "minimax-h3"), "video", apiKey);
+            pushModels(ZPIKA_GROUP_IDS.minimaxVideo, resolvedVideoModels.filter((model) => model.toLowerCase() === "minimax-h3"), "video", apiKey);
         }
         if (textModels.length || audioModels.length || (protocol === "openai" && !imageModels.length && !videoModels.length)) {
             pushModels(ZPIKA_GROUP_IDS.text, textModels.length ? textModels : protocol === "openai" ? normalizeModelList(channel.models) : [], "text", apiKey);
@@ -644,6 +677,7 @@ function mapLegacyChannelsToZpikaGroups(legacyChannels: CustomAiChannel[], confi
             const name = `${channel.name || ""}`.toLowerCase();
             if (name.includes("gemini") && name.includes("图")) pushModels(ZPIKA_GROUP_IDS.geminiImage, [], "image", apiKey);
             else if (name.includes("openai") || name.includes("gpt-image") || name.includes("超分")) pushModels(ZPIKA_GROUP_IDS.openaiImage, [], "image", apiKey);
+            else if (name.includes("minimax")) pushModels(ZPIKA_GROUP_IDS.minimaxVideo, [], "video", apiKey);
             else if (name.includes("video") || name.includes("视频") || name.includes("veo") || name.includes("omni")) pushModels(ZPIKA_GROUP_IDS.video, [], "video", apiKey);
             else pushModels(ZPIKA_GROUP_IDS.text, [], "text", apiKey);
         }
@@ -653,6 +687,7 @@ function mapLegacyChannelsToZpikaGroups(legacyChannels: CustomAiChannel[], confi
     if (String(config.apiKey || "").trim()) {
         const key = String(config.apiKey || "").trim();
         for (const id of Object.keys(buckets)) {
+            if (id === ZPIKA_GROUP_IDS.minimaxVideo) continue;
             if (!buckets[id].apiKey) buckets[id].apiKey = key;
         }
     }
@@ -810,7 +845,7 @@ export function applyPreferredModelsToChannel(channel: CustomAiChannel, fetchedM
         patch.videoModels = [];
         patch.textModels = [];
         patch.audioModels = [];
-    } else if (channel.id === ZPIKA_GROUP_IDS.video) {
+    } else if (channel.id === ZPIKA_GROUP_IDS.video || channel.id === ZPIKA_GROUP_IDS.minimaxVideo) {
         patch.videoModels = usableModels;
         patch.imageModels = [];
         patch.textModels = [];
@@ -828,6 +863,7 @@ export function preferredDefaultForChannel(channel: CustomAiChannel) {
     if (channel.id === ZPIKA_GROUP_IDS.geminiImage) return ZPIKA_DEFAULT_MODELS.geminiImage;
     if (channel.id === ZPIKA_GROUP_IDS.openaiImage) return ZPIKA_DEFAULT_MODELS.openaiImage;
     if (channel.id === ZPIKA_GROUP_IDS.video) return ZPIKA_DEFAULT_MODELS.video;
+    if (channel.id === ZPIKA_GROUP_IDS.minimaxVideo) return ZPIKA_DEFAULT_MODELS.minimaxVideo;
     return ZPIKA_DEFAULT_MODELS.text;
 }
 

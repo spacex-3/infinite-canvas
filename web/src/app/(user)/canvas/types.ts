@@ -36,7 +36,7 @@ export type CanvasNodeMetadata = {
     imageResultUrl?: string;
     videoTaskId?: string;
     videoTaskModel?: string;
-    videoTaskProtocol?: "seedance-v1" | "seedance-native";
+    videoTaskProtocol?: "seedance-v1" | "seedance-native" | "minimax-h3";
     videoTaskStatus?: "submitted" | "completed";
     videoResultUrl?: string;
     fontSize?: number;

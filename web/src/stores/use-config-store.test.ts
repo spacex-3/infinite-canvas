@@ -64,13 +64,14 @@ describe("custom channel access", () => {
         expect(defaultConfig.videoModel).toBe("doubao-seedance-2-0-mini-260615");
         expect(defaultConfig.textModel).toBe(ZPIKA_DEFAULT_MODELS.text);
         expect(defaultConfig.textModel).toBe("gpt-5.6-sol");
-        expect(defaultConfig.customChannels.map((channel) => channel.id)).toEqual([ZPIKA_GROUP_IDS.text, ZPIKA_GROUP_IDS.openaiImage, ZPIKA_GROUP_IDS.geminiImage, ZPIKA_GROUP_IDS.video]);
+        expect(defaultConfig.customChannels.map((channel) => channel.id)).toEqual([ZPIKA_GROUP_IDS.text, ZPIKA_GROUP_IDS.openaiImage, ZPIKA_GROUP_IDS.geminiImage, ZPIKA_GROUP_IDS.video, ZPIKA_GROUP_IDS.minimaxVideo]);
         expect(defaultConfig.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.text)?.hostMode).toBe("base");
         expect(defaultConfig.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.text)?.textModels).toEqual([]);
         expect(defaultConfig.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.openaiImage)?.imageModels).toEqual([]);
         expect(defaultConfig.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.geminiImage)?.hostMode).toBe("direct");
         expect(defaultConfig.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.video)?.hostMode).toBe("direct");
         expect(defaultConfig.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.video)?.videoModels).toEqual([]);
+        expect(defaultConfig.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.minimaxVideo)?.videoModels).toEqual([]);
     });
 
     test("upgrades generation defaults once for second-dev product settings", () => {
@@ -169,19 +170,14 @@ describe("custom channel access", () => {
             ],
         });
 
-        expect(migrated.customChannels).toHaveLength(4);
+        expect(migrated.customChannels).toHaveLength(5);
         expect(migrated.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.text)).toMatchObject({
             apiKey: "text-key",
             textModels: ["gpt-5.6-terra", "gpt-5.6-sol"],
             hostMode: "base",
             locked: true,
         });
-        expect(migrated.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.geminiImage)).toMatchObject({
-            apiKey: "gemini-key",
-            imageModels: ["gemini-3-pro-image-preview"],
-            hostMode: "direct",
-            protocol: "gemini",
-        });
+        expect(migrated.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.geminiImage)).toMatchObject({ apiKey: "gemini-key", imageModels: [], hostMode: "direct", protocol: "gemini" });
         expect(migrated.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.openaiImage)).toMatchObject({
             apiKey: "openai-image-key",
             imageModels: ["gpt-image-2"],
@@ -194,10 +190,10 @@ describe("custom channel access", () => {
             hostMode: "direct",
             protocol: "fpbrowser2api",
         });
-        expect(migrated.imageChannelId).toBe(ZPIKA_GROUP_IDS.geminiImage);
+        expect(migrated.imageChannelId).toBe(ZPIKA_GROUP_IDS.openaiImage);
         expect(migrated.videoChannelId).toBe(ZPIKA_GROUP_IDS.video);
         expect(migrated.textChannelId).toBe(ZPIKA_GROUP_IDS.text);
-        expect(migrated.imageModel).toBe("gemini-3-pro-image-preview");
+        expect(migrated.imageModel).toBe("gpt-image-2");
         expect(migrated.videoModel).toBe(ZPIKA_DEFAULT_MODELS.video);
         expect(migrated.textModel).toBe(ZPIKA_DEFAULT_MODELS.text);
     });
@@ -211,7 +207,7 @@ describe("custom channel access", () => {
             textChannelId: ZPIKA_GROUP_IDS.text,
             customChannels: defaultConfig.customChannels.map((channel) => {
                 if (channel.id === ZPIKA_GROUP_IDS.geminiImage) {
-                    return { ...channel, apiKey: "image-key", models: ["gemini-3-pro-image-preview"], imageModels: ["gemini-3-pro-image-preview"] };
+                    return { ...channel, apiKey: "image-key", models: ["gemini-3.1-flash-image"], imageModels: ["gemini-3.1-flash-image"] };
                 }
                 if (channel.id === ZPIKA_GROUP_IDS.video) {
                     return { ...channel, apiKey: "video-key", models: ["doubao-seedance-2-0-mini-260615"], videoModels: ["doubao-seedance-2-0-mini-260615"] };
@@ -223,11 +219,11 @@ describe("custom channel access", () => {
             }),
         };
 
-        expect(resolveCustomChannelConfig(config, "image", "gemini-3-pro-image-preview")).toMatchObject({
+        expect(resolveCustomChannelConfig(config, "image", "gemini-3.1-flash-image")).toMatchObject({
             protocol: "gemini",
             baseUrl: ZPIKA_DIRECT_BASE_URL,
             apiKey: "image-key",
-            model: "gemini-3-pro-image-preview",
+            model: "gemini-3.1-flash-image",
         });
         expect(resolveCustomChannelConfig(config, "video", "doubao-seedance-2-0-mini-260615")).toMatchObject({
             protocol: "fpbrowser2api",
@@ -245,11 +241,29 @@ describe("custom channel access", () => {
         expect(resolveChannelBaseUrl(config, { hostMode: "base", baseUrl: "https://ignored.example.com" })).toBe(ZPIKA_BASE_URL);
     });
 
-    test("auto-selects preferred models that exist in the fetched list", () => {
+    test("does not auto-select native Gemini models", () => {
         const channel = defaultConfig.customChannels.find((item) => item.id === ZPIKA_GROUP_IDS.geminiImage)!;
-        const patched = applyPreferredModelsToChannel(channel, ["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview", "other-image"]);
-        expect(patched.models).toEqual(["gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview"]);
-        expect(patched.imageModels).toEqual(["gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview"]);
+        const patched = applyPreferredModelsToChannel(channel, ["gemini-3.1-flash-image", "gemini-3.0-pro-image", "gemini-3.1-flash-image-preview"]);
+        expect(patched.models).toEqual([]);
+        expect(patched.imageModels).toEqual([]);
+    });
+
+    test("removes a persisted native Gemini default while keeping the original protocol available", () => {
+        const migrated = migrateConfigToZpikaPreset(
+            {
+                imageChannelId: ZPIKA_GROUP_IDS.geminiImage,
+                imageModel: "gemini-3.1-flash-image",
+                customChannels: defaultConfig.customChannels.map((channel) =>
+                    channel.id === ZPIKA_GROUP_IDS.geminiImage
+                        ? { ...channel, apiKey: "gemini-key", models: ["gemini-3.1-flash-image"], imageModels: ["gemini-3.1-flash-image"] }
+                        : channel,
+                ),
+            },
+            10,
+        );
+        expect(migrated.imageChannelId).toBe(ZPIKA_GROUP_IDS.openaiImage);
+        expect(migrated.imageModel).toBe(ZPIKA_DEFAULT_MODELS.openaiImage);
+        expect(migrated.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.geminiImage)).toMatchObject({ apiKey: "gemini-key", models: [], imageModels: [], protocol: "gemini" });
     });
 
     test("does not inject Seedance models when the key only returns Veo", () => {
@@ -270,7 +284,16 @@ describe("custom channel access", () => {
         expect(openaiChannel.protocol).toBe("openai");
         expect(geminiChannel.protocol).toBe("gemini");
         expect(filterModelsForZpikaChannel(openaiChannel.id, ["gemini-3.1-flash-image-preview", "gpt-image-2.6", "gpt-5.6-sol"])).toEqual(["gemini-3.1-flash-image-preview", "gpt-image-2.6"]);
-        expect(filterModelsForZpikaChannel(geminiChannel.id, ["gemini-3.1-flash-image-preview", "gpt-image-2.6"])).toEqual(["gemini-3.1-flash-image-preview"]);
+        expect(filterModelsForZpikaChannel(geminiChannel.id, ["gemini-3.1-flash-image", "gemini-3.1-flash-image-preview", "gpt-image-2.6"])).toEqual(["gemini-3.1-flash-image"]);
+    });
+
+    test("keeps MiniMax H3 in its own video key group", () => {
+        const seedance = defaultConfig.customChannels.find((item) => item.id === ZPIKA_GROUP_IDS.video)!;
+        const minimax = defaultConfig.customChannels.find((item) => item.id === ZPIKA_GROUP_IDS.minimaxVideo)!;
+        expect(filterModelsForZpikaChannel(seedance.id, ["MiniMax-H3", "doubao-seedance-2-0-mini-260615"])).toEqual(["doubao-seedance-2-0-mini-260615"]);
+        expect(filterModelsForZpikaChannel(minimax.id, ["MiniMax-H3", "doubao-seedance-2-0-mini-260615"])).toEqual(["MiniMax-H3"]);
+        const patched = applyPreferredModelsToChannel({ ...minimax, apiKey: "minimax-key" }, ["MiniMax-H3"]);
+        expect(patched.videoModels).toEqual(["MiniMax-H3"]);
     });
 
     test("removes the invalid nana-banana aliases from persisted zpika presets", () => {
@@ -300,15 +323,15 @@ describe("custom channel access", () => {
                     ? {
                           ...channel,
                           apiKey: "gemini-key",
-                          models: ["gemini-3-pro-image-preview"],
-                          imageModels: ["gemini-3-pro-image-preview"],
+                          models: ["gemini-3.1-flash-image"],
+                          imageModels: ["gemini-3.1-flash-image"],
                       }
                     : channel,
             ),
         };
         const effective = resolveEffectiveConfig(config, null, true);
         const gemini = effective.customChannels.find((channel) => channel.id === ZPIKA_GROUP_IDS.geminiImage);
-        expect(gemini).toMatchObject({ videoModels: [], textModels: [], audioModels: [], imageModels: ["gemini-3-pro-image-preview"] });
+        expect(gemini).toMatchObject({ videoModels: [], textModels: [], audioModels: [], imageModels: ["gemini-3.1-flash-image"] });
         expect(() => assertChannelSupportsCapability(config, "video")).toThrow("Gemini 原生图片协议仅支持图片生成和参考图编辑");
         expect(() => assertChannelSupportsCapability({ ...config, channelMode: "remote" }, "video")).not.toThrow();
     });
@@ -323,16 +346,16 @@ describe("custom channel access", () => {
                     return { ...channel, apiKey: "one", models: ["gpt-image-2"], imageModels: ["gpt-image-2"] };
                 }
                 if (channel.id === ZPIKA_GROUP_IDS.geminiImage) {
-                    return { ...channel, apiKey: "two", models: ["gemini-3-pro-image-preview"], imageModels: ["gemini-3-pro-image-preview"] };
+                    return { ...channel, apiKey: "two", models: ["gemini-3.1-flash-image"], imageModels: ["gemini-3.1-flash-image"] };
                 }
                 return channel;
             }),
         };
 
-        expect(resolveCustomChannelConfig(config, "image", "gemini-3-pro-image-preview")).toMatchObject({
+        expect(resolveCustomChannelConfig(config, "image", "gemini-3.1-flash-image")).toMatchObject({
             baseUrl: ZPIKA_DIRECT_BASE_URL,
             apiKey: "two",
-            model: "gemini-3-pro-image-preview",
+            model: "gemini-3.1-flash-image",
             protocol: "gemini",
         });
     });

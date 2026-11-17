@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import { Switch } from "antd";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
+import { isMiniMaxH3VideoModel, minimaxH3RatioOptions, minimaxH3ResolutionOptions, normalizeMiniMaxH3Duration, normalizeMiniMaxH3Ratio, normalizeMiniMaxH3Resolution } from "@/lib/minimax-h3-video";
 import { isOmniFlashVideoModel, omniFlashDurationOptions, omniFlashResolutionOptions, normalizeOmniFlashDuration, normalizeOmniFlashResolution } from "@/lib/omni-flash-video";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptionsForModel, seedanceMaxDuration, seedancePixelLabel, seedanceRatioOptions, seedanceResolutionOptionsForModel } from "@/lib/seedance-video";
 import { type CanvasTheme } from "@/lib/canvas-theme";
@@ -43,6 +44,9 @@ type VideoSettingsPanelProps = {
 };
 
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", forceAdaptiveRatio = false, followFirstFrameRatio = false }: VideoSettingsPanelProps) {
+    if (isMiniMaxH3VideoModel(config.model || config.videoModel)) {
+        return <MiniMaxH3VideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
+    }
     if (isSeedanceVideoConfig(config)) {
         return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} forceAdaptiveRatio={forceAdaptiveRatio} followFirstFrameRatio={followFirstFrameRatio} />;
     }
@@ -109,6 +113,49 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         ))}
                         <NumberInput value={seconds} min={1} max={20} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />
                     </div>
+                </SettingGroup>
+            </div>
+        </ImageSettingsTheme>
+    );
+}
+
+function MiniMaxH3VideoSettingsPanel({ config, onConfigChange, theme, showTitle, className }: VideoSettingsPanelProps) {
+    const resolution = normalizeMiniMaxH3Resolution(config.vquality);
+    const ratio = normalizeMiniMaxH3Ratio(config.videoSize);
+    const duration = normalizeMiniMaxH3Duration(config.videoSeconds);
+    return (
+        <ImageSettingsTheme theme={theme}>
+            <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
+                {showTitle ? <div className="text-lg font-semibold">视频设置</div> : null}
+                <SettingGroup title="分辨率" color={theme.node.muted}>
+                    <div className="grid grid-cols-2 gap-2.5">
+                        {minimaxH3ResolutionOptions.map((item) => (
+                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>
+                                {item.label}
+                            </OptionPill>
+                        ))}
+                    </div>
+                </SettingGroup>
+                <SettingGroup title="比例" color={theme.node.muted}>
+                    <div className="grid grid-cols-2 gap-2.5">
+                        {minimaxH3RatioOptions.map((item) => (
+                            <button key={item.value} type="button" className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent px-2 text-sm transition hover:opacity-80" style={{ borderColor: ratio === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onClick={() => onConfigChange("videoSize", item.value)}>
+                                <SizePreview width={ratioPreview(item.value).width} height={ratioPreview(item.value).height} color={theme.node.text} />
+                                <span>{item.label}</span>
+                                <span className="text-[11px] leading-none opacity-55">{item.value}</span>
+                            </button>
+                        ))}
+                    </div>
+                </SettingGroup>
+                <SettingGroup title="时长" color={theme.node.muted}>
+                    <div className="grid grid-cols-4 gap-2.5">
+                        {[4, 5, 8, 10, 15].map((value) => (
+                            <OptionPill key={value} selected={duration === value} theme={theme} onClick={() => onConfigChange("videoSeconds", String(value))}>
+                                {value}s
+                            </OptionPill>
+                        ))}
+                    </div>
+                    <NumberInput value={String(duration)} min={4} max={15} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />
                 </SettingGroup>
             </div>
         </ImageSettingsTheme>
@@ -251,7 +298,8 @@ function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, 
 }
 
 export function videoResolutionLabel(value: string) {
-    if (/^4k$/i.test(value)) return "4K";
+    if (/^[24]k$/i.test(value)) return value.toUpperCase();
+    if (/^768p$/i.test(value)) return "768P";
     return `${normalizeVideoResolutionValue(value)}p`;
 }
 

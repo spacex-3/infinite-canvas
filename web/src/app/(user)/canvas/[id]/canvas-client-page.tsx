@@ -17,6 +17,7 @@ import { nanoid } from "nanoid";
 import { getDataUrlByteSize, mapWithConcurrency, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { isSeedanceVideoModel } from "@/lib/seedance-video";
+import { isMiniMaxH3VideoModel, miniMaxH3ReferenceWarnings } from "@/lib/minimax-h3-video";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -1959,6 +1960,10 @@ function InfiniteCanvasPage() {
                 }
 
                 if (mode === "video") {
+                    if (isMiniMaxH3VideoModel(generationConfig.model)) {
+                        const warnings = miniMaxH3ReferenceWarnings(generationContext.referenceImages, generationContext.referenceVideos, generationContext.referenceAudios);
+                        if (warnings.length) message.warning(`${warnings.join("；")}；当前组合仍会完整提交，由接口最终校验`);
+                    }
                     const spec = nodeSizeFromRatio(generationConfig.videoSize, NODE_DEFAULT_SIZE[CanvasNodeType.Video].width, NODE_DEFAULT_SIZE[CanvasNodeType.Video].height) || NODE_DEFAULT_SIZE[CanvasNodeType.Video];
                     const isEmptyVideoNode = sourceNode?.type === CanvasNodeType.Video && !sourceNode.metadata?.content;
                     const videoId = isEmptyVideoNode ? nodeId : nanoid();
@@ -2415,7 +2420,7 @@ function InfiniteCanvasPage() {
                                     <CanvasConfigComposer
                                         value={panelNode.metadata?.composerContent ?? panelNode.metadata?.prompt ?? ""}
                                         inputs={configInputsById.get(panelNode.id) || []}
-                                        seedanceModel={panelNode.metadata?.generationMode === "video" && isSeedanceVideoModel(generationModelForMode(effectiveConfig, panelNode, "video")) ? generationModelForMode(effectiveConfig, panelNode, "video") : undefined}
+                                        seedanceModel={panelNode.metadata?.generationMode === "video" && (isSeedanceVideoModel(generationModelForMode(effectiveConfig, panelNode, "video")) || isMiniMaxH3VideoModel(generationModelForMode(effectiveConfig, panelNode, "video"))) ? generationModelForMode(effectiveConfig, panelNode, "video") : undefined}
                                         onChange={(composerContent) => handleConfigNodeChange(panelNode.id, { composerContent })}
                                         onClose={() => setDialogNodeId(null)}
                                     />

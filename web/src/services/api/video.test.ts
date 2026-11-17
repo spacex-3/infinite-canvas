@@ -24,6 +24,7 @@ describe("custom channel video protocol routing", () => {
         expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "zerofall" }, "veo-omni-flash")).toBe("fpbrowser2api");
         expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "fpbrowser2api" }, "veo-omni-flash-video-edit")).toBe("fpbrowser2api");
         expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "fpbrowser2api" }, "doubao-seedance-2-5-260628")).toBe("openai");
+        expect(resolveVideoRequestProtocol({ channelMode: "local", protocol: "fpbrowser2api" }, "MiniMax-H3")).toBe("openai");
     });
 
     test("does not let a saved local protocol override cloud routing", () => {
@@ -34,7 +35,7 @@ describe("custom channel video protocol routing", () => {
 
 describe("Seedance new-api compatibility", () => {
     test("uploads browser-local Seedance images without changing the original file", () => {
-        const resolver = videoSource.match(/async function resolveSeedanceImageUrl[\s\S]*?\n}\n\nasync function resolveSeedanceVideoUrl/)?.[0] || "";
+        const resolver = videoSource.match(/async function resolveReferenceImageUrl[\s\S]*?\n}\n\nasync function resolveReferenceVideoUrl/)?.[0] || "";
         expect(resolver).toContain("const storedBlob = image.storageKey ? await getImageBlob(image.storageKey) : null;");
         expect(resolver).toContain("dataUrlToFile({ ...image, dataUrl })");
         expect(resolver).toContain("file.size > SEEDANCE_REFERENCE_LIMITS.imageMaxBytes");
@@ -46,7 +47,7 @@ describe("Seedance new-api compatibility", () => {
     });
 
     test("does not silently truncate Seedance reference arrays", () => {
-        const builder = videoSource.match(/export async function buildSeedanceContent[\s\S]*?\n}\n\nasync function resolveSeedanceImageUrl/)?.[0] || "";
+        const builder = videoSource.match(/export async function buildSeedanceContent[\s\S]*?\n}\n\nasync function resolveReferenceImageUrl/)?.[0] || "";
         expect(builder).not.toContain(".slice(");
         expect(videoSource).not.toContain("assertSeedanceReferences");
         expect(videoSource).not.toContain("assertSeedanceVideoReferences");
@@ -151,6 +152,12 @@ describe("Seedance new-api compatibility", () => {
         const nativeRecoverySource = videoSource.match(/async function recoverSeedanceNativeGeneration[\s\S]*?\/\*\* ZeroFall/)?.[0] || "";
         expect(v1RecoverySource).not.toContain("axios.post");
         expect(nativeRecoverySource).not.toContain("axios.post");
+    });
+
+    test("persists MiniMax H3 recovery and never creates a second task while recovering", () => {
+        expect(videoSource).toContain('protocol: "minimax-h3", status: "submitted"');
+        const recoverySource = videoSource.match(/async function recoverMiniMaxH3Generation[\s\S]*?async function requestSeedanceGeneration/)?.[0] || "";
+        expect(recoverySource).not.toContain("axios.post");
     });
 });
 

@@ -8,6 +8,7 @@ import { saveAs } from "file-saver";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { formatBytes, readFileAsDataUrl } from "@/lib/image-utils";
 import { uploadImage } from "@/services/image-storage";
+import { uploadMediaFile } from "@/services/file-storage";
 import { cn } from "@/lib/utils";
 import { useAssetStore, type Asset, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
@@ -161,23 +162,58 @@ export default function AssetsPage() {
         await exportAssets(validAssets);
     };
 
-    const importAssetZip = async (file?: File) => {
-        if (!file) return;
-        try {
-            const importedAssets = await readAssetPackage(file);
-            importedAssets.forEach((asset) => {
-                const payload = { ...asset } as Record<string, unknown>;
-                delete payload.id;
-                delete payload.createdAt;
-                delete payload.updatedAt;
-                addAsset(payload as Parameters<typeof addAsset>[0]);
-            });
-            message.success(`已导入 ${importedAssets.length} 个素材`);
-        } catch {
-            message.error("导入失败，请选择有效的素材压缩包");
-        } finally {
-            if (assetInputRef.current) assetInputRef.current.value = "";
+    const importAssets = async (files?: FileList | null) => {
+        const selected = Array.from(files || []);
+        if (!selected.length) return;
+        let imported = 0;
+        let failed = 0;
+        for (const file of selected) {
+            try {
+                const kind = importedFileKind(file);
+                if (kind === "package") {
+                    const importedAssets = await readAssetPackage(file);
+                    importedAssets.forEach((asset) => {
+                        const payload = { ...asset } as Record<string, unknown>;
+                        delete payload.id;
+                        delete payload.createdAt;
+                        delete payload.updatedAt;
+                        addAsset(payload as Parameters<typeof addAsset>[0]);
+                    });
+                    imported += importedAssets.length;
+                } else if (kind === "image") {
+                    const image = await uploadImage(file);
+                    addAsset({
+                        kind: "image",
+                        title: file.name,
+                        coverUrl: image.url,
+                        tags: [],
+                        source: "本地导入",
+                        data: { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType },
+                        metadata: { source: "local-import" },
+                    });
+                    imported += 1;
+                } else if (kind === "video") {
+                    const video = await uploadMediaFile(file, "asset-video");
+                    addAsset({
+                        kind: "video",
+                        title: file.name,
+                        coverUrl: "",
+                        tags: [],
+                        source: "本地导入",
+                        data: { url: video.url, storageKey: video.storageKey, width: video.width || 1280, height: video.height || 720, bytes: video.bytes, mimeType: video.mimeType },
+                        metadata: { source: "local-import", durationMs: video.durationMs },
+                    });
+                    imported += 1;
+                } else {
+                    failed += 1;
+                }
+            } catch {
+                failed += 1;
+            }
         }
+        if (imported) message.success(`已导入 ${imported} 个素材${failed ? `，${failed} 个失败` : ""}`);
+        else message.error("导入失败，请选择图片、视频或有效的素材压缩包");
+        if (assetInputRef.current) assetInputRef.current.value = "";
     };
 
     const confirmDelete = () => {
@@ -193,7 +229,7 @@ export default function AssetsPage() {
                 <div className="pb-8">
                     <div className="mx-auto max-w-5xl text-center">
                         <h1 className="text-4xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">我的素材</h1>
-                        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">收藏常用文本和图片，按类型、标题和标签快速查找。</p>
+                        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">收藏常用文本、图片和视频，按类型、标题和标签快速查找。</p>
                     </div>
 
                     <div className="mx-auto mt-8 w-full max-w-2xl">
@@ -395,7 +431,7 @@ export default function AssetsPage() {
 
             <AssetDrawer asset={previewAsset} onClose={() => setPreviewAsset(null)} onCopy={copyAssetText} onDownload={downloadImage} />
 
-            <input ref={assetInputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importAssetZip(event.target.files?.[0])} />
+            <input ref={assetInputRef} type="file" accept="application/zip,.zip,image/*,video/*" multiple className="hidden" onChange={(event) => void importAssets(event.target.files)} />
 
             <Modal title="删除素材" open={Boolean(deletingAsset)} onCancel={() => setDeletingAsset(null)} onOk={confirmDelete} okText="删除" okButtonProps={{ danger: true }} cancelText="取消">
                 确定删除「{deletingAsset?.title}」吗？删除后会从我的素材中移除。
@@ -540,4 +576,12 @@ function assetSummary(asset: Asset) {
 
 function assetSearchText(asset: Asset) {
     return [asset.title, asset.source || "", asset.note || "", (asset.tags || []).join(" "), asset.kind === "text" ? asset.data.content : asset.data.mimeType].join(" ").toLowerCase();
+}
+
+function importedFileKind(file: File) {
+    const name = file.name.toLowerCase();
+    if (file.type === "application/zip" || name.endsWith(".zip")) return "package";
+    if (file.type.startsWith("image/") || /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|webp)$/.test(name)) return "image";
+    if (file.type.startsWith("video/") || /\.(?:m4v|mkv|mov|mp4|webm)$/.test(name)) return "video";
+    return "unsupported";
 }

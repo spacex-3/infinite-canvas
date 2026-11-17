@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Music2, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
+import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Select, Tag, Typography } from "antd";
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
@@ -14,13 +14,14 @@ import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeVa
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { boolConfig, isSeedanceVideoConfig, isSeedanceVideoModel, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceReferenceCountError, seedanceReferenceLabel, seedanceReferenceLimitsForModel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { isMiniMaxH3VideoModel, miniMaxH3ReferenceWarnings, MINIMAX_H3_REFERENCE_LIMITS, normalizeMiniMaxH3Duration, normalizeMiniMaxH3Ratio, normalizeMiniMaxH3Resolution } from "@/lib/minimax-h3-video";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
-import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
+import { recoverVideoGeneration, requestVideoGeneration, storeGeneratedVideo, type VideoTaskRecovery } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
-import type { ReferenceImage } from "@/types/image";
+import type { ReferenceImage, SeedanceImageRole } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
 type GeneratedVideo = {
@@ -39,6 +40,7 @@ type GenerationResult = {
     status: "pending" | "success" | "failed";
     video?: GeneratedVideo;
     error?: string;
+    recovery?: VideoTaskRecovery;
 };
 
 type GenerationLog = {
@@ -59,6 +61,7 @@ type GenerationLog = {
     status: "成功" | "失败";
     video?: GeneratedVideo;
     error?: string;
+    recovery?: VideoTaskRecovery;
 };
 
 type GenerationLogConfig = Pick<AiConfig, "model" | "videoModel" | "videoSize" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark">;
@@ -95,7 +98,7 @@ export default function VideoPage() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
-    const referenceLimits = seedanceReferenceLimitsForModel(model);
+    const referenceLimits = isMiniMaxH3VideoModel(model) ? MINIMAX_H3_REFERENCE_LIMITS : seedanceReferenceLimitsForModel(model);
     const canGenerate = Boolean(prompt.trim());
 
     useEffect(() => {
@@ -127,7 +130,7 @@ export default function VideoPage() {
         if (selectedFiles.some((file) => file.type.startsWith("image/") && file.size > SEEDANCE_REFERENCE_LIMITS.imageMaxBytes)) return message.error("参考图片不能超过 30MiB");
         if (selectedFiles.some((file) => file.type.startsWith("video/") && file.size > SEEDANCE_REFERENCE_LIMITS.videoMaxBytes)) return message.error("参考视频不能超过 50MiB");
         if (selectedFiles.some((file) => isSupportedAudioFile(file) && file.size > SEEDANCE_REFERENCE_LIMITS.audioMaxBytes)) return message.error("参考音频不能超过 15MiB");
-        const countError = seedanceReferenceCountError(model, { images: references.length + imageFiles.length, videos: videoReferences.length + videoFiles.length, audios: audioReferences.length + audioFiles.length });
+        const countError = referenceCountWarning(model, { images: references.length + imageFiles.length, videos: videoReferences.length + videoFiles.length, audios: audioReferences.length + audioFiles.length });
         if (countError) message.warning(`${countError}；当前线路能力仅供参考，仍可提交`);
         const nextReferences = await Promise.all(
             imageFiles.map(async (file) => {
@@ -165,7 +168,7 @@ export default function VideoPage() {
                 return;
             }
             if (blobs.some((blob) => blob.size > SEEDANCE_REFERENCE_LIMITS.imageMaxBytes)) return message.error("参考图片不能超过 30MiB");
-            const countError = seedanceReferenceCountError(model, { images: references.length + blobs.length, videos: videoReferences.length, audios: audioReferences.length });
+            const countError = referenceCountWarning(model, { images: references.length + blobs.length, videos: videoReferences.length, audios: audioReferences.length });
             if (countError) message.warning(`${countError}；当前线路能力仅供参考，仍可提交`);
             const nextReferences = await Promise.all(
                 blobs.map(async (blob, index) => {
@@ -188,8 +191,13 @@ export default function VideoPage() {
         setResults([{ id: nanoid(), status: "pending" }]);
         const batchStartedAt = performance.now();
         setStartedAt(batchStartedAt);
+        let recovery: VideoTaskRecovery | undefined;
         try {
-            const stored = await storeGeneratedVideo(await requestVideoGeneration(snapshot.config, snapshot.text, snapshot.references, snapshot.videoReferences, snapshot.audioReferences));
+            const stored = await storeGeneratedVideo(
+                await requestVideoGeneration(snapshot.config, snapshot.text, snapshot.references, snapshot.videoReferences, snapshot.audioReferences, undefined, (next) => {
+                    recovery = next;
+                }),
+            );
             const nextVideo: GeneratedVideo = {
                 id: nanoid(),
                 url: stored.url,
@@ -205,8 +213,8 @@ export default function VideoPage() {
             message.success("视频已生成");
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "生成失败";
-            setResults([{ id: nanoid(), status: "failed", error: errorMessage }]);
-            saveLog(buildLog({ prompt: snapshot.text, model, config: snapshot.config, references: snapshot.references, videoReferences: snapshot.videoReferences, audioReferences: snapshot.audioReferences, durationMs: performance.now() - batchStartedAt, status: "失败", error: errorMessage }));
+            setResults([{ id: nanoid(), status: "failed", error: errorMessage, recovery }]);
+            saveLog(buildLog({ prompt: snapshot.text, model, config: snapshot.config, references: snapshot.references, videoReferences: snapshot.videoReferences, audioReferences: snapshot.audioReferences, durationMs: performance.now() - batchStartedAt, status: "失败", error: errorMessage, recovery }));
             message.error(errorMessage);
         } finally {
             setRunning(false);
@@ -224,15 +232,37 @@ export default function VideoPage() {
             openConfigDialog(true);
             return null;
         }
-        const videoReferenceError = seedanceVideoReferenceError(videoReferences);
-        if (videoReferenceError) message.warning(`${videoReferenceError}。${seedanceVideoReferenceHint} 当前组合仍可提交，实际以上游返回为准`);
-        const countError = seedanceReferenceCountError(model, { images: references.length, videos: videoReferences.length, audios: audioReferences.length });
-        if (countError) message.warning(`${countError}；当前线路能力仅供参考，仍可提交`);
+        if (isMiniMaxH3VideoModel(model)) {
+            const warnings = miniMaxH3ReferenceWarnings(references, videoReferences, audioReferences);
+            if (warnings.length) message.warning(`${warnings.join("；")}；当前组合仍会完整提交，由接口最终校验`);
+        } else {
+            const videoReferenceError = seedanceVideoReferenceError(videoReferences);
+            if (videoReferenceError) message.warning(`${videoReferenceError}。${seedanceVideoReferenceHint} 当前组合仍可提交，实际以上游返回为准`);
+            const countError = seedanceReferenceCountError(model, { images: references.length, videos: videoReferences.length, audios: audioReferences.length });
+            if (countError) message.warning(`${countError}；当前线路能力仅供参考，仍可提交`);
+        }
         return { text, config: buildVideoConfig(effectiveConfig, model), references: [...references], videoReferences: [...videoReferences], audioReferences: [...audioReferences] };
     };
 
-    const retryResult = () => {
-        void generate();
+    const retryResult = async (result: GenerationResult) => {
+        const recovery = result.recovery;
+        if (!recovery) return void generate();
+        setRunning(true);
+        setResults([{ ...result, status: "pending" }]);
+        const started = performance.now();
+        setStartedAt(started);
+        try {
+            const stored = await storeGeneratedVideo(await recoverVideoGeneration(buildVideoConfig(effectiveConfig, recovery.model), recovery));
+            const video: GeneratedVideo = { id: nanoid(), url: stored.url, storageKey: stored.storageKey, durationMs: performance.now() - started, width: stored.width || 1280, height: stored.height || 720, bytes: stored.bytes, mimeType: stored.mimeType };
+            setResults([{ id: video.id, status: "success", video }]);
+            message.success("视频已取回");
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "视频取回失败";
+            setResults([{ ...result, status: "failed", error: errorMessage }]);
+            message.error(errorMessage);
+        } finally {
+            setRunning(false);
+        }
     };
 
     const downloadVideo = (video: GeneratedVideo) => {
@@ -311,7 +341,7 @@ export default function VideoPage() {
         if (log.config.videoSeconds) updateConfig("videoSeconds", log.config.videoSeconds);
         if (log.config.videoGenerateAudio) updateConfig("videoGenerateAudio", log.config.videoGenerateAudio);
         if (log.config.videoWatermark) updateConfig("videoWatermark", log.config.videoWatermark);
-        setResults(log.video ? [{ id: log.video.id, status: "success", video: log.video }] : [{ id: log.id, status: "failed", error: log.error || "生成失败" }]);
+        setResults(log.video ? [{ id: log.video.id, status: "success", video: log.video }] : [{ id: log.id, status: "failed", error: log.error || "生成失败", recovery: log.recovery }]);
     };
 
     return (
@@ -365,13 +395,16 @@ export default function VideoPage() {
                                 </div>
                                 <div className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-stone-300 p-2 pb-3 overscroll-x-contain dark:border-stone-700">
                                     {references.map((item, index) => (
-                                        <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-stone-200 dark:border-stone-800">
-                                            <img src={item.dataUrl} alt={item.name} className="size-full object-cover" />
-                                            <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{seedanceReferenceLabel("image", index)}</span>
-                                            <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
-                                            <button type="button" className="absolute right-1 top-1 hidden size-6 items-center justify-center rounded bg-black/60 text-white group-hover:flex" onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))} aria-label="移除参考图">
-                                                <Trash2 className="size-3.5" />
-                                            </button>
+                                        <div key={item.id} className="group h-28 w-24 shrink-0 rounded-md border border-stone-200 p-1 dark:border-stone-800">
+                                            <div className="relative h-20 overflow-hidden rounded bg-stone-100 dark:bg-stone-900">
+                                                <img src={item.dataUrl} alt={item.name} className="size-full object-cover" />
+                                                <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{seedanceReferenceLabel("image", index)}</span>
+                                                <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
+                                                <button type="button" className="absolute right-1 top-1 hidden size-6 items-center justify-center rounded bg-black/60 text-white group-hover:flex" onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))} aria-label="移除参考图">
+                                                    <Trash2 className="size-3.5" />
+                                                </button>
+                                            </div>
+                                            <Select size="small" className="mt-1 w-full" value={item.seedanceRole || "reference_image"} options={[{ label: "参考图", value: "reference_image" }, { label: "首帧", value: "first_frame" }, { label: "尾帧", value: "last_frame" }]} onChange={(seedanceRole: SeedanceImageRole) => setReferences((value) => value.map((ref) => (ref.id === item.id ? { ...ref, seedanceRole } : ref)))} />
                                         </div>
                                     ))}
                                     {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图，当前线路已验证 {referenceLimits.images} 张</div> : null}
@@ -454,7 +487,7 @@ export default function VideoPage() {
                         </div>
                         {results.length ? (
                             <div className="grid gap-4">
-                                {results.map((result) => (result.status === "success" && result.video ? <ResultVideoCard key={result.id} video={result.video} onDownload={downloadVideo} onSaveAsset={saveResultToAssets} /> : result.status === "failed" ? <FailedVideoCard key={result.id} error={result.error || "生成失败"} onRetry={retryResult} /> : <PendingVideoCard key={result.id} />))}
+                                {results.map((result) => (result.status === "success" && result.video ? <ResultVideoCard key={result.id} video={result.video} onDownload={downloadVideo} onSaveAsset={saveResultToAssets} /> : result.status === "failed" ? <FailedVideoCard key={result.id} error={result.error || "生成失败"} recovery={result.recovery} onRetry={() => void retryResult(result)} /> : <PendingVideoCard key={result.id} />))}
                             </div>
                         ) : (
                             <div className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed border-stone-300 text-center dark:border-stone-700 lg:min-h-[560px]">
@@ -506,6 +539,7 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
                     onChange={(value) => {
                         updateConfig("videoModel", value);
                         if (isSeedanceVideoModel(value)) updateConfig("vquality", normalizeSeedanceResolution(config.vquality, value));
+                        if (isMiniMaxH3VideoModel(value)) updateConfig("vquality", normalizeMiniMaxH3Resolution(config.vquality));
                     }}
                     capability="video"
                     fullWidth
@@ -555,7 +589,7 @@ function PendingVideoCard() {
     );
 }
 
-function FailedVideoCard({ error, onRetry }: { error: string; onRetry: () => void }) {
+function FailedVideoCard({ error, recovery, onRetry }: { error: string; recovery?: VideoTaskRecovery; onRetry: () => void }) {
     return (
         <div className="overflow-hidden rounded-lg border border-red-200 bg-red-50 dark:border-red-950 dark:bg-red-950/20">
             <div className="flex aspect-video flex-col items-center justify-center gap-3 p-5 text-center">
@@ -566,7 +600,7 @@ function FailedVideoCard({ error, onRetry }: { error: string; onRetry: () => voi
             </div>
             <div className="flex justify-end border-t border-red-200 p-3 dark:border-red-950">
                 <Button size="small" danger onClick={onRetry}>
-                    重试
+                    {recovery ? (recovery.status === "completed" ? "重新下载" : "继续查询") : "重试"}
                 </Button>
             </div>
         </div>
@@ -629,7 +663,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
                     <div className="truncate text-sm font-semibold leading-5">{log.title}</div>
                     <div className="mt-2 flex flex-wrap gap-1">
                         <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.size}</Tag>
-                        <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.resolution}p</Tag>
+                        <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{videoResolutionLabel(log.resolution)}</Tag>
                         <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.seconds}s</Tag>
                     </div>
                 </div>
@@ -698,6 +732,7 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
         status: log.status || "成功",
         video,
         error: log.error,
+        recovery: log.recovery,
     };
 }
 
@@ -761,7 +796,7 @@ function normalizeLogConfig(log: Partial<GenerationLog>): GenerationLogConfig {
     };
 }
 
-function buildLog({ prompt, model, config, references, videoReferences, audioReferences, durationMs, status, video, error }: { prompt: string; model: string; config: AiConfig; references: ReferenceImage[]; videoReferences: ReferenceVideo[]; audioReferences: ReferenceAudio[]; durationMs: number; status: GenerationLog["status"]; video?: GeneratedVideo; error?: string }): GenerationLog {
+function buildLog({ prompt, model, config, references, videoReferences, audioReferences, durationMs, status, video, error, recovery }: { prompt: string; model: string; config: AiConfig; references: ReferenceImage[]; videoReferences: ReferenceVideo[]; audioReferences: ReferenceAudio[]; durationMs: number; status: GenerationLog["status"]; video?: GeneratedVideo; error?: string; recovery?: VideoTaskRecovery }): GenerationLog {
     const logConfig = {
         model: config.model,
         videoModel: config.videoModel,
@@ -789,21 +824,32 @@ function buildLog({ prompt, model, config, references, videoReferences, audioRef
         status,
         video,
         error,
+        recovery,
     };
 }
 
 function buildVideoConfig(config: AiConfig, model: string): AiConfig {
     const seedance = isSeedanceVideoConfig({ ...config, model });
+    const minimax = isMiniMaxH3VideoModel(model);
     return {
         ...config,
         model,
         videoModel: model,
-        videoSize: seedance ? normalizeSeedanceRatio(config.videoSize) : normalizeVideoSize(config.videoSize),
-        videoSeconds: seedance ? String(normalizeSeedanceDuration(config.videoSeconds, model)) : normalizeVideoSeconds(config.videoSeconds),
-        vquality: seedance ? normalizeSeedanceResolution(config.vquality, model) : normalizeResolution(config.vquality),
+        videoSize: minimax ? normalizeMiniMaxH3Ratio(config.videoSize) : seedance ? normalizeSeedanceRatio(config.videoSize) : normalizeVideoSize(config.videoSize),
+        videoSeconds: minimax ? String(normalizeMiniMaxH3Duration(config.videoSeconds)) : seedance ? String(normalizeSeedanceDuration(config.videoSeconds, model)) : normalizeVideoSeconds(config.videoSeconds),
+        vquality: minimax ? normalizeMiniMaxH3Resolution(config.vquality) : seedance ? normalizeSeedanceResolution(config.vquality, model) : normalizeResolution(config.vquality),
         videoGenerateAudio: String(boolConfig(config.videoGenerateAudio, true)),
         videoWatermark: String(boolConfig(config.videoWatermark, false)),
     };
+}
+
+function referenceCountWarning(model: string, counts: { images: number; videos: number; audios: number }) {
+    if (!isMiniMaxH3VideoModel(model)) return seedanceReferenceCountError(model, counts);
+    if (counts.images > MINIMAX_H3_REFERENCE_LIMITS.images) return `MiniMax-H3 最多支持 ${MINIMAX_H3_REFERENCE_LIMITS.images} 张参考图片`;
+    if (counts.videos > MINIMAX_H3_REFERENCE_LIMITS.videos) return `MiniMax-H3 最多支持 ${MINIMAX_H3_REFERENCE_LIMITS.videos} 个参考视频`;
+    if (counts.audios > MINIMAX_H3_REFERENCE_LIMITS.audios) return `MiniMax-H3 最多支持 ${MINIMAX_H3_REFERENCE_LIMITS.audios} 个参考音频`;
+    if (counts.images + counts.videos + counts.audios > MINIMAX_H3_REFERENCE_LIMITS.total) return `MiniMax-H3 最多支持 ${MINIMAX_H3_REFERENCE_LIMITS.total} 项参考素材`;
+    return "";
 }
 
 function normalizeVideoSeconds(value: string) {

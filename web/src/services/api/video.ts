@@ -1,6 +1,7 @@
 import axios from "axios";
 
 import { dataUrlToFile } from "@/lib/image-utils";
+import { buildMiniMaxH3Payload, isMiniMaxH3VideoModel } from "@/lib/minimax-h3-video";
 import {
     isOmniFlashEditModel,
     isOmniFlashVideoModel,
@@ -58,6 +59,12 @@ type SeedanceV1Task = VideoResponse & {
     task_id?: string;
     content?: { video_url?: string; last_frame_url?: string } | null;
     metadata?: { url?: string } | null;
+};
+type MiniMaxH3Task = VideoResponse & {
+    task_id?: string;
+    video_url?: string;
+    url?: string;
+    content?: { video_url?: string; url?: string } | null;
 };
 type SeedanceV1Payload = {
     model: string;
@@ -140,7 +147,7 @@ export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: stri
 export type VideoTaskRecovery = {
     taskId: string;
     model: string;
-    protocol: "seedance-v1" | "seedance-native";
+    protocol: "seedance-v1" | "seedance-native" | "minimax-h3";
     status: "submitted" | "completed";
     resultUrl?: string;
 };
@@ -189,8 +196,9 @@ export async function requestVideoGeneration(
     const model = config.model.trim();
     assertVideoConfig(config, model);
     const isSeedance = isSeedanceVideoConfig({ ...config, model });
-    if (!isSeedance && references.some((image) => image.seedanceRole === "first_frame" || image.seedanceRole === "last_frame")) {
-        throw new Error("当前视频模型不支持 Seedance 首尾帧角色，请切换到 Seedance 或重新选择普通参考图");
+    const isMiniMaxH3 = isMiniMaxH3VideoModel(model);
+    if (!isSeedance && !isMiniMaxH3 && references.some((image) => image.seedanceRole === "first_frame" || image.seedanceRole === "last_frame")) {
+        throw new Error("当前视频模型不支持首尾帧角色，请切换到 Seedance / MiniMax H3，或重新选择普通参考图");
     }
     const protocol = resolveVideoRequestProtocol(config, model);
     // zpika omni-flash / omni-flash-vref → /v1/video/generations
@@ -205,6 +213,9 @@ export async function requestVideoGeneration(
     if (isSeedance) {
         return requestSeedanceGeneration(config, model, prompt, references, videoReferences, audioReferences, onProgress, onTaskRecovery);
     }
+    if (isMiniMaxH3) {
+        return requestMiniMaxH3Generation(config, prompt, references, videoReferences, audioReferences, onProgress, onTaskRecovery);
+    }
     if (videoReferences.length || audioReferences.length) {
         throw new Error("当前视频接口不支持参考视频或参考音频，请切换到 omni-flash / Seedance / Veo Omni 模型，或移除参考素材");
     }
@@ -217,10 +228,11 @@ export async function recoverVideoGeneration(config: AiConfig, recovery: VideoTa
     assertVideoConfig(config, recovery.model);
     try {
         if (recovery.status === "completed" && recovery.resultUrl) return await videoResultFromUrl(recovery.resultUrl, onProgress);
+        if (recovery.protocol === "minimax-h3") return await recoverMiniMaxH3Generation(config, recovery, onProgress);
         if (recovery.protocol === "seedance-native") return await recoverSeedanceNativeGeneration(config, recovery, onProgress);
         return await recoverSeedanceV1Generation(config, recovery, onProgress);
     } catch (error) {
-        throw new Error(readAxiosError(error, "Seedance 视频取回失败"));
+        throw new Error(readAxiosError(error, "视频取回失败"));
     }
 }
 
@@ -229,6 +241,7 @@ export function resolveVideoRequestProtocol(config: Pick<AiConfig, "channelMode"
     if (isOmniFlashVideoModel(model)) return "zerofall";
     if (isVeoOmniVideoModel(model)) return "fpbrowser2api";
     if (isSeedanceVideoModel(model)) return "openai";
+    if (isMiniMaxH3VideoModel(model)) return "openai";
     if (config.channelMode === "local" && (config.protocol === "zerofall" || config.protocol === "fpbrowser2api")) return config.protocol;
     return "openai";
 }
@@ -322,6 +335,74 @@ async function requestOpenAIVideoGeneration(config: AiConfig, model: string, pro
     } catch (error) {
         throw new Error(readAxiosError(error, "视频生成失败"));
     }
+}
+
+async function requestMiniMaxH3Generation(
+    config: AiConfig,
+    prompt: string,
+    references: ReferenceImage[],
+    videoReferences: ReferenceVideo[],
+    audioReferences: ReferenceAudio[],
+    onProgress?: GenerationProgressCallback,
+    onTaskRecovery?: VideoTaskRecoveryCallback,
+) {
+    const [images, videos, audios] = await Promise.all([
+        Promise.all(references.map(async (image) => ({ url: await resolveReferenceImageUrl(image), role: image.seedanceRole }))),
+        Promise.all(videoReferences.map((video) => resolveReferenceVideoUrl(video))),
+        Promise.all(audioReferences.map((audio) => resolveReferenceAudioUrl(audio))),
+    ]);
+    const payload = buildMiniMaxH3Payload({ prompt, duration: config.videoSeconds, resolution: config.vquality, ratio: config.videoSize, images, videos, audios });
+    try {
+        const created = unwrapEnvelope((await axios.post<ApiEnvelope<MiniMaxH3Task>>(aiApiUrl(config, "/videos"), payload, { headers: aiHeaders(config, "application/json") })).data, "MiniMax H3 接口没有返回任务");
+        const taskId = String(created.id || created.task_id || "").trim();
+        if (!taskId) throw new Error("MiniMax H3 接口没有返回任务 ID");
+        onTaskRecovery?.({ taskId, model: payload.model, protocol: "minimax-h3", status: "submitted" });
+        notifyGenerationProgress(onProgress, created);
+        return await waitMiniMaxH3Generation(config, { taskId, model: payload.model, protocol: "minimax-h3", status: "submitted" }, onProgress, onTaskRecovery);
+    } catch (error) {
+        throw new Error(readAxiosError(error, "MiniMax H3 视频生成失败"));
+    }
+}
+
+async function waitMiniMaxH3Generation(config: AiConfig, recovery: VideoTaskRecovery, onProgress?: GenerationProgressCallback, onTaskRecovery?: VideoTaskRecoveryCallback) {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+        let task: MiniMaxH3Task;
+        try {
+            task = unwrapEnvelope(
+                (await axios.get<ApiEnvelope<MiniMaxH3Task>>(aiApiUrl(config, `/videos/${encodeURIComponent(recovery.taskId)}`), { headers: aiHeaders(config), params: config.channelMode === "remote" ? { model: recovery.model } : undefined })).data,
+                "MiniMax H3 接口没有返回任务",
+            );
+        } catch (error) {
+            if (attempt < 119 && isRetryableVideoPollError(error)) {
+                await delay(5000);
+                continue;
+            }
+            throw error;
+        }
+        notifyGenerationProgress(onProgress, task);
+        const status = String(task.status || "").toLowerCase();
+        if (["completed", "succeeded", "success"].includes(status)) {
+            const resultUrl = task.video_url || task.content?.video_url || task.content?.url || task.url || recovery.resultUrl;
+            onTaskRecovery?.({ ...recovery, status: "completed", resultUrl });
+            refreshRemoteUser(config);
+            if (resultUrl) return videoResultFromUrl(resultUrl, onProgress);
+            const content = await axios.get<Blob>(aiApiUrl(config, `/videos/${encodeURIComponent(recovery.taskId)}/content`), {
+                headers: aiHeaders(config),
+                params: config.channelMode === "remote" ? { model: recovery.model } : undefined,
+                responseType: "blob",
+            });
+            await assertVideoBlob(content.data);
+            return { blob: content.data };
+        }
+        if (["failed", "cancelled", "canceled", "expired"].includes(status)) throw new Error(seedanceTaskFailure(task, "MiniMax H3 视频生成失败"));
+        if (attempt === 119) throw new Error("MiniMax H3 视频生成超时，请稍后重新取回");
+        await delay(5000);
+    }
+    throw new Error("MiniMax H3 视频生成超时，请稍后重新取回");
+}
+
+async function recoverMiniMaxH3Generation(config: AiConfig, recovery: VideoTaskRecovery, onProgress?: GenerationProgressCallback) {
+    return waitMiniMaxH3Generation(config, recovery, onProgress);
 }
 
 async function requestSeedanceGeneration(
@@ -811,43 +892,43 @@ export async function buildSeedanceContent(prompt: string, references: Reference
         ...audioReferences.map((item, index) => ({ kind: "audio" as const, item, order: item.seedanceOrder ?? fallbackOrder * 2 + index })),
     ].sort((left, right) => left.order - right.order);
     for (const entry of media) {
-        if (entry.kind === "image") content.push({ type: "image_url", image_url: { url: await resolveSeedanceImageUrl(entry.item) }, role: entry.item.seedanceRole || "reference_image" });
-        if (entry.kind === "video") content.push({ type: "video_url", video_url: { url: await resolveSeedanceVideoUrl(entry.item) }, role: "reference_video" });
-        if (entry.kind === "audio") content.push({ type: "audio_url", audio_url: { url: await resolveSeedanceAudioUrl(entry.item) }, role: "reference_audio" });
+        if (entry.kind === "image") content.push({ type: "image_url", image_url: { url: await resolveReferenceImageUrl(entry.item, true) }, role: entry.item.seedanceRole || "reference_image" });
+        if (entry.kind === "video") content.push({ type: "video_url", video_url: { url: await resolveReferenceVideoUrl(entry.item, true) }, role: "reference_video" });
+        if (entry.kind === "audio") content.push({ type: "audio_url", audio_url: { url: await resolveReferenceAudioUrl(entry.item, true) }, role: "reference_audio" });
     }
     return content;
 }
 
-async function resolveSeedanceImageUrl(image: ReferenceImage) {
+async function resolveReferenceImageUrl(image: ReferenceImage, enforceSeedanceLimit = false) {
     const directUrl = image.url || image.dataUrl;
     if (isPublicMediaUrl(directUrl) || directUrl.startsWith("asset://")) return directUrl;
     const storedBlob = image.storageKey ? await getImageBlob(image.storageKey) : null;
     const dataUrl = storedBlob ? "" : await imageToDataUrl(image);
     if (!storedBlob && !dataUrl) throw new Error("参考图读取失败，请换一张图片或重新上传");
     const file = storedBlob ? new File([storedBlob], image.name || "seedance-reference", { type: image.type || storedBlob.type }) : dataUrlToFile({ ...image, dataUrl });
-    if (file.size > SEEDANCE_REFERENCE_LIMITS.imageMaxBytes) throw new Error("Seedance 参考图片不能超过 30MiB");
+    if (enforceSeedanceLimit && file.size > SEEDANCE_REFERENCE_LIMITS.imageMaxBytes) throw new Error("Seedance 参考图片不能超过 30MiB");
     return uploadReferenceMedia(file);
 }
 
-async function resolveSeedanceVideoUrl(video: ReferenceVideo) {
+async function resolveReferenceVideoUrl(video: ReferenceVideo, enforceSeedanceLimit = false) {
     if (isPublicMediaUrl(video.url) || video.url.startsWith("asset://")) return video.url;
     let blob: Blob | null = null;
     if (video.storageKey) blob = await getMediaBlob(video.storageKey);
     if (!blob && video.url?.startsWith("blob:")) blob = await (await fetch(video.url)).blob();
     if (!blob) throw new Error("参考视频必须是公网 URL、素材 ID，或本地已保存的视频");
     const file = new File([blob], video.name || "reference-video.mp4", { type: video.type || blob.type || "video/mp4" });
-    if (file.size > SEEDANCE_REFERENCE_LIMITS.videoMaxBytes) throw new Error("Seedance 参考视频不能超过 50MiB");
+    if (enforceSeedanceLimit && file.size > SEEDANCE_REFERENCE_LIMITS.videoMaxBytes) throw new Error("Seedance 参考视频不能超过 50MiB");
     return uploadReferenceMedia(file);
 }
 
-async function resolveSeedanceAudioUrl(audio: ReferenceAudio) {
+async function resolveReferenceAudioUrl(audio: ReferenceAudio, enforceSeedanceLimit = false) {
     if (isPublicMediaUrl(audio.url) || audio.url.startsWith("asset://")) return audio.url;
     let blob: Blob | null = null;
     if (audio.storageKey) blob = await getMediaBlob(audio.storageKey);
     if (!blob && audio.url?.startsWith("blob:")) blob = await (await fetch(audio.url)).blob();
     if (!blob) throw new Error("参考音频必须是公网 URL、素材 ID，或本地已保存的音频");
     const file = new File([blob], audio.name || "reference-audio.mp3", { type: audio.type || blob.type || "audio/mpeg" });
-    if (file.size > SEEDANCE_REFERENCE_LIMITS.audioMaxBytes) throw new Error("Seedance 参考音频不能超过 15MiB");
+    if (enforceSeedanceLimit && file.size > SEEDANCE_REFERENCE_LIMITS.audioMaxBytes) throw new Error("Seedance 参考音频不能超过 15MiB");
     return uploadReferenceMedia(file);
 }
 
